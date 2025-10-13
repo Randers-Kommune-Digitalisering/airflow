@@ -33,7 +33,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          tags: ghcr.io/${{ github.repository.toLowerCase() }}:${{ github.ref_name }}
 
   deploy:
     runs-on: ubuntu-latest
