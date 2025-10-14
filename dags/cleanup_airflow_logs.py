@@ -1,7 +1,8 @@
 import os
+from datetime import datetime
+from kubernetes.client import models as k8s
 from airflow import DAG
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
-from datetime import datetime
 
 NAMESPACE = os.getenv("AIRFLOW_K8S_NAMESPACE")
 if not NAMESPACE:
@@ -59,15 +60,19 @@ def cleanup():
 cleanup()
             """
         ],
-        volume_mounts=[{
-            'name': 'logs-pvc',
-            'mountPath': '/opt/airflow/logs'
-        }],
-        volumes=[{
-            'name': 'logs-pvc',
-            'persistentVolumeClaim': {
-                'claimName': 'airflow-logs'
-            }
-        }],
+        volume_mounts=[
+            k8s.V1VolumeMount(
+                name='logs-pvc',
+                mount_path='/opt/airflow/logs'
+            )
+        ],
+        volumes=[
+            k8s.V1Volume(
+                name='logs-pvc',
+                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
+                    claim_name='airflow-logs'
+                )
+            )
+        ],
         is_delete_operator_pod=True,
     )
