@@ -1,6 +1,6 @@
 import os
 from airflow import DAG
-from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import KubernetesPodOperator
+from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from datetime import datetime
 
 NAMESPACE = os.getenv("AIRFLOW_K8S_NAMESPACE")
