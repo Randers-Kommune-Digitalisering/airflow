@@ -70,7 +70,7 @@ cleanup()
             k8s.V1Volume(
                 name='logs-pvc',
                 persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
-                    claim_name='airflow-logs'
+                    claim_name='airflow2-logs'
                 )
             )
         ],
