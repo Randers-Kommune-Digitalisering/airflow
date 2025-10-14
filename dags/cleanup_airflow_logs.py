@@ -55,6 +55,7 @@ with DAG(
     schedule_interval='@daily',
     catchup=False,
     description='Deletes oldest Airflow logs until disk usage is below threshold',
+    tags=["maintenance"]
 ) as dag:
 
     cleanup_task = PythonOperator(
