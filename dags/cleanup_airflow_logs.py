@@ -1,78 +1,63 @@
-import os
-from datetime import datetime
-from kubernetes.client import models as k8s
 from airflow import DAG
-from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
-
-NAMESPACE = os.getenv("AIRFLOW_K8S_NAMESPACE")
-if not NAMESPACE:
-    raise ValueError("Environment variable AIRFLOW_K8S_NAMESPACE is not set. This DAG requires it to determine the Kubernetes namespace.")
-
-with DAG(
-    dag_id='log_cleanup_k8s',
-    start_date=datetime(2025, 1, 1),
-    schedule_interval='@daily',
-    catchup=False,
-    tags=['maintenance'],
-) as dag:
-
-    cleanup = KubernetesPodOperator(
-        task_id='cleanup_airflow_logs',
-        name='cleanup-airflow-logs',
-        namespace=NAMESPACE,
-        image='python:3.12-slim',
-        cmds=['python', '-c'],
-        arguments=[
-            """
-import os, shutil, logging
-from pathlib import Path
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("log_cleanup")
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+import os
+import shutil
 
 LOG_DIR = "/opt/airflow/logs"
-MAX_USAGE = 80
+THRESHOLD_PERCENT = 90
 
-def get_usage(path):
-    total, used, _ = shutil.disk_usage(path)
-    return used / total * 100
+def cleanup_logs_by_disk_usage():
+    total, used, free = shutil.disk_usage(LOG_DIR)
+    used_percent = (used / total) * 100
 
-def cleanup():
-    usage = get_usage(LOG_DIR)
-    logger.info(f"Current disk usage: {usage:.2f}%")
-    if usage < MAX_USAGE:
-        logger.info("Disk usage is below threshold. No cleanup needed.")
+    if used_percent < THRESHOLD_PERCENT:
+        print(f"Disk usage is {used_percent:.2f}%, below threshold. No cleanup needed.")
         return
 
-    logger.warning("Disk usage above threshold. Starting cleanup...")
-    files = sorted(Path(LOG_DIR).rglob("*"), key=lambda f: f.stat().st_mtime)
-    for f in files:
-        if f.is_file():
+    print(f"Disk usage is {used_percent:.2f}%, starting cleanup...")
+    
+    log_files = []
+    for root, dirs, files in os.walk(LOG_DIR):
+        for file in files:
+            file_path = os.path.join(root, file)
             try:
-                f.unlink()
-                logger.info(f"Deleted: {f}")
-                if get_usage(LOG_DIR) < MAX_USAGE:
-                    logger.info("Cleanup complete. Disk usage below threshold.")
-                    break
+                mtime = os.path.getmtime(file_path)
+                log_files.append((file_path, mtime))
             except Exception as e:
-                logger.error(f"Error deleting {f}: {e}")
+                print(f"Error accessing {file_path}: {e}")
 
-cleanup()
-            """
-        ],
-        volume_mounts=[
-            k8s.V1VolumeMount(
-                name='logs-pvc',
-                mount_path='/opt/airflow/logs'
-            )
-        ],
-        volumes=[
-            k8s.V1Volume(
-                name='logs-pvc',
-                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
-                    claim_name='airflow2-logs'
-                )
-            )
-        ],
-        is_delete_operator_pod=True,
+    log_files.sort(key=lambda x: x[1])
+
+    for file_path, _ in log_files:
+        try:
+            os.remove(file_path)
+            print(f"Deleted: {file_path}")
+        except Exception as e:
+            print(f"Failed to delete {file_path}: {e}")
+
+        _, used, _ = shutil.disk_usage(LOG_DIR)
+        used_percent = (used / total) * 100
+        if used_percent < THRESHOLD_PERCENT:
+            print(f"Cleanup complete. Disk usage is now {used_percent:.2f}%.")
+            break
+
+default_args = {
+    'owner': 'airflow',
+    'start_date': datetime(2025, 10, 1),
+    'retries': 1,
+    'retry_delay': timedelta(minutes=5),
+}
+
+with DAG(
+    dag_id='cleanup_logs_by_disk_usage',
+    default_args=default_args,
+    schedule_interval='@daily',
+    catchup=False,
+    description='Deletes oldest Airflow logs until disk usage is below threshold',
+) as dag:
+
+    cleanup_task = PythonOperator(
+        task_id='cleanup_logs',
+        python_callable=cleanup_logs_by_disk_usage
     )
