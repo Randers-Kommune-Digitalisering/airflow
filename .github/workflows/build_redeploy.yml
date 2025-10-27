@@ -63,7 +63,7 @@ jobs:
         id: redeployupdate
         run: |
           timestamp=$(date +'%Y-%m-%dT%H:%M')
-          yq e ".airflow.redeployTimestamp = \"$timestamp\"" -i infrastructure/airflow/values.yaml
+          yq e ".airflow.webserver.annotations.redeployTimestamp = \"$timestamp\"" -i infrastructure/airflow/values.yaml
 
       - name: Commit and push
         run: |
