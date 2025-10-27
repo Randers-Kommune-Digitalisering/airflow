@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from dags.dag_airflow_cleanup_logs import airflow_log_cleanup
+import airflow_log_cleanup
 
 default_args = {
     'owner': 'airflow',
