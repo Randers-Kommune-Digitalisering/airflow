@@ -8,7 +8,6 @@ from flask_appbuilder import expose
 from flask_appbuilder.security.manager import AUTH_OAUTH
 from flask_appbuilder.security.views import AuthOAuthView
 
-from cryptography.hazmat.primitives import serialization
 from airflow.providers.fab.auth_manager.security_manager.override import FabAirflowSecurityManagerOverride
 
 
