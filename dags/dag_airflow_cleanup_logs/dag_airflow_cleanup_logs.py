@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-from dags.dag_airflow_cleanup_logs import airflow_log_cleanup
+from .airflow_log_cleanup import cleanup_logs_by_disk_usage
 
 default_args = {
     'owner': 'airflow',
@@ -22,7 +22,7 @@ with DAG(
 ) as dag:
     cleanup_task = PythonOperator(
         task_id='airflow_cleanup_logs',
-        python_callable=airflow_log_cleanup.cleanup_logs_by_disk_usage,
+        python_callable=cleanup_logs_by_disk_usage,
         op_kwargs={
             'directory': '/opt/airflow/logs',
             'threshold_percent': 90
