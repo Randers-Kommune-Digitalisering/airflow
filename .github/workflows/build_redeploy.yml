@@ -4,8 +4,7 @@ on:
   push:
     branches:
       - test
-      - staging
-      - prod
+      - newprod
     paths:
       - Dockerfile
       - requirements.txt
