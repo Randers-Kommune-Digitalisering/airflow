@@ -42,14 +42,14 @@ class OAuth2TokenProvider:
         token = resp.json()
         self._access_token = token["access_token"]
         if "expires_in" not in token:
-            raise ValueError("Token response missing 'expires_in' field")
+            raise ValueError(f"Token response from {self.token_url} missing 'expires_in' field")
         expires_in = int(token["expires_in"])
         self._exp_ts = self._now() + expires_in
         self.refresh_token = token.get("refresh_token", self.refresh_token)
         refresh_expires_in = token.get("refresh_expires_in")
         if self.refresh_token:
             if refresh_expires_in is None:
-                raise ValueError("Token response missing 'refresh_expires_in' field when refresh_token is present")
+                raise ValueError(f"Token response from {self.token_url} missing 'refresh_expires_in' field when refresh_token is present")
             self._refresh_exp_ts = self._now() + int(refresh_expires_in)
         else:
             self._refresh_exp_ts = 0

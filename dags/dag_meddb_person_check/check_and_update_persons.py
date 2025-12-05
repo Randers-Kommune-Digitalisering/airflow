@@ -19,14 +19,14 @@ logger = logging.getLogger(__name__)
 
 def check_and_update_persons() -> None:
     """
-    Iterrate through persons in MedDB and update their information from Delta, MS Graph, and Skole-AD.
+    Iterate through persons in MedDB and update their information from Delta, MS Graph, and Skole-AD.
     """
     meta_hook = PostgresHook(postgres_conn_id="meta_db")
-    engine = meta_hook.get_sqlalchemy_engine()
+    meta_engine = meta_hook.get_sqlalchemy_engine()
 
     ms_graph_hook = KiotaRequestAdapterHook(conn_id="ms_graph_api")
-    adapter = ms_graph_hook.get_conn()
-    client = GraphServiceClient(request_adapter=adapter)
+    ms_graph_adapter = ms_graph_hook.get_conn()
+    ms_graph_client = GraphServiceClient(request_adapter=ms_graph_adapter)
 
     delta_hook = BaseHook.get_connection('delta_prod')
 
@@ -38,8 +38,8 @@ def check_and_update_persons() -> None:
     )
 
     async def _process_all():
-        with Session(bind=engine) as session:
-            persons = session.query(PersonMedDB).all()
+        with Session(bind=meta_engine) as meta_session:
+            persons = meta_session.query(PersonMedDB).all()
             total = len(persons)
             logger.info(f"Found {total} persons to check.")
             for idx, person in enumerate(persons):
@@ -49,9 +49,9 @@ def check_and_update_persons() -> None:
                 if person.email:
                     user = delta_get_by_email(session=delta_session, base_url=delta_hook.host, email=person.email)
                     if not user:
-                        user = skole_ad_get_by_email(session=session, email=person.email)
+                        user = skole_ad_get_by_email(session=meta_session, email=person.email)
                         if not user:
-                            user = await ms_graph_get_user_by_email_alias_async(client=client, email_alias=person.username)
+                            user = await ms_graph_get_user_by_email_alias_async(client=ms_graph_client, email_alias=person.email)
 
                     if user:
                         person.email = user.get("email", None) or person.email
@@ -60,6 +60,6 @@ def check_and_update_persons() -> None:
                         person.username = user.get("username", None) or person.username
                         person.found_in_system = True
 
-            session.commit()
+            meta_session.commit()
 
     asyncio.run(_process_all())

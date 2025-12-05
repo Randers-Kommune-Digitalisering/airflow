@@ -1,3 +1,4 @@
+import logging
 from urllib.parse import quote
 
 from msgraph.graph_service_client import GraphServiceClient
@@ -5,6 +6,8 @@ from sqlalchemy.orm import Session as SqlalchemySession
 from requests import Session as RequestsSession
 
 from dag_meddb_person_check.model import PersonSkoleAD
+
+logger = logging.getLogger(__name__)
 
 
 def skole_ad_get_by_email(session: SqlalchemySession, email: str) -> dict:
@@ -54,6 +57,9 @@ async def ms_graph_get_user_by_email_alias_async(client: GraphServiceClient, ema
     if len(users) == 1:
         user = users[0]
         return {"name": user.display_name, "email": user.mail, "unit": user.office_location, "username": user.on_premises_sam_account_name}
+    else:
+        logger.warning(f"Multiple users found in MS Graph for email alias '{email_alias}'")
+        return None
 
 
 def delta_get_by_email(session: RequestsSession, base_url: str, email: str) -> dict:
@@ -193,5 +199,10 @@ def delta_get_by_email(session: RequestsSession, base_url: str, email: str) -> d
             "username": username if username is not None else '-'
         })
 
-    if len(results) == 1:
+    if not results:
+        return None
+    elif len(results) == 1:
         return results[0]
+    else:
+        logger.warning(f"Multiple users found in Delta for email '{email}'")
+        return None

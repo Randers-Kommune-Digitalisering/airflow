@@ -13,9 +13,9 @@ with DAG(
     dag_id="dag_meddb_person_check",
     start_date=datetime(2025, 12, 3),
     schedule_interval="0 12 * * 0",
-    default_args=DEFAULT_DAG_ARGS,
+    default_args=dag_args,
     catchup=False,
-    description="A basic DAG with logging example",
+    description="Check and update MedDB person records by querying Delta, MS Graph, and Skole-AD",
     tags=['meddb', 'delta', 'ms_graph', 'meta_db',],
 ) as dag:
 
