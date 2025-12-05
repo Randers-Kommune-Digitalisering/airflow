@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-publish
     steps:
-
+  
       - name: Checkout Target Repository
         id: checkout
         uses: actions/checkout@v4
@@ -51,25 +51,74 @@ jobs:
           ref: ${{ github.ref_name }}
           path: infrastructure
           ssh-key: ${{ secrets.AUTO_DEPLOY }}
-
+  
       - name: Install yq
         run: |
           sudo apt install -y jq
           sudo wget https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /usr/bin/yq
           sudo chmod +x /usr/bin/yq
-
-      - name: Update redeployTimestamp
-        id: redeployupdate
+  
+      - name: Update podAnnotations.rollme to force rollout
+        id: rollmeupdate
+        env:
+          TIMESTAMP: ${{ github.run_id }}-${{ github.run_attempt }}-$(date +'%Y-%m-%dT%H:%M:%S%z')
         run: |
-          timestamp=$(date +'%Y-%m-%dT%H:%M')
-          yq e ".airflow.webserver.annotations.redeployTimestamp = \"$timestamp\"" -i infrastructure/airflow/values.yaml
-
+          # Use a unique value so the Pod template changes on every deploy
+          timestamp="${TIMESTAMP}"
+  
+          file="infrastructure/airflow/values.yaml"
+  
+          # Ensure the podAnnotations map exists for each component and set rollme
+          yq e -i ".airflow.webserver.podAnnotations.rollme = \"${timestamp}\""   "$file"
+          yq e -i ".airflow.scheduler.podAnnotations.rollme = \"${timestamp}\""   "$file"
+          yq e -i ".airflow.triggerer.podAnnotations.rollme = \"${timestamp}\""   "$file"
+          yq e -i ".airflow.workers.podAnnotations.rollme   = \"${timestamp}\""   "$file"
+  
+          # Optional: remove the old redeployTimestamp if it exists under non-pod annotations
+          yq e -i 'del(.airflow.webserver.annotations.redeployTimestamp)' "$file"
+  
       - name: Commit and push
         run: |
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
           cd infrastructure
           if [[ -n "$(git status -s)" ]]; then
-            git commit -am "Update redeployTimestamp"
+            git commit -am "Force Airflow rollout via podAnnotations.rollme"
             git push
           fi
+
+  # deploy:
+  #   runs-on: ubuntu-latest
+  #   needs: build-and-publish
+  #   steps:
+
+  #     - name: Checkout Target Repository
+  #       id: checkout
+  #       uses: actions/checkout@v4
+  #       with:
+  #         repository: Randers-Kommune-Digitalisering/kithosting-randers-kommune-apps
+  #         ref: ${{ github.ref_name }}
+  #         path: infrastructure
+  #         ssh-key: ${{ secrets.AUTO_DEPLOY }}
+
+  #     - name: Install yq
+  #       run: |
+  #         sudo apt install -y jq
+  #         sudo wget https://github.com/mikefarah/yq/releases/download/v4.40.5/yq_linux_amd64 -O /usr/bin/yq
+  #         sudo chmod +x /usr/bin/yq
+
+  #     - name: Update redeployTimestamp
+  #       id: redeployupdate
+  #       run: |
+  #         timestamp=$(date +'%Y-%m-%dT%H:%M')
+  #         yq e ".airflow.webserver.annotations.redeployTimestamp = \"$timestamp\"" -i infrastructure/airflow/values.yaml
+
+  #     - name: Commit and push
+  #       run: |
+  #         git config --global user.name 'GitHub Action'
+  #         git config --global user.email 'action@github.com'
+  #         cd infrastructure
+  #         if [[ -n "$(git status -s)" ]]; then
+  #           git commit -am "Update redeployTimestamp"
+  #           git push
+  #         fi
