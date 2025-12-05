@@ -61,22 +61,14 @@ jobs:
   
       - name: Update podAnnotations.rollme to force rollout
         id: rollmeupdate
-        env:
-          TIMESTAMP: ${{ github.run_id }}-${{ github.run_attempt }}-$(date +'%Y-%m-%dT%H:%M:%S%z')
         run: |
-          # Use a unique value so the Pod template changes on every deploy
-          timestamp="${TIMESTAMP}"
-  
+          timestamp=$(date +'%Y-%m-%dT%H:%M')
           file="infrastructure/airflow/values.yaml"
   
-          # Ensure the podAnnotations map exists for each component and set rollme
           yq e -i ".airflow.webserver.podAnnotations.rollme = \"${timestamp}\""   "$file"
           yq e -i ".airflow.scheduler.podAnnotations.rollme = \"${timestamp}\""   "$file"
           yq e -i ".airflow.triggerer.podAnnotations.rollme = \"${timestamp}\""   "$file"
           yq e -i ".airflow.workers.podAnnotations.rollme   = \"${timestamp}\""   "$file"
-  
-          # Optional: remove the old redeployTimestamp if it exists under non-pod annotations
-          yq e -i 'del(.airflow.webserver.annotations.redeployTimestamp)' "$file"
   
       - name: Commit and push
         run: |
