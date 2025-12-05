@@ -198,10 +198,10 @@ def delta_get_by_email(session: RequestsSession, base_url: str, email: str) -> d
         if not (afdeling and email):
             continue
         results.append({
-            "name": name if name is not None else '-',
-            "email": email if email is not None else '-',
-            "unit": afdeling if afdeling is not None else '-',
-            "username": username if username is not None else '-'
+            "name": name,
+            "email": email,
+            "unit": afdeling,
+            "username": username
         })
 
     if not results:
