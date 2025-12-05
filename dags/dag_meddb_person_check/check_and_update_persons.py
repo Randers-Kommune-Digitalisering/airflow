@@ -42,8 +42,9 @@ def check_and_update_persons() -> None:
             persons = meta_session.query(PersonMedDB).all()
             total = len(persons)
             logger.info(f"Found {total} persons to check.")
+            progress_step = max(1, total // 20)
             for idx, person in enumerate(persons):
-                if total > 0 and idx % max(1, total // 20) == 0:
+                if total > 0 and idx % progress_step == 0:
                     percent = (idx / total) * 100
                     logger.info(f"Progress: {percent:.1f}% ({idx}/{total})")
                 if person.email:

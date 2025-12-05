@@ -25,10 +25,10 @@ def skole_ad_get_by_email(session: SqlalchemySession, email: str) -> dict:
     if not user:
         return None
     return {
-        "dqnummer": user.DQnummer,
-        "location": user.Skole,
         "name": user.Navn,
-        "email": user.Mail
+        "email": user.Mail,
+        "unit": user.Skole,
+        "username": user.DQnummer
     }
 
 
@@ -56,7 +56,12 @@ async def ms_graph_get_user_by_email_alias_async(client: GraphServiceClient, ema
         return None
     if len(users) == 1:
         user = users[0]
-        return {"name": user.display_name, "email": user.mail, "unit": user.office_location, "username": user.on_premises_sam_account_name}
+        return {
+            "name": user.display_name,
+            "email": user.mail,
+            "unit": user.office_location,
+            "username": user.on_premises_sam_account_name
+        }
     else:
         logger.warning(f"Multiple users found in MS Graph for email alias '{email_alias}'")
         return None
