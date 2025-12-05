@@ -16,7 +16,7 @@ with DAG(
     default_args=DEFAULT_DAG_ARGS,
     catchup=False,
     description="A basic DAG with logging example",
-    tags=['meddb', 'delta', 'ms_graph', 'skole_ad']
+    tags=['meddb', 'delta', 'ms_graph', 'meta_db',],
 ) as dag:
 
     task = PythonOperator(
