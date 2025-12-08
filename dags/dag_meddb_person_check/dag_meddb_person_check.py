@@ -1,7 +1,7 @@
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime
+from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
 from dag_meddb_person_check.check_and_update_persons import check_and_update_persons
@@ -11,10 +11,11 @@ dag_args["retries"] = 1
 
 with DAG(
     dag_id="dag_meddb_person_check",
-    start_date=datetime(2025, 12, 3),
+    start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
     schedule_interval="0 12 * * 0",
     default_args=dag_args,
     catchup=False,
+    max_active_runs=1,
     description="Check and update MedDB person records by querying Delta, MS Graph, and Skole-AD",
     tags=['meddb', 'delta', 'ms_graph', 'meta_db',],
 ) as dag:
