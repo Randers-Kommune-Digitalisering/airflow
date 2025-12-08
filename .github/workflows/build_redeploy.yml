@@ -8,6 +8,7 @@ on:
     paths:
       - Dockerfile
       - requirements.txt
+      - config/**
   workflow_dispatch:
 
 jobs:

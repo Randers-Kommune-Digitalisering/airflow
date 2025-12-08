@@ -120,8 +120,8 @@ class CustomSecurityManager(FabAirflowSecurityManagerOverride):
             userinfo = {
                 "username": me.get("preferred_username"),
                 "email": me.get("email"),
-                "first_name": me.get("given_name"),
-                "last_name": me.get("family_name"),
+                "first_name": me.get("given_name", "Unknown"),
+                "last_name": me.get("family_name", "Unknown"),
                 "role_keys": groups,
             }
             log.info(f"user info: {userinfo}")
