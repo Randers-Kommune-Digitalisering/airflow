@@ -1,2 +1,6 @@
 requests==2.32.5
 msgraph-sdk==1.49.0
+
+apache-airflow-providers-microsoft-mssql
+pymssql
+pandas
