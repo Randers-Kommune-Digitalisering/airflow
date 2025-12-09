@@ -21,7 +21,12 @@ def read_vognpark_excel_from_sftp(sftp_client, remote_path: str) -> pd.DataFrame
     with sftp.open(remote_path, 'rb') as remote_file:
         data = remote_file.read()
 
+
     df = pd.read_excel(io.BytesIO(data))
+    missing_cols = [col for col in VOGNPARK_COLUMNS if col not in df.columns]
+    if missing_cols:
+        logger.error(f"Missing columns in Excel file: {missing_cols}")
+
     df = df[VOGNPARK_COLUMNS]
     logger.debug(f"Read {len(df)} rows from Excel file")
     return df

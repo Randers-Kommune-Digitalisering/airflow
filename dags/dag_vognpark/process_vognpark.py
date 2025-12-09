@@ -14,7 +14,7 @@ def process_vognpark() -> None:
     """
     Fetch Excel from SFTP and load into Postgres.
     """
-    shared_sftp_hook = SFTPHook(ssh_conn_id="Test_SFTP")
+    shared_sftp_hook = SFTPHook(ssh_conn_id="shared_sftp")
     vognpark_hook = PostgresHook(postgres_conn_id="vognpark_db")
 
     excel_path = get_latest_vognpark_excel_path(shared_sftp_hook)
