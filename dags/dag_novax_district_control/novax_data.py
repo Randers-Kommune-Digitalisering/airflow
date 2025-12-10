@@ -29,7 +29,7 @@ class Address:
 
         else:
             raise ValueError("Either full_address or all address components must be provided.")
-        
+
     def to_dict(self):
         obj = {
             'street': self.street,
@@ -85,7 +85,7 @@ class UserData:
     #         raise ValueError("Could not find new district for the given address.")
 
     #     return self.new_district
-        
+
     def to_dict(self):
         return {
             'cpr': self.cpr,

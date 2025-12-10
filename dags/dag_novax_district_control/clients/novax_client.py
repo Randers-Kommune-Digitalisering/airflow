@@ -4,8 +4,9 @@ from dag_novax_district_control.novax_data import UserData
 import pandas as pd
 from airflow.hooks.base import BaseHook
 from sqlalchemy import create_engine
-from dag_novax_district_control.novax_utils import parse_address
+from datetime import datetime
 
+from dag_novax_district_control.novax_utils import parse_address
 
 
 def get_sqlalchemy_engine():
@@ -40,7 +41,13 @@ def get_sql_data(query) -> list[dict]:
     try:
         conn = engine.connect()
         result = pd.read_sql(query, con=conn)
-        return result.to_dict(orient='records')  # pd.DataFrame
+        records = result.to_dict(orient='records')
+        if isinstance(records, dict):
+            return [records]
+        elif isinstance(records, list):
+            return records
+        else:
+            return []
     except Exception as e:
         print(f'Error executing query: {e}')
         return []
@@ -68,6 +75,64 @@ def update_sql_data(query) -> bool:
     finally:
         if conn:
             conn.close()
+
+
+def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserData]:
+    """
+    Retrieves pregnancy journal records from Novax database within the specified date range.
+
+    :param from_date: The start date to filter records from (inclusive).
+    :param to_date: The end date to filter records to (exclusive).
+    :return:
+    """
+    query = f"""SELECT
+                    Godkommu.JOURNALDATO,
+                    Godkommu.NAVNID,
+                    navn.CPR,
+                    navn.ADRESSE,
+                    navn.DISTRIKT,
+                    PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT,
+                    TELEFON.TELEFONNUMMER,
+                    Note.NOTE
+                FROM Godkommu
+                LEFT JOIN navn ON Godkommu.NAVNID = navn.ID
+                LEFT JOIN PERSONDISTRICT ON Godkommu.NAVNID = PERSONDISTRICT.NAVNID
+                JOIN (
+                    SELECT NAVNID, TELEFONNUMMER
+                    FROM TELEFON
+                    WHERE TS_UPDD = (
+                        SELECT MAX(TS_UPDD) FROM TELEFON t2 WHERE t2.NAVNID = TELEFON.NAVNID
+                    )
+                ) AS TELEFON ON Godkommu.NAVNID = TELEFON.NAVNID
+                LEFT JOIN Note ON Godkommu.NAVNID = Note.NAVNID AND Note.NOTE LIKE N'%gravid%'
+                WHERE
+                    (EMNEBREV LIKE N'%gravid%')
+                AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
+                AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'"""
+
+    data = get_sql_data(query)
+    if not data:
+        return []
+
+    userdata_list = []
+    for entry in data:
+        for k, v in entry.items():
+            if isinstance(v, str):
+                entry[k] = v.strip()
+        entry['parsed_address'] = parse_address(entry['ADRESSE'])
+        entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
+
+        data_obj = UserData(
+            cpr=entry['CPR'],
+            navnid=entry['NAVNID'],
+            address=entry['parsed_address'],
+            district=entry['DISTRIKT'],
+            tlf_nr=entry['TELEFONNUMMER'],
+            timestamp=entry['JOURNALDATO'],
+            journal=entry['NOTE']
+        )
+        userdata_list.append(data_obj)
+    return userdata_list
 
 
 def get_test_data(cpr=None) -> list[UserData]:
@@ -99,8 +164,9 @@ def get_test_data(cpr=None) -> list[UserData]:
 
     data = get_sql_data(query)
     if not data:
-        return None
+        return []
 
+    userdata_list = []
     for entry in data:
         for k, v in entry.items():
             if isinstance(v, str):
@@ -116,8 +182,9 @@ def get_test_data(cpr=None) -> list[UserData]:
             tlf_nr=entry['TELEFONNUMMER'],
             timestamp=entry['JOURNALDATO'],
             journal=entry['NOTE']
-        ) if data else None
-    return data_obj
+        )
+        userdata_list.append(data_obj)
+    return userdata_list
 
 
 def get_test_data_move() -> list[dict]:

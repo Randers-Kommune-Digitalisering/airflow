@@ -23,5 +23,5 @@ with DAG(
     task = PythonOperator(
         task_id="check_and_update_district_task",
         python_callable=check_and_update_district,
-        op_kwargs={"cpr": "0101011234"}
+        op_kwargs={}
     )

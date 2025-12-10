@@ -11,10 +11,10 @@ class DataforsyningClient:
         self.base_url = connection.host or DATAFORSYNING_API_URL
         self.session = requests.Session()
 
-    def lookup_address(self, query: str):
+    def lookup_address(self, query: str) -> dict:
         """
-        Connects to Dataforsyning API to lookup address information.
-        
+        Connects to Dataforsyning API to lookup (search) address information.
+
         :param query: The full address query string.
         """
         endpoint = '/adgangsadresser/autocomplete'
@@ -33,7 +33,12 @@ class DataforsyningClient:
         results = response.json()
         return results[0] if results and len(results) > 0 else None
 
-    def get_address_info(self, address_id):
+    def get_address_info(self, address_id) -> dict:
+        """
+        Connects to Dataforsyning API to get detailed address information by ID.
+
+        :param address_id: The ID of the address to lookup.
+        """
         endpoint = f'/adgangsadresser/{address_id}'
         params = {
             'format': 'geojson',
@@ -45,14 +50,19 @@ class DataforsyningClient:
         return response.json()
 
 
-
 class DistrictMapClient:
     def __init__(self, conn_id='district_map_default'):
         connection = BaseHook.get_connection(conn_id)
         self.base_url = connection.host or MAP_API_URL
         self.session = requests.Session()
 
-    def get_district(self, coordinate_x, coordinate_y):
+    def get_district(self, coordinate_x, coordinate_y) -> dict:
+        """
+        Connects to District Map API to get district information based on coordinates.
+
+        :param coordinate_x: The X coordinate (easting) of the address.
+        :param coordinate_y: The Y coordinate (northing) of the address.
+        """
         endpoint = '/spatialmap'
         headers = {
             'Accept': '*/*',
