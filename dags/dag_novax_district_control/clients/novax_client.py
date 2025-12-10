@@ -81,34 +81,42 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     """
     Retrieves pregnancy journal records from Novax database within the specified date range.
 
+    Ensures only the latest TELEFONNUMMER per CPR is returned.
+
     :param from_date: The start date to filter records from (inclusive).
     :param to_date: The end date to filter records to (exclusive).
     :return:
     """
-    query = f"""SELECT
-                    Godkommu.JOURNALDATO,
-                    Godkommu.NAVNID,
-                    navn.CPR,
-                    navn.ADRESSE,
-                    navn.DISTRIKT,
-                    PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT,
-                    TELEFON.TELEFONNUMMER,
-                    Note.NOTE
-                FROM Godkommu
-                LEFT JOIN navn ON Godkommu.NAVNID = navn.ID
-                LEFT JOIN PERSONDISTRICT ON Godkommu.NAVNID = PERSONDISTRICT.NAVNID
-                JOIN (
-                    SELECT NAVNID, TELEFONNUMMER
-                    FROM TELEFON
-                    WHERE TS_UPDD = (
-                        SELECT MAX(TS_UPDD) FROM TELEFON t2 WHERE t2.NAVNID = TELEFON.NAVNID
-                    )
-                ) AS TELEFON ON Godkommu.NAVNID = TELEFON.NAVNID
-                LEFT JOIN Note ON Godkommu.NAVNID = Note.NAVNID AND Note.NOTE LIKE N'%gravid%'
-                WHERE
-                    (EMNEBREV LIKE N'%gravid%')
-                AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
-                AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'"""
+    query = f"""
+        SELECT
+            Godkommu.JOURNALDATO,
+            Godkommu.NAVNID,
+            navn.CPR,
+            navn.ADRESSE,
+            navn.DISTRIKT,
+            (
+                SELECT TOP 1 TELEFONNUMMER
+                FROM TELEFON
+                WHERE TELEFON.NAVNID = Godkommu.NAVNID
+                ORDER BY TS_UPDD DESC
+            ) AS TELEFONNUMMER,
+            (
+                SELECT STRING_AGG(Note.NOTE, '||') 
+                FROM Note 
+                WHERE Note.NAVNID = Godkommu.NAVNID AND Note.NOTE LIKE N'%gravid%'
+            ) AS NOTES
+        FROM
+            Godkommu
+        LEFT JOIN
+            navn ON Godkommu.NAVNID = navn.ID
+        LEFT JOIN
+            PERSONDISTRICT ON Godkommu.NAVNID = PERSONDISTRICT.NAVNID
+        WHERE
+            (EMNEBREV LIKE N'%gravid%')
+            AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
+            AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'
+    """ 
+    # REMOVED: PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT, (Believed to be historical data not needed)
 
     data = get_sql_data(query)
     if not data:
@@ -122,6 +130,9 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
         entry['parsed_address'] = parse_address(entry['ADRESSE'])
         entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
 
+        # Split the aggregated notes string into a list
+        notes_list = entry['NOTES'].split('||') if entry.get('NOTES') else []
+
         data_obj = UserData(
             cpr=entry['CPR'],
             navnid=entry['NAVNID'],
@@ -129,7 +140,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             district=entry['DISTRIKT'],
             tlf_nr=entry['TELEFONNUMMER'],
             timestamp=entry['JOURNALDATO'],
-            journal=entry['NOTE']
+            journal=notes_list
         )
         userdata_list.append(data_obj)
     return userdata_list
