@@ -65,5 +65,5 @@ def process_zylinc() -> None:
             df_activity.to_sql(table_name, con=conn, if_exists='replace', index=False, chunksize=1000)
         logger.info(f"Activity Data successfully inserted into PostgreSQL table: {table_name}")
     else:
-        logger.error(f"Failed to insert Activity Data into PostgreSQL table: {table_name}")
+        logger.error("Error processing Activity Data")
     logger.info("Zylinc Airflow DAG completed successfully!")

@@ -72,7 +72,7 @@ def fetch_queue_data_from_elasticsearch(queue_name: str, es_client, scroll_size:
     try:
         logger.info(f"Fetching data from Elasticsearch for queue: {queue_name}")
         body = {
-            "_source": ["QueueName", "Result", "AgentDisplayName", "ConversationEventType", "TotalDurationInMilliseconds", "EventDurationInMilliseconds", "ConversationEventType"],
+            "_source": ["QueueName", "Result", "AgentDisplayName", "ConversationEventType", "TotalDurationInMilliseconds", "EventDurationInMilliseconds"],
             "query": {
                 "match": {
                     "QueueName": queue_name
