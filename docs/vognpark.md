@@ -20,7 +20,7 @@ Kode består af et DAG-job, der udfører følgende trin:
 
 :key: | **Airflow Connections**
 
-**Postgrs DB:**
+**Postgres DB:**
 - **`vognpark_db`** Bruges som `Connection id` i Airflow til at hente host, database, user, pass og port til Postgres DB'en
 
 **SFTP:**
