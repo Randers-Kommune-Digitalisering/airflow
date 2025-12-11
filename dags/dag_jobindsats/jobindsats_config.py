@@ -111,7 +111,6 @@ JOBINDSATS_CONFIG = [
         "period_format": "M",
         "data_to_get": {}
     },
-
     {
         "name": "Barselsdagpenge",
         "years_back": 5,
