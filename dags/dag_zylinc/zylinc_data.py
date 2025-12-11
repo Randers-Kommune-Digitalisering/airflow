@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 
-def query_queue_elasticsearch(es_client, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
+def query_queue_elasticsearch(es_client: Any, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch queue data from Elasticsearch.
 
@@ -34,7 +34,7 @@ def query_queue_elasticsearch(es_client, scroll_size: int, body: dict) -> Option
         return None
 
 
-def scroll_all_hits(es_client, index: str, body: dict, scroll: str = '2m', size: int = 1000):
+def scroll_all_hits(es_client: Any, index: str, body: dict, scroll: str = '2m', size: int = 1000):
     """
     Generator that yields all hits from an Elasticsearch index using scroll.
 
@@ -60,7 +60,7 @@ def scroll_all_hits(es_client, index: str, body: dict, scroll: str = '2m', size:
         hits = page['hits']['hits']
 
 
-def fetch_queue_data_from_elasticsearch(queue_name: str, es_client, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
+def fetch_queue_data_from_elasticsearch(queue_name: str, es_client: Any, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch queue data from Elasticsearch for a specific queue.
 
@@ -93,7 +93,7 @@ def fetch_queue_data_from_elasticsearch(queue_name: str, es_client, scroll_size:
         return None
 
 
-def query_activity_data(es_client, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
+def query_activity_data(es_client: Any, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch activity data from Elasticsearch.
 
@@ -132,7 +132,7 @@ EXCLUDED_QUEUE_NAMES: List[str] = [
 ]
 
 
-def build_must_not_clause(excluded_names: List[str]) -> List[Dict[str, Dict[str, str]]]:
+def _build_must_not_clause(excluded_names: List[str]) -> List[Dict[str, Dict[str, str]]]:
     """
     Build must_not clause for Elasticsearch query.
 
@@ -142,7 +142,7 @@ def build_must_not_clause(excluded_names: List[str]) -> List[Dict[str, Dict[str,
     return [{"match": {"LastQueueDisplayName": name}} for name in excluded_names]
 
 
-def fetch_activity_data_from_elasticsearch(es_client, queue_name: str = "Jobcenter Randers", excluded_queues: List[str] = EXCLUDED_QUEUE_NAMES, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
+def fetch_activity_data_from_elasticsearch(es_client: Any, queue_name: str = "Jobcenter Randers", excluded_queues: List[str] = EXCLUDED_QUEUE_NAMES, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch activity data from Elasticsearch for a specific queue, excluding certain queues.
 
@@ -169,7 +169,7 @@ def fetch_activity_data_from_elasticsearch(es_client, queue_name: str = "Jobcent
                     "must": [
                         {"match": {"FirstQueueDisplayName": queue_name}}
                     ],
-                    "must_not": build_must_not_clause(excluded_queues)
+                    "must_not": _build_must_not_clause(excluded_queues)
                 }
             },
             "script_fields": {
