@@ -63,7 +63,7 @@ JOBINDSATS_CONFIG = [
         "data_to_get": {}
     },
     {
-        "name": "Sygedagppenge",
+        "name": "Sygedagpenge",
         "years_back": 5,
         "dataset": "y07a02",
         "period_format": "M",
