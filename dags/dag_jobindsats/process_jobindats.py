@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 def process_jobindsats() -> None:
     try:
-        logger.info('Starting jobindsats ETL job!')
         fetch_and_store_table_updates(http_conn_id=JOBINDSATS_HTTP_CONN_ID, db_conn_id=JOBINDSATS_DB_CONN_ID)
 
         for job in JOBINDSATS_CONFIG:
