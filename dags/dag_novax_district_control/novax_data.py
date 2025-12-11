@@ -46,18 +46,19 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: list = []):
-        self.cpr = cpr
-        self.navnid = navnid
-        self.current_address = address
-        self.current_district = district
-        self.current_tlf_nr = tlf_nr
-        self.timestamp = timestamp
-        self.journal = journal
+    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str = None):
+        self.cpr: str = cpr
+        self.navnid: int = navnid
+        self.current_address: Address = address
+        self.current_district: str = district
+        self.current_tlf_nr: str = tlf_nr
+        self.timestamp: datetime = timestamp
+        self.journal: str = journal
 
-        self.new_address = None
-        self.new_district = None
-        self.new_tlf_nr = None
+        self.new_address: Address = None
+        self.new_district: str = None
+        self.new_tlf_nr: str = None
+        self.parsed_journal: dict = None
 
         # # Get new address from CPR
         # cpr_address = cpr_client.lookup_address([self.cpr]) if self.cpr else None
@@ -98,9 +99,9 @@ class UserData:
             'current_district': self.current_district,
             'current_tlf_nr': self.current_tlf_nr,
             'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S') if self.timestamp else None,
-            'journal': self.journal,
             'new_address': self.new_address.to_dict() if hasattr(self.new_address, 'to_dict') else None,
             'new_district': self.new_district,
             'new_tlf_nr': self.new_tlf_nr,
+            'parsed_journal': self.parsed_journal,
             # 'address_info': self.address_info
         }

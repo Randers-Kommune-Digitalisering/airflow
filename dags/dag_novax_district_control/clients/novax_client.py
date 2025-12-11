@@ -85,7 +85,6 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
 
     :param from_date: The start date to filter records from (inclusive).
     :param to_date: The end date to filter records to (exclusive).
-    :return:
     """
     query = f"""
         SELECT
@@ -101,10 +100,13 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
                 ORDER BY TS_UPDD DESC
             ) AS TELEFONNUMMER,
             (
-                SELECT STRING_AGG(Note.NOTE, '||') 
-                FROM Note 
-                WHERE Note.NAVNID = Godkommu.NAVNID AND Note.NOTE LIKE N'%gravid%'
-            ) AS NOTES
+                SELECT TOP 1 NOTE
+                FROM Note
+                WHERE Note.NAVNID = Godkommu.NAVNID
+                  AND Note.NOTE LIKE N'%Orientering - Gravid%'
+                  AND CAST(Note.DATO AS DATE) = CAST(Godkommu.JOURNALDATO AS DATE)
+                ORDER BY TS_DATE DESC
+            ) AS NOTE
         FROM
             Godkommu
         LEFT JOIN
@@ -115,7 +117,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             (EMNEBREV LIKE N'%gravid%')
             AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
             AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'
-    """ 
+    """
     # REMOVED: PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT, (Believed to be historical data not needed)
 
     data = get_sql_data(query)
@@ -130,9 +132,6 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
         entry['parsed_address'] = parse_address(entry['ADRESSE'])
         entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
 
-        # Split the aggregated notes string into a list
-        notes_list = entry['NOTES'].split('||') if entry.get('NOTES') else []
-
         data_obj = UserData(
             cpr=entry['CPR'],
             navnid=entry['NAVNID'],
@@ -140,7 +139,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             district=entry['DISTRIKT'],
             tlf_nr=entry['TELEFONNUMMER'],
             timestamp=entry['JOURNALDATO'],
-            journal=notes_list
+            journal=entry['NOTE']
         )
         userdata_list.append(data_obj)
     return userdata_list

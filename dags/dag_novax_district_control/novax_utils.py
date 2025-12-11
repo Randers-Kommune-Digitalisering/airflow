@@ -42,28 +42,86 @@ def parse_address(address):
     )
 
 
-def beregn_termin(dato_str, gestations_uger, gestations_dage):
+def calculate_due(gestations_uger: int, gestations_dage: int, dato_str: str = None, dato_obj: datetime = None):
     """
     Beregn terminsdato ud fra en given dato og gestationsalder.
 
-    :param dato_str: Dato som string i formatet 'dd.mm.yyyy', fx '26.11.2025'
     :param gestations_uger: Antal fulde uger i gestationsalderen, fx 17
     :param gestations_dage: Antal dage i gestationsalderen, fx 1
-    :return: Terminsdato som datetime objekt
+    :param dato_str: Dato som string i formatet 'dd.mm.yyyy', fx '26.11.2025'
+    :param dato_obj: Dato som datetime objekt
     """
     # Convert dato_str to datetime object
-    dato = datetime.strptime(dato_str, '%d.%m.%Y')
+    if dato_obj is not None:
+        if not isinstance(dato_obj, datetime):
+            raise TypeError("dato_obj must be a datetime object")
+        dato = dato_obj
+    elif dato_str is not None:
+        dato = datetime.strptime(dato_str, '%d.%m.%Y')
+    else:
+        raise ValueError("Either dato_str or dato_obj must be provided")
     # Total gestational days
     gestations_total_dage = gestations_uger * 7 + gestations_dage
     # Normal pregnancy length in days
     pregnancy_days = 40 * 7  # 280 days
     # Days remaining until due date
     days_until_due = pregnancy_days - gestations_total_dage
-    # Calculate due date
-    due_date = dato + timedelta(days=days_until_due)
+    # Calculate due date (subtract 1 day to match clinical convention)
+    due_date = dato + timedelta(days=days_until_due - 1)
 
     return due_date
 
-# Example:
-# due_date = beregn_termin('26.11.2025', 17, 1)
-# print("Due date:", due_date.strftime('%d.%m.%Y'))
+
+def parse_journal_data(journal_string, journal_date=None):
+    """
+    Parse journal data from Novax to dict.
+
+    :param journal_string: Journal data as string.
+    """
+    address_match = re.search(r'ADRESSE:\s*(.+?)\r?\n', journal_string)
+    address = address_match.group(1).strip() if address_match else None
+
+    phone_match = re.search(r'(?:Tlf\.?|Mobil):\s*(\d+)\r?\n', journal_string)
+    phone = phone_match.group(1).strip() if phone_match else None
+
+    gest_match = re.search(r'Gestationsalder\r?\nUge:\s*(\d+),\s*Dag:\s*(\d+)\s', journal_string)
+    gest_week = int(gest_match.group(1)) if gest_match else None
+    gest_day = int(gest_match.group(2)) if gest_match else None
+
+    termin_match = re.search(
+        r'(?:T(?:ermin)?\s*:?\s*)(?P<date>(\d{1,2}[./]\d{1,2}[./-]\d{2,4}))',
+        journal_string
+    )
+    termin_str = termin_match.group('date') if termin_match else None
+    termin_date = None
+    if termin_str:
+        normalized = re.sub(r'[/-]', '.', termin_str)  # Normalize separators to dots
+        parts = normalized.split('.')  # Handle year: 2 or 4 digits
+        if len(parts) == 3:
+            day, month, year = parts
+            if len(year) == 2:
+                year = '20' + year
+            termin_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y')
+
+    # Calculate due date using gestational age and journal date
+    dato_str = None
+    dato_obj = None
+    if journal_date is not None:
+        dato_obj = journal_date
+    else:
+        afsendt_match = re.search(r'Afsendt:\s*(\d{2})-(\d{2})-(\d{4})', journal_string)
+        if afsendt_match:
+            dato_str = f"{afsendt_match.group(1)}.{afsendt_match.group(2)}.{afsendt_match.group(3)}"
+    if (dato_obj or dato_str) and gest_week is not None and gest_day is not None:
+        calculated_termin_date = calculate_due(gest_week, gest_day, dato_str=dato_str, dato_obj=dato_obj)
+    else:
+        calculated_termin_date = None
+
+    return {
+        'address': address,
+        'phone': phone,
+        'gestational_week': gest_week,
+        'gestational_day': gest_day,
+        'due_date': termin_date,
+        'calculated_due_date': calculated_termin_date
+    }
