@@ -5,8 +5,8 @@ from airflow.hooks.base import BaseHook
 from airflow.providers.elasticsearch.hooks.elasticsearch import ElasticsearchPythonHook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from dag_zylinc.zylinc_data import (
+    QUEUE_NAMES,
     fetch_queue_data_from_elasticsearch,
-    get_queue_names,
     fetch_activity_data_from_elasticsearch,
 )
 
@@ -38,11 +38,9 @@ def process_zylinc() -> None:
     zylinc_db_hook = PostgresHook(postgres_conn_id="zylinc_db")
     engine = zylinc_db_hook.get_sqlalchemy_engine()
 
-    queue_names = get_queue_names()
-
-    for queue_name in queue_names:
+    for queue_name in QUEUE_NAMES:
         logger.debug(f"Processing queue: {queue_name}")
-        data_to_insert = fetch_queue_data_from_elasticsearch(queue_name, es_client)
+        data_to_insert = fetch_queue_data_from_elasticsearch(es_client=es_client, queue_name=queue_name)
         if not data_to_insert:
             logger.debug(f"No data fetched for queue: {queue_name}")
             continue
@@ -53,16 +51,16 @@ def process_zylinc() -> None:
         logger.debug(f"Inserting data into table: {table_name}")
 
         with engine.begin() as conn:
-            df.to_sql(table_name, con=conn, if_exists='replace', index=False, chunksize=1000)
+            df.to_sql(name=table_name, con=conn, if_exists='replace', index=False, chunksize=1000)
             logger.info(f"Data successfully inserted into PostgreSQL table: {table_name}")
 
     logger.info("Processing Activity Data")
-    activity_data = fetch_activity_data_from_elasticsearch(es_client)
+    activity_data = fetch_activity_data_from_elasticsearch(es_client=es_client)
     if activity_data:
         df_activity = pd.DataFrame(activity_data)
         table_name = "zylinc_activity_data"
         with engine.begin() as conn:
-            df_activity.to_sql(table_name, con=conn, if_exists='replace', index=False, chunksize=1000)
+            df_activity.to_sql(name=table_name, con=conn, if_exists='replace', index=False, chunksize=1000)
         logger.info(f"Activity Data successfully inserted into PostgreSQL table: {table_name}")
     else:
         logger.error("Error processing Activity Data")
