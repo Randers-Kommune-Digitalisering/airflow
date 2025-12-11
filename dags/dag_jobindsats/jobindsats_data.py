@@ -29,12 +29,12 @@ def get_data(name: str, years_back: int, dataset: str, period_format: str, data_
         jobindsats_http_hook = HttpHook(http_conn_id=http_conn_id, method="POST")
         jobindsats_db_hook = PostgresHook(postgres_conn_id=db_conn_id)
 
-        latest_period = _period_request(dataset, period_format, jobindsats_http_hook)
+        latest_period = _period_request(dataset=dataset, period_format=period_format, jobindsats_http_hook=jobindsats_http_hook)
         if not latest_period:
             logger.error("Failed to get the latest period")
             return False
 
-        period = _dynamic_period(latest_period, years_back, period_format)
+        period = _dynamic_period(latest_period=latest_period, years_back=years_back, period_format=period_format)
         if not period:
             logger.error("Failed to generate periods")
             return False
