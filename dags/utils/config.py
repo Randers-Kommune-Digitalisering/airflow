@@ -11,3 +11,5 @@ DEFAULT_DAG_ARGS = {
 }
 
 VOGNPARK_SFTP_DIR = '/Vognpark/'
+JOBINDSATS_HTTP_CONN_ID = "jobindsats_api"
+JOBINDSATS_DB_CONN_ID = "jobindsats_dbB"
