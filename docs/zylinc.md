@@ -10,7 +10,7 @@ Formålet med jobbet er at hente telefoni data fra flere Zylinc-køer i Elastics
 Kode består af et DAG-job, der udfører følgende trin:
 
 - Connecter til Elasticsearch og henter telefoni data for hver kø i listen
-(`get_queue_names()`)
+(`QUEUE_NAMES`)
 - Følgende data hentes i Elasticsearch: (`QueueName`, `Result`, `AgentDisplayName`, `ConversationEventType`, `StartTimeUtc`, `TotalDurationInMilliseconds`, `EventDurationInMilliseconds`)
 - Dataen gemmes i en Postgres Database, én tabel pr. kø (`zylinc_<kønavn>`)
 

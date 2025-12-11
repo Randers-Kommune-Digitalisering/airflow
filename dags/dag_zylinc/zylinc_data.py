@@ -1,10 +1,37 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Generator
+from elasticsearch import Elasticsearch
 
 logger = logging.getLogger(__name__)
 
+QUEUE_NAMES: List[str] = [
+    "IT_Digitalisering_1818",
+    "Jobcenter Randers",
+    "Jobcenter_Fleksgruppen_7734",
+    "Jobcenter_Jobservice_7733",
+    "Jobcenter_JobogTilknytning_7732",
+    "Jobcenter_Udviklingshuset_7735",
+    "Jobcenter_Sygedagpenge_7732",
+    "Jobcenter_Team Integration_7738",
+    "Hovednummer_89151515",
+    "TM_Byggesag_5100",
+    "Borgerservice_Boliglån_1984",
+    "Borgerservice_Folkeregister_1978",
+    "Borgerservice_Pas_Korekort_89159000",
+    "Borgerservice_Pension_89151986",
+    "Borgerservice_Team Information_89159001",
+    "Omstillingen"
+]
 
-def query_queue_elasticsearch(es_client: Any, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
+EXCLUDED_QUEUE_NAMES: List[str] = [
+    "Omstillingen",
+    "Jobcenter Randers",
+    "UURanders_4747",
+    "Ydelseskontor_Team HTF_7194"
+]
+
+
+def _query_queue_elasticsearch(es_client: Elasticsearch, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch queue data from Elasticsearch.
 
@@ -14,7 +41,7 @@ def query_queue_elasticsearch(es_client: Any, scroll_size: int, body: dict) -> O
     :return: List of dicts with queue data or None if error.
     """
     try:
-        all_hits = scroll_all_hits(es_client, index="conversation-events-1", body=body, scroll='2m', size=scroll_size)
+        all_hits = _scroll_all_hits(es_client=es_client, index="conversation-events-1", body=body, scroll='2m', size=scroll_size)
         data_to_insert = []
         for hit in all_hits:
             source = hit['_source']
@@ -34,7 +61,7 @@ def query_queue_elasticsearch(es_client: Any, scroll_size: int, body: dict) -> O
         return None
 
 
-def scroll_all_hits(es_client: Any, index: str, body: dict, scroll: str = '2m', size: int = 1000):
+def _scroll_all_hits(es_client: Elasticsearch, index: str, body: dict, scroll: str = '2m', size: int = 1000) -> Generator[Dict[str, Any], None, None]:
     """
     Generator that yields all hits from an Elasticsearch index using scroll.
 
@@ -60,40 +87,7 @@ def scroll_all_hits(es_client: Any, index: str, body: dict, scroll: str = '2m', 
         hits = page['hits']['hits']
 
 
-def fetch_queue_data_from_elasticsearch(queue_name: str, es_client: Any, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
-    """
-    Fetch queue data from Elasticsearch for a specific queue.
-
-    :param queue_name: Name of the queue.
-    :param es_client: Elasticsearch client instance.
-    :param scroll_size: Number of results per scroll.
-    :return: List of dicts with queue data or None if error.
-    """
-    try:
-        logger.info(f"Fetching data from Elasticsearch for queue: {queue_name}")
-        body = {
-            "_source": ["QueueName", "Result", "AgentDisplayName", "ConversationEventType", "TotalDurationInMilliseconds", "EventDurationInMilliseconds"],
-            "query": {
-                "match": {
-                    "QueueName": queue_name
-                }
-            },
-            "script_fields": {
-                "FormattedStartTimeUtc": {
-                    "script": {
-                        "source": "SimpleDateFormat format = new SimpleDateFormat('yyyy-MM-dd HH:mm:ss'); return format.format(new Date(doc['StartTimeUtc'].value.toInstant().toEpochMilli()));"
-                    }
-                }
-            }
-        }
-        data_to_insert = query_queue_elasticsearch(es_client, scroll_size, body)
-        return data_to_insert
-    except Exception as e:
-        logger.error(f"Error fetching data from Elasticsearch for queue {queue_name}: {e}")
-        return None
-
-
-def query_activity_data(es_client: Any, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
+def _query_activity_data(es_client: Elasticsearch, scroll_size: int, body: dict) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch activity data from Elasticsearch.
 
@@ -103,7 +97,7 @@ def query_activity_data(es_client: Any, scroll_size: int, body: dict) -> Optiona
     :return: List of dicts with activity data or None if error.
     """
     try:
-        all_hits = scroll_all_hits(es_client, index="clientprod-t19n-activity-data-6", body=body, scroll='2m', size=scroll_size)
+        all_hits = _scroll_all_hits(es_client=es_client, index="clientprod-t19n-activity-data-6", body=body, scroll='2m', size=scroll_size)
         data_to_insert = []
         for hit in all_hits:
             source = hit['_source']
@@ -124,14 +118,6 @@ def query_activity_data(es_client: Any, scroll_size: int, body: dict) -> Optiona
         return None
 
 
-EXCLUDED_QUEUE_NAMES: List[str] = [
-    "Omstillingen",
-    "Jobcenter Randers",
-    "UURanders_4747",
-    "Ydelseskontor_Team HTF_7194"
-]
-
-
 def _build_must_not_clause(excluded_names: List[str]) -> List[Dict[str, Dict[str, str]]]:
     """
     Build must_not clause for Elasticsearch query.
@@ -142,7 +128,40 @@ def _build_must_not_clause(excluded_names: List[str]) -> List[Dict[str, Dict[str
     return [{"match": {"LastQueueDisplayName": name}} for name in excluded_names]
 
 
-def fetch_activity_data_from_elasticsearch(es_client: Any, queue_name: str = "Jobcenter Randers", excluded_queues: List[str] = EXCLUDED_QUEUE_NAMES, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
+def fetch_queue_data_from_elasticsearch(es_client: Elasticsearch, queue_name: str, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
+    """
+    Fetch queue data from Elasticsearch for a specific queue.
+
+    :param es_client: Elasticsearch client instance.
+    :param queue_name: Name of the queue.
+    :param scroll_size: Number of results per scroll.
+    :return: List of dicts with queue data or None if error.
+    """
+    try:
+        logger.info(f"Fetching data from Elasticsearch for queue: {queue_name}")
+        body = {
+            "_source": ["QueueName", "Result", "AgentDisplayName", "ConversationEventType", "TotalDurationInMilliseconds", "EventDurationInMilliseconds"],
+            "query": {
+                "match": {
+                    "QueueName": queue_name
+                }
+            },
+            "script_fields": {
+                "FormattedStartTimeUtc": {
+                    "script": {
+                        "source": "SimpleDateFormat format = new SimpleDateFormat('yyyy-MM-dd HH:mm:ss'); return format.format(new Date(doc['StartTimeUtc'].value.toInstant().toEpochMilli()));"
+                    }
+                }
+            }
+        }
+        data_to_insert = _query_queue_elasticsearch(es_client=es_client, scroll_size=scroll_size, body=body)
+        return data_to_insert
+    except Exception as e:
+        logger.error(f"Error fetching data from Elasticsearch for queue {queue_name}: {e}")
+        return None
+
+
+def fetch_activity_data_from_elasticsearch(es_client: Elasticsearch, queue_name: str = "Jobcenter Randers", excluded_queues: List[str] = EXCLUDED_QUEUE_NAMES, scroll_size: int = 1000) -> Optional[List[Dict[str, Any]]]:
     """
     Fetch activity data from Elasticsearch for a specific queue, excluding certain queues.
 
@@ -169,7 +188,7 @@ def fetch_activity_data_from_elasticsearch(es_client: Any, queue_name: str = "Jo
                     "must": [
                         {"match": {"FirstQueueDisplayName": queue_name}}
                     ],
-                    "must_not": _build_must_not_clause(excluded_queues)
+                    "must_not": _build_must_not_clause(excluded_names=excluded_queues)
                 }
             },
             "script_fields": {
@@ -199,35 +218,8 @@ def fetch_activity_data_from_elasticsearch(es_client: Any, queue_name: str = "Jo
                 }
             }
         }
-        data_to_insert = query_activity_data(es_client, scroll_size, body)
+        data_to_insert = _query_activity_data(es_client=es_client, scroll_size=scroll_size, body=body)
         return data_to_insert
     except Exception as e:
         logger.error(f"Error fetching data from clientprod-t19n-activity-data-6: {e}")
         return None
-
-
-def get_queue_names() -> List[str]:
-    """
-    Returns a list of queue names.
-
-    :return: List of queue names.
-    """
-    queue_names = [
-        "IT_Digitalisering_1818",
-        "Jobcenter Randers",
-        "Jobcenter_Fleksgruppen_7734",
-        "Jobcenter_Jobservice_7733",
-        "Jobcenter_JobogTilknytning_7732",
-        "Jobcenter_Udviklingshuset_7735",
-        "Jobcenter_Sygedagpenge_7732",
-        "Jobcenter_Team Integration_7738",
-        "Hovednummer_89151515",
-        "TM_Byggesag_5100",
-        "Borgerservice_Boliglån_1984",
-        "Borgerservice_Folkeregister_1978",
-        "Borgerservice_Pas_Korekort_89159000",
-        "Borgerservice_Pension_89151986",
-        "Borgerservice_Team Information_89159001",
-        "Omstillingen"
-    ]
-    return queue_names
