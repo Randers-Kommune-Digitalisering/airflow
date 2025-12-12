@@ -5,8 +5,11 @@ import pandas as pd
 from airflow.hooks.base import BaseHook
 from sqlalchemy import create_engine
 from datetime import datetime
+import logging
 
 from dag_novax_district_control.novax_utils import parse_address
+
+logger = logging.getLogger(__name__)
 
 
 def get_sqlalchemy_engine():
@@ -35,7 +38,7 @@ def test_connection() -> bool:
         return False
 
 
-def get_sql_data(query) -> list[dict]:
+def get_sql_data(query: str) -> list[dict]:
     engine = get_sqlalchemy_engine()
     conn = None
     try:
@@ -56,7 +59,7 @@ def get_sql_data(query) -> list[dict]:
             conn.close()
 
 
-def update_sql_data(query) -> bool:
+def update_sql_data(query: str) -> bool:
     engine = get_sqlalchemy_engine()
     conn = None
     try:
@@ -145,56 +148,94 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     return userdata_list
 
 
-def get_test_data(cpr=None) -> list[UserData]:
-    query = """ SELECT
-                    Godkommu.JOURNALDATO,
-                    Godkommu.NAVNID,
-                    navn.CPR,
-                    navn.ADRESSE,
-                    navn.DISTRIKT,
-                    PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT,
-                    TELEFON.TELEFONNUMMER,
-                    Note.NOTE
-                FROM Godkommu
-                LEFT JOIN navn ON Godkommu.NAVNID = navn.ID
-                LEFT JOIN PERSONDISTRICT ON Godkommu.NAVNID = PERSONDISTRICT.NAVNID
-                JOIN (
-                    SELECT NAVNID, TELEFONNUMMER
-                    FROM TELEFON
-                    WHERE TS_UPDD = (
-                        SELECT MAX(TS_UPDD) FROM TELEFON t2 WHERE t2.NAVNID = TELEFON.NAVNID
-                    )
-                ) AS TELEFON ON Godkommu.NAVNID = TELEFON.NAVNID
-                LEFT JOIN Note ON Godkommu.NAVNID = Note.NAVNID AND Note.NOTE LIKE N'%gravid%'
-                WHERE (EMNEBREV LIKE N'%gravid%')"""
-    if cpr:
-        query += f" AND navn.CPR = '{cpr}'"
-    else:
-        query += " LIMIT 1"
+def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
+    """
+    Updates the DISTRIKT field for a given NAVNID in the navn table.
 
-    data = get_sql_data(query)
-    if not data:
-        return []
+    :param navnid: The NAVNID of the record to update (required).
+    :param due_date: The new due date to set (optional).
+    :param new_district: The new district value to set (optional).
+    :param new_address: The new address to set (optional).
+    :param new_tlf_nr: The new telephone number to set (optional).
+    """
+    if due_date is None and new_district is None and new_address is None and new_tlf_nr is None:
+        return True  # Nothing to update
 
-    userdata_list = []
-    for entry in data:
-        for k, v in entry.items():
-            if isinstance(v, str):
-                entry[k] = v.strip()
-        entry['parsed_address'] = parse_address(entry['ADRESSE'])
-        entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
+    success = []
 
-        data_obj = UserData(
-            cpr=entry['CPR'],
-            navnid=entry['NAVNID'],
-            address=entry['parsed_address'],
-            district=entry['DISTRIKT'],
-            tlf_nr=entry['TELEFONNUMMER'],
-            timestamp=entry['JOURNALDATO'],
-            journal=entry['NOTE']
-        )
-        userdata_list.append(data_obj)
-    return userdata_list
+    # Update due date if provided
+    if due_date is not None:
+        due_date_str = due_date.strftime('%Y-%m-%d %H:%M:%S')
+        query = f"""
+            UPDATE NAVNDETALJER
+            SET TERMIN = CAST('{due_date_str}' AS DATETIME)
+            WHERE ID = {navnid}
+        """
+        res = update_sql_data(query)
+        success.append(res)
+        logger.info(f"Updated NAVNDETALJER.TERMIN for NAVNID {navnid} to {due_date_str} {'was successful' if res else 'failed'}.")
+
+    # Update district if provided
+    if new_district is not None:
+        query1 = f"""
+            UPDATE navn
+            SET DISTRIKT = N'{new_district}'
+            WHERE ID = {navnid}
+        """
+        res1 = update_sql_data(query1)
+        success.append(res1)
+        logger.info(f"Updated navn.DISTRIKT for NAVNID {navnid} to {new_district} {'was successful' if res1 else 'failed'}.")
+
+        query2 = f"""
+            UPDATE PERSONDISTRICT
+            SET DISTRICT = N'{new_district}'
+            WHERE NAVNID = {navnid}
+            AND DATEFROM <= GETDATE()
+            AND (DATETO IS NULL OR DATETO >= GETDATE() OR DATETO = '1753-01-01 00:00:00.000')
+        """
+        res2 = update_sql_data(query2)
+        success.append(res2)
+        logger.info(f"Updated PERSONDISTRICT.DISTRICT for NAVNID {navnid} to {new_district} {'was successful' if res2 else 'failed'}.")
+
+    # Update address if provided
+    if new_address is not None:
+        query = f"""
+            UPDATE navn
+            SET ADRESSE = N'{new_address}'
+            WHERE ID = {navnid}
+        """
+        res = update_sql_data(query)
+        success.append(res)
+        logger.info(f"Updated navn.ADRESSE for NAVNID {navnid} to {new_address} {'was successful' if res else 'failed'}.")
+
+    # Update telephone number if provided
+    if new_tlf_nr is not None:
+        query = f"""
+            UPDATE TELEFON
+            SET TELEFONNUMMER = N'{new_tlf_nr}'
+            WHERE NAVNID = {navnid}
+            AND TS_UPDD = (
+                SELECT MAX(TS_UPDD)
+                FROM TELEFON
+                WHERE NAVNID = {navnid}
+            )
+        """
+        res = update_sql_data(query)
+        success.append(res)
+        logger.info(f"Updated TELEFON.TELEFONNUMMER for NAVNID {navnid} to {new_tlf_nr} {'was successful' if res else 'failed'}.")
+
+    # Also update area code to 730
+    query = f"""
+        UPDATE NAVNDETALJER
+        SET TS_KOMID = 730,
+            KOMMUNE_OPR = 730
+        WHERE ID = {navnid}
+    """
+    res = update_sql_data(query)
+    success.append(res)
+    logger.info(f"Updated NAVNDETALJER.TS_KOMID and NAVNDETALJER.KOMMUNE_OPR for NAVNID {navnid} to 730 {'was successful' if res else 'failed'}.")
+
+    return success
 
 
 def get_test_data_move() -> list[dict]:

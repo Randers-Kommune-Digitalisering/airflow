@@ -12,11 +12,11 @@ class Address:
     def __init__(self, street: str = None, number: str = None, postal_code: str = None, city: str = None, full_address: str = None):
         # Initialize from address components
         if street and number and postal_code:
-            self.street = street
-            self.number = number
-            self.postal_code = postal_code
-            self.city = city  # optional
-            self.full_address = f"{street} {number}, {postal_code} {city}" if city else f"{street} {number}, {postal_code}"
+            self.street: str = street
+            self.number: str = number
+            self.postal_code: str = postal_code
+            self.city: str = city  # optional
+            self.full_address: str = f"{street} {number}, {postal_code} {city}" if city else f"{street} {number}, {postal_code}"
 
         # Initialize from full_address, parsing it into components
         elif full_address:

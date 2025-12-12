@@ -59,13 +59,14 @@ def check_and_update_district(from_date=None, to_date=None) -> None:
             else:
                 logger.warning(f"No address found for CPR: {entry.cpr}")
 
-        # Look up address details in Dataforsyning if new address found
+        # Determine which address to use for district lookup
         lookup_address = entry.new_address if (
             entry.new_address.street != entry.current_address.street or
             entry.new_address.number != entry.current_address.number or
             entry.new_address.postal_code != entry.current_address.postal_code
         ) else entry.current_address
 
+        # Look up address details for district info in Dataforsyning
         address_info = dataforsyning_client.lookup_address(lookup_address.full_address)
         if address_info and address_info.get('adgangsadresse', {}).get('x') and address_info.get('adgangsadresse', {}).get('y'):
             entry.new_district = map_client.get_district(address_info['adgangsadresse']['x'], address_info['adgangsadresse']['y'])
