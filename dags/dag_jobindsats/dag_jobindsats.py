@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 from utils.config import DEFAULT_DAG_ARGS
-from dags.dag_jobindsats.process_jobindsats import process_jobindsats
+from dag_jobindsats.process_jobindsats import process_jobindsats
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
