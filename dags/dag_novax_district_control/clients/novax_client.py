@@ -106,22 +106,35 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
                 SELECT TOP 1 NOTE
                 FROM Note
                 WHERE Note.NAVNID = Godkommu.NAVNID
-                  AND Note.NOTE LIKE N'%Orientering - Gravid%'
-                  AND CAST(Note.DATO AS DATE) = CAST(Godkommu.JOURNALDATO AS DATE)
+                AND Note.NOTE LIKE N'%Orientering - Gravid%'
+                AND CAST(Note.DATO AS DATE) = CAST(Godkommu.JOURNALDATO AS DATE)
                 ORDER BY TS_DATE DESC
             ) AS NOTE
         FROM
             Godkommu
         LEFT JOIN
             navn ON Godkommu.NAVNID = navn.ID
-        LEFT JOIN
-            PERSONDISTRICT ON Godkommu.NAVNID = PERSONDISTRICT.NAVNID
         WHERE
             (EMNEBREV LIKE N'%gravid%')
             AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
             AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'
+        GROUP BY
+            Godkommu.JOURNALDATO,
+            Godkommu.NAVNID,
+            navn.CPR,
+            navn.ADRESSE,
+            navn.DISTRIKT
     """
-    # REMOVED: PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT, (Believed to be historical data not needed)
+
+    # If PERSONDISTRICT.DISTRICT is needed, use a subquery to get only the latest/current row per NAVNID.
+    # Example:
+    # LEFT JOIN (
+    #     SELECT NAVNID, DISTRICT
+    #     FROM (
+    #         SELECT *, ROW_NUMBER() OVER (PARTITION BY NAVNID ORDER BY DATEFROM DESC) AS rn
+    #         FROM PERSONDISTRICT
+    #     ) pd WHERE rn = 1
+    # ) pd ON Godkommu.NAVNID = pd.NAVNID
 
     data = get_sql_data(query)
     if not data:
@@ -160,6 +173,10 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
     """
     if due_date is None and new_district is None and new_address is None and new_tlf_nr is None:
         return True  # Nothing to update
+
+    if navnid is None:
+        logger.error("NAVNID is required to update Novax userdata.")
+        return False
 
     success = []
 
