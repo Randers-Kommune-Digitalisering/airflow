@@ -60,37 +60,6 @@ class UserData:
         self.new_tlf_nr: str = None
         self.parsed_journal: dict = None
 
-        # # Get new address from CPR
-        # cpr_address = cpr_client.lookup_address([self.cpr]) if self.cpr else None
-        # if cpr_address:
-        #     address_str = cpr_address.get('aktuelAdresse', {}).get('standardadresse', '') + ' ' + cpr_address.get('aktuelAdresse', {}).get('postnummer', '')
-        #     self.new_address = parse_address(address_str)  # Parse new address
-        # else:
-        #     self.new_address = self.current_address  # Default to current address if no new address found
-
-        # # Lookup address details from Dataforsyningen (get coordinates)
-        # address_details = dataforsyning_client.lookup_address(self.new_address.full_address if self.new_address else self.current_address.full_address)
-        # if address_details:
-        #     self.new_address.x = address_details.get('adgangsadresse', {}).get('x')
-        #     self.new_address.y = address_details.get('adgangsadresse', {}).get('y')
-        #     if self.new_address.city is None:
-        #         self.new_address.city = address_details.get('adgangsadresse', {}).get('postnrnavn')
-
-        # self.new_district = self.get_new_district(self.new_address if self.new_address else self.current_address)
-
-    # def get_new_district(self, address: Address):
-    #     # address_info = dataforsyning_client.lookup_address(address.full_address)
-    #     if not address or not address.x or not address.y:
-    #         raise ValueError("Address must have valid coordinates (x, y) to determine district.")
-
-    #     if address.x and address.y:
-    #         self.new_district = map_client.get_district(address.x, address.y)
-    #     else:
-    #         self.new_district = None
-    #         raise ValueError("Could not find new district for the given address.")
-
-    #     return self.new_district
-
     def to_dict(self):
         return {
             'cpr': self.cpr,
@@ -102,6 +71,5 @@ class UserData:
             'new_address': self.new_address.to_dict() if hasattr(self.new_address, 'to_dict') else None,
             'new_district': self.new_district,
             'new_tlf_nr': self.new_tlf_nr,
-            'parsed_journal': self.parsed_journal,
-            # 'address_info': self.address_info
+            'parsed_journal': self.parsed_journal
         }

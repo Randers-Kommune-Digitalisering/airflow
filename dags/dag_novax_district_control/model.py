@@ -5,19 +5,21 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 
-class History(Base):
-    __tablename__ = 'runs'
+class NovaxHistory(Base):
+    __tablename__ = 'novax_runs'
     id = Column(Integer, primary_key=True)
     ts = Column(DateTime, nullable=False)
     duration = Column(Integer, nullable=False)
     completed = Column(Boolean, nullable=False)
-    records = relationship('Record', back_populates='history')
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    records = relationship('NovaxRecord', back_populates='history')
 
 
-class Record(Base):
-    __tablename__ = 'records'
+class NovaxRecord(Base):
+    __tablename__ = 'novax_records'
     id = Column(Integer, primary_key=True)
     nameid = Column(Integer, nullable=False)
     success = Column(Boolean, nullable=False)
-    runid = Column(Integer, ForeignKey('runs.id'))
-    history = relationship('History', back_populates='records')
+    runid = Column(Integer, ForeignKey('novax_runs.id'))
+    history = relationship('NovaxHistory', back_populates='records')
