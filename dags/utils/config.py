@@ -9,5 +9,3 @@ DEFAULT_DAG_ARGS = {
     "email_on_failure": True,
     "email_on_retry": False,
 }
-
-VOGNPARK_SFTP_DIR = '/Vognpark/'
