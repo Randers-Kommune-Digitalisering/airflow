@@ -40,7 +40,6 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
         headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
         res = http_hook.run(
-            method="POST",
             endpoint=f'v2/data/{dataset}/json',
             headers=headers,
             data=json.dumps(payload)
@@ -192,7 +191,6 @@ def fetch_and_store_table_updates(http_hook: HttpHook, db_engine: Engine) -> boo
         headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
         response = http_hook.run(
-            method="POST",
             endpoint='v2/tables/json',
             headers=headers,
             data="{}"
