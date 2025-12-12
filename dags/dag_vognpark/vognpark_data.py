@@ -1,7 +1,6 @@
 import io
 import pandas as pd
 import logging
-from utils.config import VOGNPARK_SFTP_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +30,7 @@ def read_vognpark_excel_from_sftp(sftp_client, remote_path: str) -> pd.DataFrame
     return df
 
 
-def get_latest_vognpark_excel_path(sftp_client, directory: str = VOGNPARK_SFTP_DIR) -> str | None:
+def get_latest_vognpark_excel_path(sftp_client, directory: str = "/Vognpark/") -> str | None:
     """
     Finds the latest Excel file in the given SFTP directory and returns its path.
     """
