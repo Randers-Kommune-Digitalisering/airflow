@@ -5,31 +5,28 @@ import pandas as pd
 from datetime import datetime
 from typing import List, Optional
 from airflow.providers.http.hooks.http import HttpHook
-from airflow.providers.postgres.hooks.postgres import PostgresHook
+from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
 
-def get_data(name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]], http_conn_id: str, db_conn_id: str) -> bool:
+def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]]) -> bool:
     """
     Fetch data from the Jobindsats API, transform it into a DataFrame, and store it in the database.
 
+    :param http_hook: HttpHook for the Jobindsats API.
+    :param db_engine: SQLAlchemy Engine for the database.
     :param name: Name of the jobindsats
     :param years_back: Number of years back to fetch data for.
     :param dataset: Dataset name in the Jobindsats API.
     :param period_format: Format of the periods ('QMAT', 'Q', 'M').
     :param data_to_get: Dictionary with additional data fields for the API call.
-    :param http_conn_id: Airflow connection id for the Jobindsats API.
-    :param db_conn_id: Airflow connection id for the database.
     :return: True if data was fetched and stored successfully, otherwise False.
     """
     try:
         logger.info(f"Starting jobindsats: {name}")
 
-        jobindsats_http_hook = HttpHook(http_conn_id=http_conn_id, method="POST")
-        jobindsats_db_hook = PostgresHook(postgres_conn_id=db_conn_id)
-
-        latest_period = _period_request(dataset=dataset, period_format=period_format, jobindsats_http_hook=jobindsats_http_hook)
+        latest_period = _period_request(http_hook=http_hook, dataset=dataset, period_format=period_format)
         if not latest_period:
             logger.error("Failed to get the latest period")
             return False
@@ -40,9 +37,10 @@ def get_data(name: str, years_back: int, dataset: str, period_format: str, data_
             return False
 
         payload = {"area": "*", "period": period} | data_to_get
-        headers = _get_jobindsats_api_headers(http_hook=jobindsats_http_hook)
+        headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
-        res = jobindsats_http_hook.run(
+        res = http_hook.run(
+            method="POST",
             endpoint=f'v2/data/{dataset}/json',
             headers=headers,
             data=json.dumps(payload)
@@ -69,8 +67,7 @@ def get_data(name: str, years_back: int, dataset: str, period_format: str, data_
 
         output_table = f"jobindsats_{dataset.replace('_', '').lower()}"
 
-        engine = jobindsats_db_hook.get_sqlalchemy_engine()
-        df.to_sql(name=output_table, con=engine, if_exists='replace', index=False)
+        df.to_sql(name=output_table, con=db_engine, if_exists='replace', index=False)
         logger.info(f"Successfully saved {output_table} to the database")
         return True
 
@@ -142,19 +139,19 @@ def _convert_to_datetime(period_str: str) -> datetime:
     return datetime(year, month, 1)
 
 
-def _period_request(dataset: str, period_format: str, jobindsats_http_hook: HttpHook) -> Optional[str]:
+def _period_request(http_hook: HttpHook, dataset: str, period_format: str) -> Optional[str]:
     """
     Fetch the latest period for a dataset from the Jobindsats API.
 
+    :param http_hook: HttpHook for the Jobindsats API.
     :param dataset: Name of the dataset.
     :param period_format: Format of the periods ('QMAT', 'Q', 'M').
-    :param jobindsats_http_hook: HttpHook for the Jobindsats API.
     :return: Latest period as a string, or None if not found.
     """
     try:
-        headers = _get_jobindsats_api_headers(http_hook=jobindsats_http_hook)
+        headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
-        res = jobindsats_http_hook.run(
+        res = http_hook.run(
             endpoint=f'v2/tables/{dataset}/json/',
             headers=headers,
             data="{}"
@@ -182,22 +179,20 @@ def _period_request(dataset: str, period_format: str, jobindsats_http_hook: Http
         return None
 
 
-def fetch_and_store_table_updates(http_conn_id: str, db_conn_id: str) -> bool:
+def fetch_and_store_table_updates(http_hook: HttpHook, db_engine: Engine) -> bool:
     """
     Fetch table metadata from the Jobindsats API and store it in the database.
 
-    :param http_conn_id: Airflow connection id for the Jobindsats API.
-    :param db_conn_id: Airflow connection id for the database.
+    :param http_hook: HttpHook for the Jobindsats API.
+    :param db_engine: SQLAlchemy Engine for the database.
     :return: True if metadata was fetched and stored successfully, otherwise False.
     """
     try:
         logger.info("Fetching tables metadata from jobindsats API")
-        jobindsats_http_hook = HttpHook(http_conn_id=http_conn_id, method="POST")
-        jobindsats_db_hook = PostgresHook(postgres_conn_id=db_conn_id)
+        headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
-        headers = _get_jobindsats_api_headers(http_hook=jobindsats_http_hook)
-
-        response = jobindsats_http_hook.run(
+        response = http_hook.run(
+            method="POST",
             endpoint='v2/tables/json',
             headers=headers,
             data="{}"
@@ -222,8 +217,7 @@ def fetch_and_store_table_updates(http_conn_id: str, db_conn_id: str) -> bool:
         df_updates = pd.DataFrame(updates)
         output_table = "jobindsats_table_updates"
 
-        engine = jobindsats_db_hook.get_sqlalchemy_engine()
-        df_updates.to_sql(name=output_table, con=engine, if_exists='replace', index=False)
+        df_updates.to_sql(name=output_table, con=db_engine, if_exists='replace', index=False)
         logger.info(f"Successfully saved {output_table} to the database")
         return True
 
