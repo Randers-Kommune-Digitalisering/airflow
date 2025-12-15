@@ -1,4 +1,3 @@
-import asyncio
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy.orm import Session as SqlalchemySession
 from dag_novax_district_control.model import NovaxHistory, Base
@@ -45,9 +44,8 @@ def get_last_run_info() -> dict:
                 'status': None
             }
 
-
     # with engine.connect() as conn:
-    #   
+    #
     #     result = conn.execute("SELECT last_run_date, status FROM novax_district_control_runs ORDER BY last_run_date DESC LIMIT 1")
     #     row = result.fetchone()
     #     if row:

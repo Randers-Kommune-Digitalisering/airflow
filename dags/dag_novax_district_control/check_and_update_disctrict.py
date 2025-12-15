@@ -24,20 +24,22 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
     :param to_date: The end date to filter records to.
     """
     # Get last run dates and status if from_date and to_date not set
-    if (not from_date and not to_date):
-        # TODO: Get actual last run info from DB
+    today = datetime.datetime.now().date()
+    if not from_date:
         last_run_info = get_last_run_info()
-        print(last_run_info)
+        last_run_date = last_run_info['last_run_end_date']
 
-        return
-        last_run_date = (datetime.datetime.now() - datetime.timedelta(days=1)).date()
-        today = datetime.datetime.now().date()
-        logger.info(f"Starting check_and_update_district from {last_run_date} to {today}")
+        # If no last run date, default to yesterday
+        if not last_run_date:
+            last_run_date = (datetime.datetime.now() - datetime.timedelta(days=1)).date()
 
         # Check if last run date is today
         if last_run_date >= today:
             logger.info("Last run date is today or in the future. No action needed.")
             return
+
+    logger.info(f"Starting check_and_update_district from {last_run_date} to {today}")
+    return
 
     # Get data from Novax and parse to UserData (+Address) objects
     res = get_pregnancy_journals(from_date=from_date or last_run_date, to_date=to_date or today)
