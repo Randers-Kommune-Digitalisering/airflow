@@ -4,6 +4,7 @@ import datetime
 
 from dag_novax_district_control.clients.novax_client import get_pregnancy_journals  # , get_test_data, get_test_data_move, test_connection
 from dag_novax_district_control.novax_utils import parse_address, parse_journal_data
+from dag_novax_district_control.clients.db_client import get_last_run_info
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
 
@@ -14,7 +15,7 @@ cpr_client = CPRClient()
 logger = logging.getLogger(__name__)
 
 
-def check_and_update_district(from_date=None, to_date=None) -> None:
+async def check_and_update_district(from_date=None, to_date=None) -> None:
     """
     Retrieves and updates user, address and district information
     for any new patients based on their addresses.
@@ -25,7 +26,10 @@ def check_and_update_district(from_date=None, to_date=None) -> None:
     # Get last run dates and status if from_date and to_date not set
     if (not from_date and not to_date):
         # TODO: Get actual last run info from DB
-        # last_run_info = get_last_run_info()
+        last_run_info = get_last_run_info()
+        print(last_run_info)
+
+        return
         last_run_date = (datetime.datetime.now() - datetime.timedelta(days=1)).date()
         today = datetime.datetime.now().date()
         logger.info(f"Starting check_and_update_district from {last_run_date} to {today}")
@@ -79,3 +83,12 @@ def check_and_update_district(from_date=None, to_date=None) -> None:
         print(entry.to_dict())
 
         # TODO: Update Novax with new address, phone number, district if changed + due date
+
+
+# Synchronous wrapper for Airflow
+def check_and_update_district_task(**kwargs):
+    """
+    Synchronous wrapper to run the async check_and_update_district function for Airflow compatibility.
+    """
+    import asyncio
+    asyncio.run(check_and_update_district())

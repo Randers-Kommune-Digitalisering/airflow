@@ -4,7 +4,7 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_novax_district_control.check_and_update_disctrict import check_and_update_district
+from dag_novax_district_control.check_and_update_disctrict import check_and_update_district_task
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
@@ -22,6 +22,6 @@ with DAG(
 
     task = PythonOperator(
         task_id="check_and_update_district_task",
-        python_callable=check_and_update_district,
+        python_callable=check_and_update_district_task,
         op_kwargs={}
     )
