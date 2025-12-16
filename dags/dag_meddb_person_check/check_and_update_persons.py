@@ -64,7 +64,7 @@ def check_and_update_persons() -> None:
                             if duplicate:
                                 meta_session.query(CommitteeMembership).filter(
                                     CommitteeMembership.person_id == duplicate.id
-                                ).update({CommitteeMembership.person_id: person.id})
+                                ).update({CommitteeMembership.person_id: person.id}, synchronize_session='fetch')
                                 meta_session.delete(duplicate)
                                 meta_session.flush()
 

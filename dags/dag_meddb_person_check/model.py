@@ -28,7 +28,7 @@ class PersonMedDB(Base):
     found_in_system = Column(Boolean, default=False)
 
 
-class CommitteeMembership (Base):
+class CommitteeMembership(Base):
     __tablename__ = "committee_membership"
     __table_args__ = {"schema": 'meddb'}
 
