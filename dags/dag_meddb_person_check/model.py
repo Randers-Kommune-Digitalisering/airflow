@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Unicode, Boolean
+from sqlalchemy import Column, String, Integer, Unicode, Boolean, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -26,3 +26,10 @@ class PersonMedDB(Base):
     email = Column(Unicode(255), unique=True, nullable=False)
     organization = Column(Unicode(100), nullable=True)
     found_in_system = Column(Boolean, default=False)
+
+
+class CommitteeMembership(Base):
+    __tablename__ = "committee_membership"
+    __table_args__ = {"schema": 'meddb'}
+
+    person_id = Column(Integer, ForeignKey('meddb.person.id'), nullable=False)

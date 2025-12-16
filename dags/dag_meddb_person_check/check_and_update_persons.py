@@ -4,7 +4,7 @@ import requests
 
 from sqlalchemy.orm import Session
 
-from dag_meddb_person_check.model import PersonMedDB
+from dag_meddb_person_check.model import PersonMedDB, CommitteeMembership
 from airflow.hooks.base import BaseHook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.microsoft.azure.hooks.msgraph import KiotaRequestAdapterHook
@@ -55,7 +55,20 @@ def check_and_update_persons() -> None:
                             user = await ms_graph_get_user_by_email_alias_async(client=ms_graph_client, email_alias=person.email)
 
                     if user:
-                        person.email = user.get("email", None) or person.email
+                        email = user.get("email", None)
+                        if email:
+                            duplicate = meta_session.query(PersonMedDB).filter(
+                                PersonMedDB.email == email,
+                                PersonMedDB.id != person.id
+                            ).first()
+                            if duplicate:
+                                meta_session.query(CommitteeMembership).filter(
+                                    CommitteeMembership.person_id == duplicate.id
+                                ).update({CommitteeMembership.person_id: person.id}, synchronize_session='fetch')
+                                meta_session.delete(duplicate)
+                                meta_session.flush()
+
+                        person.email = email or person.email
                         person.name = user.get("name", None) or person.name
                         person.organization = user.get("unit", None) or person.organization
                         person.username = user.get("username", None) or person.username
