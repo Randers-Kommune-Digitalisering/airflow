@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Unicode, Boolean, ForeignKey
+from sqlalchemy import Column, String, Integer, Unicode, Boolean, ForeignKey, PrimaryKeyConstraint
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
@@ -30,6 +30,8 @@ class PersonMedDB(Base):
 
 class CommitteeMembership(Base):
     __tablename__ = "committee_membership"
-    __table_args__ = {"schema": 'meddb'}
+    __table_args__ = (PrimaryKeyConstraint("person_id", "role_id", "committee_id"), {"schema": 'meddb'})
 
     person_id = Column(Integer, ForeignKey('meddb.person.id'), nullable=False)
+    role_id = Column(Integer, ForeignKey('meddb.role.id'), nullable=False)
+    committee_id = Column(Integer, ForeignKey('meddb.committee.id'), nullable=False)
