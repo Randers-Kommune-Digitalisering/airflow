@@ -1,17 +1,19 @@
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+import datetime as dt
 from sqlalchemy.orm import Session as SqlalchemySession
-from dag_novax_district_control.model import NovaxHistory, Base
+from dag_novax_district_control.model import NovaxHistory, NovaxRecord, Base
 
 
-def ensure_tables_exist():
+def ensure_tables_exist(engine=None) -> None:
     """
     Ensure all tables defined in the model exist in the database.
     """
-    engine = get_db_engine()
+    if engine is None:
+        engine = get_db_engine()
     Base.metadata.create_all(engine)
 
 
-def get_db_engine():
+def get_db_engine() -> object:
     meta_hook = PostgresHook(postgres_conn_id="meta_db")
     meta_engine = meta_hook.get_sqlalchemy_engine()
     return meta_engine
@@ -24,7 +26,7 @@ def get_db_session() -> SqlalchemySession:
 def get_last_run_info() -> dict:
     """
     Retrieve the last run information from the database.
-    Returns a dictionary with keys 'last_run_start_date', 'last_run_end_date' and 'status'.
+    Returns a dictionary with keys 'id', 'last_run_start_date', 'last_run_end_date' and 'completed'.
     """
     ensure_tables_exist()
     engine = get_db_engine()
@@ -33,28 +35,89 @@ def get_last_run_info() -> dict:
         if history:
             last_run = history[-1]
             return {
+                'id': last_run.id,
                 'last_run_start_date': last_run.start_date,
                 'last_run_end_date': last_run.end_date,
-                'status': last_run.status
+                'completed': last_run.completed
             }
         else:
             return {
                 'last_run_start_date': None,
                 'last_run_end_date': None,
-                'status': None
+                'completed': None
             }
 
-    # with engine.connect() as conn:
-    #
-    #     result = conn.execute("SELECT last_run_date, status FROM novax_district_control_runs ORDER BY last_run_date DESC LIMIT 1")
-    #     row = result.fetchone()
-    #     if row:
-    #         return {
-    #             'last_run_date': row['last_run_date'],
-    #             'status': row['status']
-    #         }
-    #     else:
-    #         return {
-    #             'last_run_date': None,
-    #             'status': None
-    #         }
+
+def create_novax_run_record(start_date, end_date) -> int:
+    """
+    Create a new NovaxHistory record in the database.
+
+    :param start_date: The start date of the run.
+    :param end_date: The end date of the run.
+    A new run is created with completed=False; it can be updated to True when finished.
+    """
+
+    # Normalize inputs to datetimes for the SQLAlchemy DateTime columns
+    if isinstance(start_date, dt.date) and not isinstance(start_date, dt.datetime):
+        start_date = dt.datetime.combine(start_date, dt.time.min)
+    if isinstance(end_date, dt.date) and not isinstance(end_date, dt.datetime):
+        end_date = dt.datetime.combine(end_date, dt.time.min)
+
+    engine = get_db_engine()
+    ensure_tables_exist(engine=engine)
+    with SqlalchemySession(bind=engine) as meta_session:
+        new_run = NovaxHistory(
+            ts=dt.datetime.utcnow(),
+            start_date=start_date,
+            end_date=end_date,
+            completed=False,
+        )
+        meta_session.add(new_run)
+        # Ensure PK is populated before commit/session close to avoid
+        # DetachedInstanceError (SQLAlchemy expires instances on commit).
+        meta_session.flush()
+        run_id = new_run.id
+        meta_session.commit()
+
+    return run_id
+
+
+def update_novax_run_record(run_id: int, completed: bool) -> bool:
+    """
+    Update an existing NovaxHistory record in the database.
+
+    :param run_id: The ID of the run to update.
+    :param completed: The completion status to set.
+    """
+    engine = get_db_engine()
+    ensure_tables_exist(engine=engine)
+    with SqlalchemySession(bind=engine) as meta_session:
+        run_record = meta_session.query(NovaxHistory).filter(NovaxHistory.id == run_id).first()
+        if run_record:
+            run_record.completed = completed
+            meta_session.commit()
+    return True if run_record else False
+
+
+def create_novax_record(nameid: int, success: bool, runid: int) -> int:
+    """
+    Create a new NovaxRecord in the database.
+
+    :param nameid: The name ID associated with the record.
+    :param success: The success status of the record.
+    :param runid: The ID of the associated NovaxHistory run.
+    """
+    engine = get_db_engine()
+    ensure_tables_exist(engine=engine)
+    with SqlalchemySession(bind=engine) as meta_session:
+        new_record = NovaxRecord(
+            nameid=nameid,
+            success=success,
+            runid=runid,
+        )
+        meta_session.add(new_record)
+        meta_session.flush()
+        record_id = new_record.id
+        meta_session.commit()
+
+    return record_id
