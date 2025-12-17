@@ -9,8 +9,8 @@ dag_args["retries"] = 1
 
 with DAG(
     dag_id="dag_gis_to_dalux",
-    start_date=datetime(2025, 12, 16, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="0 0 * * *",
+    start_date=datetime(2025, 12, 17, tz=timezone("Europe/Copenhagen")),
+    schedule="@yearly",
     catchup=False,
     default_args=dag_args,
     description="Sync GIS building data into Dalux FM",
