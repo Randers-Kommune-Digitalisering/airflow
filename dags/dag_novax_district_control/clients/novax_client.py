@@ -10,6 +10,7 @@ import logging
 from dag_novax_district_control.novax_utils import parse_address
 
 logger = logging.getLogger(__name__)
+TEST_CPR = ''
 
 
 def get_sqlalchemy_engine():
@@ -118,6 +119,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             (EMNEBREV LIKE N'%gravid%')
             AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
             AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'
+            AND navn.CPR = '{TEST_CPR}'
         GROUP BY
             Godkommu.JOURNALDATO,
             Godkommu.NAVNID,
