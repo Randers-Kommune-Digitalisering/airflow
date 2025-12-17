@@ -33,8 +33,8 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 Jobbet er sat op til at køre automatisk på følgende tidspunkter:
 
-- **Tidspunkt:** Kl. 00:00 hver fredag
+- **Tidspunkt:** Kl. 00:00 hver eneste døgn  
 - **Cron syntax:**  
   ```
-  0 0 * * 5
+  0 0 * * *
   ```
