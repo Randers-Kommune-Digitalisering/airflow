@@ -135,7 +135,12 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
 
     # Update run completion status
     success = all(entry_status)
-    update_novax_run_record(run_id=novax_run_id, completed=success)
+    update_success = update_novax_run_record(run_id=novax_run_id, completed=success)
+    if success and update_success:
+        logger.info(f"Successfully completed check_and_update_district for run ID: {novax_run_id}")
+    else:
+        logger.error(f"Errors occurred during check_and_update_district for run ID: {novax_run_id}")
+        raise Exception(f"check_and_update_district failed for run ID: {novax_run_id}")
     return
 
 
