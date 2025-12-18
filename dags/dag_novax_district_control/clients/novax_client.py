@@ -3,7 +3,7 @@
 from dag_novax_district_control.novax_data import UserData
 import pandas as pd
 from airflow.hooks.base import BaseHook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from datetime import datetime
 import logging
 
@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_sqlalchemy_engine():
+    """
+    Create and return a SQLAlchemy engine using Airflow connection settings.
+    """
     airflow_conn = BaseHook.get_connection("novax_sql_default")
     user = airflow_conn.login
     password = airflow_conn.password
@@ -24,6 +27,9 @@ def get_sqlalchemy_engine():
 
 
 def test_connection() -> bool:
+    """
+    Test the connection to the Novax database using Airflow connection settings.
+    """
     import logging
     logger = logging.getLogger(__name__)
     airflow_conn = BaseHook.get_connection("novax_sql_default")
@@ -38,12 +44,19 @@ def test_connection() -> bool:
         return False
 
 
-def get_sql_data(query: str) -> list[dict]:
+def get_sql_data(query: str, params: dict | None = None) -> list[dict]:
+    """
+    Execute a SQL query and return the results as a list of dictionaries.
+
+    :param query: The SQL query to execute.
+    :param params: Optional dictionary of parameters to bind to the query.
+    """
     engine = get_sqlalchemy_engine()
     conn = None
     try:
         conn = engine.connect()
-        result = pd.read_sql(query, con=conn)
+        # Use SQLAlchemy `text()` + bound parameters to avoid SQL injection.
+        result = pd.read_sql_query(text(query), con=conn, params=params)
         records = result.to_dict(orient='records')
         if isinstance(records, dict):
             return [records]
@@ -59,13 +72,19 @@ def get_sql_data(query: str) -> list[dict]:
             conn.close()
 
 
-def update_sql_data(query: str) -> bool:
+def update_sql_data(query: str, params: dict | None = None) -> bool:
+    """
+    Execute an update/insert/delete SQL command.
+
+    :param query: The SQL query to execute.
+    :param params: Optional dictionary of parameters to bind to the query.
+    """
     engine = get_sqlalchemy_engine()
     conn = None
     try:
         conn = engine.connect()
         trans = conn.begin()
-        conn.execute(query)
+        conn.execute(text(query), params or {})
         trans.commit()
         return True
     except Exception as e:
@@ -90,7 +109,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     :param from_date: The start date to filter records from (inclusive).
     :param to_date: The end date to filter records to (exclusive).
     """
-    query = f"""
+    query = """
         SELECT
             Godkommu.JOURNALDATO,
             Godkommu.NAVNID,
@@ -117,8 +136,8 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             navn ON Godkommu.NAVNID = navn.ID
         WHERE
             (EMNEBREV LIKE N'%gravid%')
-            AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
-            AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'
+            AND Godkommu.JOURNALDATO >= :from_date
+            AND Godkommu.JOURNALDATO < :to_date
         GROUP BY
             Godkommu.JOURNALDATO,
             Godkommu.NAVNID,
@@ -127,7 +146,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             navn.DISTRIKT
     """
 
-    data = get_sql_data(query)
+    data = get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
     if not data:
         return []
 
@@ -169,84 +188,90 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         logger.error("NAVNID is required to update Novax userdata.")
         return False
 
+    # Ensure NAVNID is an integer (guards against accidental unsafe string input).
+    try:
+        navnid = int(navnid)
+    except (TypeError, ValueError):
+        logger.error(f"Invalid NAVNID value: {navnid!r}")
+        return False
+
     success = []
 
     # Update due date if provided
     if due_date is not None:
-        due_date_str = due_date.strftime('%Y-%m-%d %H:%M:%S')
-        query = f"""
+        query = """
             UPDATE NAVNDETALJER
-            SET TERMIN = CAST('{due_date_str}' AS DATETIME)
-            WHERE NAVNID = '{navnid}'
+            SET TERMIN = :due_date
+            WHERE NAVNID = :navnid
         """
-        res = update_sql_data(query)
+        res = update_sql_data(query, params={"due_date": due_date, "navnid": navnid})
         success.append(res)
-        logger.info(f"Updated NAVNDETALJER.TERMIN for NAVNID {navnid} to {due_date_str} {'was successful' if res else 'failed'}.")
+        logger.info(f"Updated NAVNDETALJER.TERMIN for NAVNID {navnid} to {due_date} {'was successful' if res else 'failed'}.")
 
     # Update district if provided
     if new_district is not None:
-        query1 = f"""
+        query1 = """
             UPDATE navn
-            SET DISTRIKT = N'{new_district}'
-            WHERE ID = '{navnid}'
+            SET DISTRIKT = :new_district
+            WHERE ID = :navnid
         """
-        res1 = update_sql_data(query1)
+        res1 = update_sql_data(query1, params={"new_district": new_district, "navnid": navnid})
         success.append(res1)
         logger.info(f"Updated navn.DISTRIKT for NAVNID {navnid} to {new_district} {'was successful' if res1 else 'failed'}.")
 
-        query2 = f"""
+        query2 = """
             UPDATE PERSONDISTRICT
-            SET DISTRICT = N'{new_district}'
-            WHERE NAVNID = '{navnid}'
+            SET DISTRICT = :new_district
+            WHERE NAVNID = :navnid
             AND DATEFROM <= GETDATE()
             AND (DATETO IS NULL OR DATETO >= GETDATE() OR DATETO = '1753-01-01 00:00:00.000')
         """
-        res2 = update_sql_data(query2)
+        res2 = update_sql_data(query2, params={"new_district": new_district, "navnid": navnid})
         success.append(res2)
         logger.info(f"Updated PERSONDISTRICT.DISTRICT for NAVNID {navnid} to {new_district} {'was successful' if res2 else 'failed'}.")
 
     # Update address if provided
     if new_address is not None:
-        query = f"""
+        query = """
             UPDATE navn
-            SET ADRESSE = N'{new_address}'
-            WHERE ID = '{navnid}'
+            SET ADRESSE = :new_address
+            WHERE ID = :navnid
         """
-        res = update_sql_data(query)
+        res = update_sql_data(query, params={"new_address": new_address, "navnid": navnid})
         success.append(res)
         logger.info(f"Updated navn.ADRESSE for NAVNID {navnid} to {new_address} {'was successful' if res else 'failed'}.")
 
     # Update telephone number if provided
     if new_tlf_nr is not None:
         # First, delete all existing TELEFON records for the NAVNID
-        delete_query = f"""
+        delete_query = """
             DELETE FROM TELEFON
-            WHERE NAVNID = '{navnid}'
+            WHERE NAVNID = :navnid
         """
-        delete_res = update_sql_data(delete_query)
+        delete_res = update_sql_data(delete_query, params={"navnid": navnid})
         logger.info(f"Deleted existing TELEFON records for NAVNID {navnid} {'was successful' if delete_res else 'failed'}.")
 
         # Then, insert the new telephone number
-        query = f"""
+        query = """
             INSERT INTO TELEFON (NAVNID, TELEFONNUMMER, PRIMAER, TS_UPDD)
-            VALUES ('{navnid}', N'{new_tlf_nr}', 1, GETDATE())
+            VALUES (:navnid, :new_tlf_nr, 1, GETDATE())
         """
-        res = update_sql_data(query)
+        res = update_sql_data(query, params={"navnid": navnid, "new_tlf_nr": new_tlf_nr})
         success.append(res)
         logger.info(f"Updated TELEFON.TELEFONNUMMER for NAVNID {navnid} to {new_tlf_nr} {'was successful' if res else 'failed'}.")
 
     # Also update area code to 730
-    query = f"""
+    query = """
         UPDATE NAVNDETALJER
         SET TS_KOMID = 730,
             KOMMUNE_OPR = 730
-        WHERE NAVNID = '{navnid}'
+        WHERE NAVNID = :navnid
     """
-    res = update_sql_data(query)
+    res = update_sql_data(query, params={"navnid": navnid})
     success.append(res)
     logger.info(f"Updated NAVNDETALJER.TS_KOMID and NAVNDETALJER.KOMMUNE_OPR for NAVNID {navnid} to 730 {'was successful' if res else 'failed'}.")
 
-    return any(success)
+    return all(success) if success else True
 
 
 def get_test_data_move() -> list[dict]:
