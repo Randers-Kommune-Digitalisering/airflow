@@ -74,16 +74,14 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
     logger.info(f"Starting check_and_update_district from {start_date} to {end_date}")
 
     # Get data from Novax and parse to UserData (+Address) objects
-    res = get_pregnancy_journals(from_date=from_date or last_run_date, to_date=to_date or today)
+    res = get_pregnancy_journals(from_date=start_date, to_date=end_date)
     if not res:
-        logger.info(f"No data found for the period from {from_date or last_run_date} to {to_date or today}. Exiting.")
+        logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
         return
 
     # TODO: Filter out patients already updated in this period based on NovaxRecord entries
     #       This should only be necessary if re-running completed periods
-    logger.info(f"Retrieved {len(res)} records from Novax for the period from {from_date or last_run_date} to {to_date or today}")
-    for entry in res:
-        logger.info(entry.to_dict())
+    logger.info(f"Retrieved {len(res)} records from Novax for the period from {start_date} to {end_date}")
 
     # Process each UserData entry
     entry_status = []
@@ -95,6 +93,7 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         # Parse address from journal data if present
         entry.new_address = parse_address(entry.parsed_journal.get('address', None))
 
+        # TODO: Always check CPR for new address in any case
         if not entry.new_address:
             # If no address in journal, look up current address from CPR
             cpr_info = cpr_client.lookup_address(entry.cpr)
@@ -123,7 +122,7 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         # Update Novax with new address, phone number, district if changed + due date
         update_success = update_novax_userdata(
             navnid=entry.navnid,
-            due_date=entry.parsed_journal.get('calculated_due_date', None),
+            due_date=entry.parsed_journal.get('calculated_due_date', None),  # TODO: Use actual due date when available
             new_district=entry.new_district,
             new_address=entry.new_address.full_address if entry.new_address else None,
             new_tlf_nr=entry.new_tlf_nr
