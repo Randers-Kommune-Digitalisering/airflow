@@ -246,7 +246,7 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
     success.append(res)
     logger.info(f"Updated NAVNDETALJER.TS_KOMID and NAVNDETALJER.KOMMUNE_OPR for NAVNID {navnid} to 730 {'was successful' if res else 'failed'}.")
 
-    return success
+    return any(success)
 
 
 def get_test_data_move() -> list[dict]:

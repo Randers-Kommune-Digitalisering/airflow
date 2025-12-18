@@ -131,12 +131,12 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
 
         # Update database with results for entry
         entry_success = create_novax_record(nameid=entry.navnid, success=True, runid=novax_run_id)
-        entry_status.append(entry_success is not None)
+        entry_status.append(update_success and entry_success is not None)
 
     # Update run completion status
     success = all(entry_status)
     update_novax_run_record(run_id=novax_run_id, completed=success)
-    return update_success
+    return
 
 
 # Synchronous wrapper for Airflow
@@ -144,7 +144,5 @@ def check_and_update_district_task(**kwargs):
     """
     Synchronous wrapper to run the async check_and_update_district function for Airflow compatibility.
     """
-    demo_start_date = datetime.date.today() - datetime.timedelta(days=7)
-    demo_end_date = datetime.date.today()
     import asyncio
-    asyncio.run(check_and_update_district(from_date=demo_start_date, to_date=demo_end_date))
+    asyncio.run(check_and_update_district())
