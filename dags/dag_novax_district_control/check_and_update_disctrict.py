@@ -85,8 +85,6 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
     for entry in res:
         logger.info(entry.to_dict())
 
-    return
-
     # Process each UserData entry
     entry_status = []
     for entry in res:
@@ -124,22 +122,24 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
 
         # TODO: Update Novax with new address, phone number, district if changed + due date
         print(entry.to_dict())
+
+        # return
         update_success = update_novax_userdata(
             navnid=entry.navnid,
-            due_date=entry.parsed_journal.get('due_date', None),
+            due_date=entry.parsed_journal.get('calculated_due_date', None),
             new_district=entry.new_district,
             new_address=entry.new_address.full_address if entry.new_address else None,
             new_tlf_nr=entry.new_tlf_nr
         )
 
         # Update database with results for entry
-        entry_success = create_novax_record(nameid=entry.navnid, success=True, runid=novax_run_id)
-        entry_status.append(entry_success is not None)
+        # entry_success = create_novax_record(nameid=entry.navnid, success=True, runid=novax_run_id)
+        # entry_status.append(entry_success is not None)
 
     # Update run completion status
-    success = all(entry_status)
-    update_novax_run_record(run_id=novax_run_id, completed=success)
-    return
+    # success = all(entry_status)
+    # update_novax_run_record(run_id=novax_run_id, completed=success)
+    return update_success
 
 
 # Synchronous wrapper for Airflow
