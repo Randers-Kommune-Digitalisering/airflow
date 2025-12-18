@@ -68,12 +68,13 @@ def update_sql_data(query: str) -> bool:
         conn.execute(query)
         trans.commit()
         return True
-    except Exception:
+    except Exception as e:
+        logger.error(f"SQL error executing update: {e}")
         if conn:
             try:
                 trans.rollback()
-            except Exception:
-                pass
+            except Exception as rollback_err:
+                logger.error(f"Error during transaction rollback: {rollback_err}")
         return False
     finally:
         if conn:
@@ -126,16 +127,6 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             navn.DISTRIKT
     """
 
-    # If PERSONDISTRICT.DISTRICT is needed, use a subquery to get only the latest/current row per NAVNID.
-    # Example:
-    # LEFT JOIN (
-    #     SELECT NAVNID, DISTRICT
-    #     FROM (
-    #         SELECT *, ROW_NUMBER() OVER (PARTITION BY NAVNID ORDER BY DATEFROM DESC) AS rn
-    #         FROM PERSONDISTRICT
-    #     ) pd WHERE rn = 1
-    # ) pd ON Godkommu.NAVNID = pd.NAVNID
-
     data = get_sql_data(query)
     if not data:
         return []
@@ -186,7 +177,7 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         query = f"""
             UPDATE NAVNDETALJER
             SET TERMIN = CAST('{due_date_str}' AS DATETIME)
-            WHERE ID = {navnid}
+            WHERE NAVNID = '{navnid}'
         """
         res = update_sql_data(query)
         success.append(res)
@@ -197,7 +188,7 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         query1 = f"""
             UPDATE navn
             SET DISTRIKT = N'{new_district}'
-            WHERE ID = {navnid}
+            WHERE ID = '{navnid}'
         """
         res1 = update_sql_data(query1)
         success.append(res1)
@@ -206,7 +197,7 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         query2 = f"""
             UPDATE PERSONDISTRICT
             SET DISTRICT = N'{new_district}'
-            WHERE NAVNID = {navnid}
+            WHERE NAVNID = '{navnid}'
             AND DATEFROM <= GETDATE()
             AND (DATETO IS NULL OR DATETO >= GETDATE() OR DATETO = '1753-01-01 00:00:00.000')
         """
@@ -219,7 +210,7 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         query = f"""
             UPDATE navn
             SET ADRESSE = N'{new_address}'
-            WHERE ID = {navnid}
+            WHERE ID = '{navnid}'
         """
         res = update_sql_data(query)
         success.append(res)
@@ -227,15 +218,18 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
 
     # Update telephone number if provided
     if new_tlf_nr is not None:
+        # First, delete all existing TELEFON records for the NAVNID
+        delete_query = f"""
+            DELETE FROM TELEFON
+            WHERE NAVNID = '{navnid}'
+        """
+        delete_res = update_sql_data(delete_query)
+        logger.info(f"Deleted existing TELEFON records for NAVNID {navnid} {'was successful' if delete_res else 'failed'}.")
+
+        # Then, insert the new telephone number
         query = f"""
-            UPDATE TELEFON
-            SET TELEFONNUMMER = N'{new_tlf_nr}'
-            WHERE NAVNID = {navnid}
-            AND TS_UPDD = (
-                SELECT MAX(TS_UPDD)
-                FROM TELEFON
-                WHERE NAVNID = {navnid}
-            )
+            INSERT INTO TELEFON (NAVNID, TELEFONNUMMER, PRIMAER, TS_UPDD)
+            VALUES ('{navnid}', N'{new_tlf_nr}', 1, GETDATE())
         """
         res = update_sql_data(query)
         success.append(res)
@@ -246,13 +240,13 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         UPDATE NAVNDETALJER
         SET TS_KOMID = 730,
             KOMMUNE_OPR = 730
-        WHERE ID = {navnid}
+        WHERE NAVNID = '{navnid}'
     """
     res = update_sql_data(query)
     success.append(res)
     logger.info(f"Updated NAVNDETALJER.TS_KOMID and NAVNDETALJER.KOMMUNE_OPR for NAVNID {navnid} to 730 {'was successful' if res else 'failed'}.")
 
-    return success
+    return any(success)
 
 
 def get_test_data_move() -> list[dict]:

@@ -2,7 +2,7 @@
 import logging
 import datetime
 
-from dag_novax_district_control.clients.novax_client import get_pregnancy_journals  # , get_test_data, get_test_data_move, test_connection
+from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdata  # , get_test_data, get_test_data_move, test_connection
 from dag_novax_district_control.novax_utils import parse_address, parse_journal_data
 from dag_novax_district_control.clients.db_client import get_last_run_info, create_novax_run_record, update_novax_run_record, create_novax_record
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
@@ -82,6 +82,8 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
     # TODO: Filter out patients already updated in this period based on NovaxRecord entries
     #       This should only be necessary if re-running completed periods
     logger.info(f"Retrieved {len(res)} records from Novax for the period from {from_date or last_run_date} to {to_date or today}")
+    for entry in res:
+        logger.info(entry.to_dict())
 
     # Process each UserData entry
     entry_status = []
@@ -118,12 +120,18 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         # Check new phone number from journal data
         entry.new_tlf_nr = entry.parsed_journal.get('phone', None)
 
-        # TODO: Update Novax with new address, phone number, district if changed + due date
-        print(entry.to_dict())
+        # Update Novax with new address, phone number, district if changed + due date
+        update_success = update_novax_userdata(
+            navnid=entry.navnid,
+            due_date=entry.parsed_journal.get('calculated_due_date', None),
+            new_district=entry.new_district,
+            new_address=entry.new_address.full_address if entry.new_address else None,
+            new_tlf_nr=entry.new_tlf_nr
+        )
 
         # Update database with results for entry
         entry_success = create_novax_record(nameid=entry.navnid, success=True, runid=novax_run_id)
-        entry_status.append(entry_success is not None)
+        entry_status.append(update_success and entry_success is not None)
 
     # Update run completion status
     success = all(entry_status)
