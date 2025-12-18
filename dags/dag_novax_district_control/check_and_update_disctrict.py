@@ -36,42 +36,42 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
     last_run_date = None
     last_run_completed = None
     novax_run_id = None
-    # if not from_date:
-    #     last_run_info = get_last_run_info()
-    #     last_run_date = last_run_info['last_run_end_date']
-    #     last_run_completed = last_run_info['completed']
-    #     novax_run_id = last_run_info.get('id', None)
+    if not from_date:
+        last_run_info = get_last_run_info()
+        last_run_date = last_run_info['last_run_end_date']
+        last_run_completed = last_run_info['completed']
+        novax_run_id = last_run_info.get('id', None)
 
-    #     # DB stores timestamps; ensure we're comparing dates
-    #     last_run_date = _as_date(last_run_date)
+        # DB stores timestamps; ensure we're comparing dates
+        last_run_date = _as_date(last_run_date)
 
-    #     # If last run was not completed, rerun from last start date
-    #     if last_run_completed is False:
-    #         logger.info("Last run was not completed successfully. Attempting to rerun from last start date.")
-    #         last_run_date = _as_date(last_run_info['last_run_start_date'])
+        # If last run was not completed, rerun from last start date
+        if last_run_completed is False:
+            logger.info("Last run was not completed successfully. Attempting to rerun from last start date.")
+            last_run_date = _as_date(last_run_info['last_run_start_date'])
 
-    #     # If no last run date, default to yesterday
-    #     if not last_run_date:
-    #         last_run_date = (datetime.datetime.now() - datetime.timedelta(days=1)).date()
+        # If no last run date, default to yesterday
+        if not last_run_date:
+            last_run_date = (datetime.datetime.now() - datetime.timedelta(days=1)).date()
 
-    #     # Check if last run date is today
-    #     if last_run_date and last_run_date >= today:
-    #         logger.info("Last run date is today or in the future. No action needed.")
-    #         return
+        # Check if last run date is today
+        if last_run_date and last_run_date >= today:
+            logger.info("Last run date is today or in the future. No action needed.")
+            return
 
     start_date = from_date or last_run_date
     end_date = to_date or today
 
     # Create DB history record for this run
     # Skip creation only when resuming a previously failed run (last_run_completed is False).
-    # if last_run_completed is not False:
-    #     novax_run_id = create_novax_run_record(start_date=start_date, end_date=end_date)
-    #     if novax_run_id:
-    #         logger.info(f"Created Novax run record with ID: {novax_run_id}")
-    #     else:
-    #         logger.error("Failed to create Novax run record. Exiting.")
-    #         return
-    # logger.info(f"Starting check_and_update_district from {start_date} to {end_date}")
+    if last_run_completed is not False:
+        novax_run_id = create_novax_run_record(start_date=start_date, end_date=end_date)
+        if novax_run_id:
+            logger.info(f"Created Novax run record with ID: {novax_run_id}")
+        else:
+            logger.error("Failed to create Novax run record. Exiting.")
+            return
+    logger.info(f"Starting check_and_update_district from {start_date} to {end_date}")
 
     # Get data from Novax and parse to UserData (+Address) objects
     res = get_pregnancy_journals(from_date=from_date or last_run_date, to_date=to_date or today)
@@ -120,10 +120,7 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         # Check new phone number from journal data
         entry.new_tlf_nr = entry.parsed_journal.get('phone', None)
 
-        # TODO: Update Novax with new address, phone number, district if changed + due date
-        print(entry.to_dict())
-
-        # return
+        # Update Novax with new address, phone number, district if changed + due date
         update_success = update_novax_userdata(
             navnid=entry.navnid,
             due_date=entry.parsed_journal.get('calculated_due_date', None),
@@ -133,12 +130,12 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         )
 
         # Update database with results for entry
-        # entry_success = create_novax_record(nameid=entry.navnid, success=True, runid=novax_run_id)
-        # entry_status.append(entry_success is not None)
+        entry_success = create_novax_record(nameid=entry.navnid, success=True, runid=novax_run_id)
+        entry_status.append(entry_success is not None)
 
     # Update run completion status
-    # success = all(entry_status)
-    # update_novax_run_record(run_id=novax_run_id, completed=success)
+    success = all(entry_status)
+    update_novax_run_record(run_id=novax_run_id, completed=success)
     return update_success
 
 

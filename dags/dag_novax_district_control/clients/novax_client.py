@@ -10,7 +10,6 @@ import logging
 from dag_novax_district_control.novax_utils import parse_address
 
 logger = logging.getLogger(__name__)
-TEST_CPR = ''
 
 
 def get_sqlalchemy_engine():
@@ -58,6 +57,7 @@ def get_sql_data(query: str) -> list[dict]:
     finally:
         if conn:
             conn.close()
+
 
 def update_sql_data(query: str) -> bool:
     engine = get_sqlalchemy_engine()
@@ -119,7 +119,6 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             (EMNEBREV LIKE N'%gravid%')
             AND Godkommu.JOURNALDATO >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'
             AND Godkommu.JOURNALDATO < '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'
-            AND navn.CPR = '{TEST_CPR}'
         GROUP BY
             Godkommu.JOURNALDATO,
             Godkommu.NAVNID,
@@ -127,16 +126,6 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             navn.ADRESSE,
             navn.DISTRIKT
     """
-
-    # If PERSONDISTRICT.DISTRICT is needed, use a subquery to get only the latest/current row per NAVNID.
-    # Example:
-    # LEFT JOIN (
-    #     SELECT NAVNID, DISTRICT
-    #     FROM (
-    #         SELECT *, ROW_NUMBER() OVER (PARTITION BY NAVNID ORDER BY DATEFROM DESC) AS rn
-    #         FROM PERSONDISTRICT
-    #     ) pd WHERE rn = 1
-    # ) pd ON Godkommu.NAVNID = pd.NAVNID
 
     data = get_sql_data(query)
     if not data:
