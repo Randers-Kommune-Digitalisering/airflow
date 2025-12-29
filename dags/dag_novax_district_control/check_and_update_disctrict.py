@@ -90,17 +90,14 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
         entry.journal = None  # Clear raw journal text to save space/logging
 
-        # Parse address from journal data if present
-        entry.new_address = parse_address(entry.parsed_journal.get('address', None))
-
-        # TODO: Always check CPR for new address in any case
-        if not entry.new_address:
-            # If no address in journal, look up current address from CPR
-            cpr_info = cpr_client.lookup_address(entry.cpr)
-            if cpr_info and cpr_info.get('address'):
-                entry.new_address = parse_address(cpr_info['address']['full_address'])
-            else:
-                logger.warning(f"No address found for CPR: {entry.cpr}")
+        # Look up current address from CPR
+        cpr_info = cpr_client.lookup_address(entry.cpr)
+        if cpr_info and cpr_info.get('address'):
+            entry.new_address = parse_address(cpr_info['address']['full_address'])
+        else:
+            logger.warning(f"No address found for CPR: {entry.cpr}, using journal data if available.")
+            # Parse address from journal data if no CPR address is found
+            entry.new_address = parse_address(entry.parsed_journal.get('address', None))
 
         # Determine which address to use for district lookup
         lookup_address = entry.new_address if (
