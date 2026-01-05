@@ -45,7 +45,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 Jobbet er sat op til at køre automatisk på følgende tidspunkter:
 
-- **Tidspunkt:** Kl. 01:00 hver nat
+- **Tidspunkt:** Kl. 01:15 hver nat (vintertid), kl. 00:15 hver nat (sommertid)
 - **Cron syntax:**  
   ```
   0 1 * * *
