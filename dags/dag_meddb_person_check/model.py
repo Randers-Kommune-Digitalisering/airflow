@@ -23,7 +23,7 @@ class PersonMedDB(Base):
     id = Column(Integer, primary_key=True)
     username = Column(Unicode(100), nullable=True)
     name = Column(Unicode(255), nullable=False)
-    email = Column(Unicode(255), unique=True, nullable=False)
+    email = Column(Unicode(255), nullable=False)
     organization = Column(Unicode(100), nullable=True)
     found_in_system = Column(Boolean, default=False)
 

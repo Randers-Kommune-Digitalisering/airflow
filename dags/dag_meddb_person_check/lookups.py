@@ -210,12 +210,13 @@ async def delta_get_by_email(client: httpx.AsyncClient, token_provider: AsyncOAu
         for ref in inst.get("inTypeRefs", []):
             if ref.get("userKey") == "APOS-Types-Engagement-TypeRelation-Person":
                 target = ref.get("targetObject", {})
-                for attr in target.get("attributes", []):
-                    if attr.get("userKey") == "APOS-Types-Engagement-Attribute-Email":
-                        email = attr.get("value")
-                for tref in target.get("typeRefs", []):
-                    if tref.get("userKey") == "APOS-Types-Engagement-TypeRelation-AdmUnit":
-                        afdeling = tref.get("targetObject", {}).get("identity", {}).get("name")
+                if target.get("state") == "STATE_ACTIVE":
+                    for attr in target.get("attributes", []):
+                        if attr.get("userKey") == "APOS-Types-Engagement-Attribute-Email":
+                            email = attr.get("value")
+                    for tref in target.get("typeRefs", []):
+                        if tref.get("userKey") == "APOS-Types-Engagement-TypeRelation-AdmUnit":
+                            afdeling = tref.get("targetObject", {}).get("identity", {}).get("name")
             elif ref.get("userKey") == "APOS-Types-User-TypeRelation-Person":
                 username = ref.get("targetObject", {}).get("identity", {}).get("userKey")
 
