@@ -11,8 +11,8 @@ dag_args["retries"] = 1
 
 with DAG(
     dag_id="dag_meddb_person_check",
-    start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="0 12 * * 0",
+    start_date=datetime(year=2025, month=12, day=16, tz=timezone("Europe/Copenhagen")),
+    schedule="@weekly",
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
