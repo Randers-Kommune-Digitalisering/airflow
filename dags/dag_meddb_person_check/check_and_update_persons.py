@@ -21,7 +21,7 @@ CONCURRENCY = 10
 
 
 # Helper function
-async def _get_bearer_token_async(token_url: str, client_id: str, client_secret: str, scope: str | None = None,) -> str:
+async def _get_bearer_token_async(token_url: str, client_id: str, client_secret: str, scope: str | None = None) -> str:
     """
     Fetch an OAuth2 access token via client credentials (async).
     """
