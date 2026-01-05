@@ -7,7 +7,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_meddb_person_check.check_and_update_persons import check_and_update_persons
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 1
+dag_args["retries"] = 0
 
 with DAG(
     dag_id="dag_meddb_person_check",

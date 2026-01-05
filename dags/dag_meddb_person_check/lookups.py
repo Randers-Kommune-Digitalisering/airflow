@@ -1,16 +1,17 @@
 import logging
 from urllib.parse import quote
 
+import httpx
 from msgraph.graph_service_client import GraphServiceClient
-from sqlalchemy.orm import Session as SqlalchemySession
-from requests import Session as RequestsSession
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from dag_meddb_person_check.model import PersonSkoleAD
 
 logger = logging.getLogger(__name__)
 
 
-def skole_ad_get_by_email(session: SqlalchemySession, email: str) -> dict:
+async def skole_ad_get_by_email(session: AsyncSession, email: str) -> dict | None:
     """
     Search for a user in Skole-AD by their email.
 
@@ -21,18 +22,23 @@ def skole_ad_get_by_email(session: SqlalchemySession, email: str) -> dict:
     :return: A dictionary containing the keys: name, email, unit, username
     :rtype: dict
     """
-    user = session.query(PersonSkoleAD).filter(PersonSkoleAD.Mail == email).first()
+
+    result = await session.execute(
+        select(PersonSkoleAD).where(PersonSkoleAD.Mail == email)
+    )
+    user = result.scalars().first()
     if not user:
         return None
+
     return {
         "name": user.Navn,
         "email": user.Mail,
         "unit": user.Skole,
-        "username": user.DQnummer
+        "username": user.DQnummer,
     }
 
 
-async def ms_graph_get_user_by_email_alias_async(client: GraphServiceClient, email_alias: str) -> dict:
+async def ms_graph_get_user_by_email_alias(client: GraphServiceClient, email_alias: str) -> dict:
     """
     Search for a user in Microsoft Graph by their email alias.
 
@@ -67,10 +73,12 @@ async def ms_graph_get_user_by_email_alias_async(client: GraphServiceClient, ema
         return None
 
 
-def delta_get_by_email(session: RequestsSession, base_url: str, email: str) -> dict:
+async def delta_get_by_email(client: httpx.AsyncClient, base_url: str, email: str) -> dict | None:
     """
     Query Delta system for persons matching the given email.
 
+    :param client: An initialized httpx.AsyncClient (with Authorization header if needed).
+    :type client: httpx.AsyncClient
     :param email: The email to search for.
     :type email: str
     :return: A dictionary containing the keys: name, email, unit, username.
@@ -173,10 +181,18 @@ def delta_get_by_email(session: RequestsSession, base_url: str, email: str) -> d
             }
         ]
     }
+    url = base_url.rstrip("/") + "/api/object/graph-query"
+    response = await client.post(url, json=graph_query)
+    response.raise_for_status()
+    response_json = response.json()
 
-    response = session.post(base_url + "/api/object/graph-query", json=graph_query).json()
-    instances = response.get("graphQueryResult", [])[0].get("instances", [])
+    graph_results = response_json.get("graphQueryResult") or []
+    if not graph_results:
+        return None
+
+    instances = graph_results[0].get("instances") or []
     results = []
+
     for inst in instances:
         name = inst.get("identity", {}).get("name", None)
         email = None
