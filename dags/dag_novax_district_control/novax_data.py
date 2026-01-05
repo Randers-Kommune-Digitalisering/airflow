@@ -22,7 +22,10 @@ class Address:
         elif full_address:
             parsed = parse_address(full_address)  # Parse address into components
             if parsed:
-                self = parsed
+                # Copy attributes from the parsed object onto this instance
+                for attr in ("street", "number", "postal_code", "city", "full_address", "x", "y"):
+                    if hasattr(parsed, attr):
+                        setattr(self, attr, getattr(parsed, attr))
             else:
                 self.full_address = full_address
                 raise ValueError("Invalid full_address format.")

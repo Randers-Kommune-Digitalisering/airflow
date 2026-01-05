@@ -30,8 +30,6 @@ def test_connection() -> bool:
     """
     Test the connection to the Novax database using Airflow connection settings.
     """
-    import logging
-    logger = logging.getLogger(__name__)
     airflow_conn = BaseHook.get_connection("novax_sql_default")
     logger.info(f"Trying to connect with Airflow connection: id={airflow_conn.conn_id}, host={airflow_conn.host}, schema={airflow_conn.schema}, login={airflow_conn.login}, port={airflow_conn.port}, extra={airflow_conn.extra}")
     try:
@@ -65,7 +63,7 @@ def get_sql_data(query: str, params: dict | None = None) -> list[dict]:
         else:
             return []
     except Exception as e:
-        print(f'Error executing query: {e}')
+        logger.error(f'Error executing query: {e}')
         return []
     finally:
         if conn:

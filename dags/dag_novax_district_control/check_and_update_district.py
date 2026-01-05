@@ -29,7 +29,7 @@ def _as_date(value):
     return None
 
 
-async def check_and_update_district(from_date=None, to_date=None) -> None:
+def check_and_update_district(from_date=None, to_date=None) -> None:
     """
     Retrieves and updates user, address and district information
     for any new patients based on their addresses.
@@ -58,7 +58,7 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
 
         # If no last run date, default to yesterday
         if not last_run_date:
-            last_run_date = (datetime.datetime.now() - datetime.timedelta(days=1)).date()
+            last_run_date = (datetime.datetime.now() - datetime.timedelta(days=7)).date()
 
         # Check if last run date is today
         if last_run_date and last_run_date >= today:
@@ -153,10 +153,6 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
     return
 
 
-# Synchronous wrapper for Airflow
+# Task wrapper for Airflow
 def check_and_update_district_task(**kwargs):
-    """
-    Synchronous wrapper to run the async check_and_update_district function for Airflow compatibility.
-    """
-    import asyncio
-    asyncio.run(check_and_update_district())
+    check_and_update_district()
