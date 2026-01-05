@@ -7,54 +7,18 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from dag_meddb_person_check.model import PersonMedDB
 from airflow.hooks.base import BaseHook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.microsoft.azure.hooks.msgraph import KiotaRequestAdapterHook
 from msgraph.graph_service_client import GraphServiceClient
 
+from utils.token_provider import AsyncOAuth2TokenProvider
+from dag_meddb_person_check.model import PersonMedDB
 from dag_meddb_person_check.lookups import delta_get_by_email, ms_graph_get_user_by_email_alias, skole_ad_get_by_email
 
 
 logger = logging.getLogger(__name__)
 CONCURRENCY = 10
-
-
-# Helper function
-async def _get_bearer_token_async(token_url: str, client_id: str, client_secret: str, scope: str | None = None) -> str:
-    """
-    Fetch an OAuth2 access token via client credentials (async).
-    """
-    data = {
-        "grant_type": "client_credentials",
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }
-    if scope:
-        data["scope"] = scope
-
-    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=20.0)) as client:
-        resp = await client.post(
-            token_url,
-            data=data,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        resp.raise_for_status()
-        token = resp.json().get("access_token")
-        if not token:
-            raise RuntimeError("No access_token in token response")
-        return token
-
-
-def _make_delta_async_client(base_url: str, bearer_token: str) -> httpx.AsyncClient:
-    """
-    Create an AsyncClient that includes the bearer token in all requests.
-    """
-    return httpx.AsyncClient(
-        base_url=base_url,
-        headers={"Authorization": f"Bearer {bearer_token}"},
-        timeout=httpx.Timeout(10.0, read=30.0),
-    )
 
 
 def check_and_update_persons() -> None:
@@ -81,10 +45,11 @@ def check_and_update_persons() -> None:
     async def _process_all() -> None:
         """Process all persons asynchronously."""
 
-        token = await _get_bearer_token_async(
+        delta_token_provider = AsyncOAuth2TokenProvider(
             token_url=delta_hook.extra_dejson.get('token_url'),
             client_id=delta_hook.login,
-            client_secret=delta_hook.password
+            client_secret=delta_hook.password,
+            refresh_margin=30
         )
 
         async_engine = create_async_engine(
@@ -102,7 +67,7 @@ def check_and_update_persons() -> None:
 
         ms_graph_client = GraphServiceClient(request_adapter=ms_graph_adapter)
 
-        async with _make_delta_async_client(delta_hook.host, token) as delta_client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=30.0)) as delta_client:
             with Session(bind=meta_engine) as meta_session:
                 persons = meta_session.query(PersonMedDB).all()
                 persons_with_email = [p for p in persons if p.email]
@@ -111,12 +76,12 @@ def check_and_update_persons() -> None:
 
                 async def resolve_user(email: str) -> dict | None:
                     async with sem:
-                        user = await delta_get_by_email(delta_client, delta_hook.host, email)
+                        user = await delta_get_by_email(client=delta_client, token_provider=delta_token_provider, base_url=delta_hook.host, email=email)
                         if user:
                             return user
 
                         async with AsyncSessionLocal() as ad_session:
-                            user = await skole_ad_get_by_email(ad_session, email)
+                            user = await skole_ad_get_by_email(session=ad_session, email=email)
                             if user:
                                 return user
 
