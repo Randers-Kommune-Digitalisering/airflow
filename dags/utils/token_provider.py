@@ -2,6 +2,8 @@ import time
 import logging
 import requests
 import threading
+import asyncio
+import httpx
 from requests.auth import AuthBase
 
 logger = logging.getLogger(__name__)
@@ -138,3 +140,79 @@ class BearerAuth(AuthBase):
             new_resp = r.connection.send(req, **kwargs)
             return new_resp
         return r
+
+
+class AsyncOAuth2TokenProvider:
+    """
+    Manages an OAuth2 bearer token with proactive refresh & concurrency control.
+    """
+    def __init__(self, token_url: str, client_id: str, client_secret: str, scope: str | None = None, refresh_margin: int = 30, timeout: httpx.Timeout = httpx.Timeout(10.0, read=20.0)):
+        self.token_url = token_url
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.scope = scope
+        self.refresh_margin = refresh_margin
+        self.timeout = timeout
+
+        self._token = None
+        self._expires_at = 0.0
+        self._lock = asyncio.Lock()
+
+    async def _fetch_token(self) -> dict:
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+        }
+        if self.scope:
+            data["scope"] = self.scope
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            resp = await client.post(
+                self.token_url,
+                data=data,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    def _is_valid(self) -> bool:
+        now = time.time()
+        return self._token is not None and (now + self.refresh_margin) < self._expires_at
+
+    async def get_token(self) -> str:
+        """
+        Return a valid token (refresh proactively if needed).
+        """
+        if self._is_valid():
+            return self._token
+
+        async with self._lock:
+            # Double check inside lock (another task may have refreshed)
+            if self._is_valid():
+                return self._token
+
+            payload = await self._fetch_token()
+            token = payload.get("access_token")
+            if not token:
+                raise RuntimeError("No access_token in token response")
+
+            # Set expiry based on expires_in (fallback to 300s if missing)
+            expires_in = int(payload.get("expires_in") or 300)
+            self._token = token
+            self._expires_at = time.time() + expires_in
+            return token
+
+    async def force_refresh(self) -> str:
+        """
+        Force a refresh (used after 401).
+        """
+        async with self._lock:
+            payload = await self._fetch_token()
+            token = payload.get("access_token")
+            if not token:
+                raise RuntimeError("No access_token in token response")
+            expires_in = int(payload.get("expires_in") or 300)
+            self._token = token
+            self._expires_at = time.time() + expires_in
+            return token

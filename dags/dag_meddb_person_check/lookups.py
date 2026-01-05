@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dag_meddb_person_check.model import PersonSkoleAD
+from utils.token_provider import AsyncOAuth2TokenProvider
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ async def ms_graph_get_user_by_email_alias(client: GraphServiceClient, email_ali
         return None
 
 
-async def delta_get_by_email(client: httpx.AsyncClient, base_url: str, email: str) -> dict | None:
+async def delta_get_by_email(client: httpx.AsyncClient, token_provider: AsyncOAuth2TokenProvider, base_url: str, email: str) -> dict | None:
     """
     Query Delta system for persons matching the given email.
 
@@ -182,7 +183,14 @@ async def delta_get_by_email(client: httpx.AsyncClient, base_url: str, email: st
         ]
     }
     url = base_url.rstrip("/") + "/api/object/graph-query"
-    response = await client.post(url, json=graph_query)
+    token = await token_provider.get_token()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.post(url, json=graph_query, headers=headers)
+    if response.status_code == 401:
+        token = await token_provider.force_refresh()
+        headers = {"Authorization": f"Bearer {token}"}
+        response = await client.post(url, json=graph_query, headers=headers)
     response.raise_for_status()
     response_json = response.json()
 
@@ -202,12 +210,13 @@ async def delta_get_by_email(client: httpx.AsyncClient, base_url: str, email: st
         for ref in inst.get("inTypeRefs", []):
             if ref.get("userKey") == "APOS-Types-Engagement-TypeRelation-Person":
                 target = ref.get("targetObject", {})
-                for attr in target.get("attributes", []):
-                    if attr.get("userKey") == "APOS-Types-Engagement-Attribute-Email":
-                        email = attr.get("value")
-                for tref in target.get("typeRefs", []):
-                    if tref.get("userKey") == "APOS-Types-Engagement-TypeRelation-AdmUnit":
-                        afdeling = tref.get("targetObject", {}).get("identity", {}).get("name")
+                if target.get("state") == "STATE_ACTIVE":
+                    for attr in target.get("attributes", []):
+                        if attr.get("userKey") == "APOS-Types-Engagement-Attribute-Email":
+                            email = attr.get("value")
+                    for tref in target.get("typeRefs", []):
+                        if tref.get("userKey") == "APOS-Types-Engagement-TypeRelation-AdmUnit":
+                            afdeling = tref.get("targetObject", {}).get("identity", {}).get("name")
             elif ref.get("userKey") == "APOS-Types-User-TypeRelation-Person":
                 username = ref.get("targetObject", {}).get("identity", {}).get("userKey")
 
