@@ -19,11 +19,11 @@ def _parse_polygon_wkt(wkt: str) -> List[Tuple[float, float]]:
             start = wkt.find("((")
             end = wkt.find("))")
             if start != -1 and end != -1:
-                coords = wkt[start + 2 : end]
+                coords = wkt[start + 2: end]
             else:
                 start = wkt.find("(")
                 end = wkt.find(")")
-                coords = wkt[start + 1 : end]
+                coords = wkt[start + 1: end]
         else:
             coords = wkt
 
