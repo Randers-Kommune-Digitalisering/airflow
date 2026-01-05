@@ -1,5 +1,6 @@
 from airflow.hooks.base import BaseHook
 import requests
+import time
 
 DATAFORSYNING_API_URL = 'https://api.dataforsyningen.dk'
 MAP_API_URL = 'http://sandkasse-srv.randers.dk:10000/'
@@ -10,6 +11,21 @@ class DataforsyningClient:
         connection = BaseHook.get_connection(conn_id)
         self.base_url = connection.host or DATAFORSYNING_API_URL
         self.session = requests.Session()
+
+    def _get_with_retry(self, url: str, params: dict, retries: int = 3, delay_seconds: int = 5) -> requests.Response:
+        attempt = 0
+        while True:
+            try:
+                response = self.session.get(url, params=params)
+                response.raise_for_status()
+                return response
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(e.response, "status_code", None)
+                if status_code not in [200, 400] and attempt < retries:
+                    attempt += 1
+                    time.sleep(delay_seconds)
+                    continue
+                raise
 
     def lookup_address(self, query: str) -> dict:
         """
@@ -28,8 +44,7 @@ class DataforsyningClient:
             'kommunekode': 730
         }
         url = f"{self.base_url}{endpoint}"
-        response = self.session.get(url, params=params)
-        response.raise_for_status()
+        response = self._get_with_retry(url, params=params)
         results = response.json()
         return results[0] if results and len(results) > 0 else None
 
@@ -45,8 +60,7 @@ class DataforsyningClient:
             'struktur': 'nestet'
         }
         url = f"{self.base_url}{endpoint}"
-        response = self.session.get(url, params=params)
-        response.raise_for_status()
+        response = self._get_with_retry(url, params=params)
         return response.json()
 
 

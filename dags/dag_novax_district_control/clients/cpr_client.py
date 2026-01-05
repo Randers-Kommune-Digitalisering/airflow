@@ -1,4 +1,5 @@
 
+import re
 import requests
 from airflow.hooks.base import BaseHook
 
@@ -22,4 +23,16 @@ class CPRClient():
         endpoint = f'/PersonBaseDataExtendedService/lookup/address/{cpr_number}'
         res = self.session.get(f"{self.base_url}{endpoint}")
         res.raise_for_status()
-        return res.json()
+
+        data = res.json()
+        std = data.get('aktuelAdresse', {}).get('standardadresse')
+
+        if isinstance(std, str) and std:
+            # Remove leading zeros from house numbers
+            data['aktuelAdresse']['standardadresse'] = re.sub(
+                r'(\s)0+(\d+[A-Za-z]?)\b',
+                r'\1\2',
+                std
+            )
+
+        return data

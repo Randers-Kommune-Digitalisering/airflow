@@ -78,6 +78,9 @@ def parse_journal_data(journal_string, journal_date=None):
 
     :param journal_string: Journal data as string.
     """
+    if not journal_string:
+        journal_string = ""
+
     address_match = re.search(r'ADRESSE:\s*(.+?)\r?\n', journal_string)
     address = address_match.group(1).strip() if address_match else None
 

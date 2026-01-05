@@ -12,7 +12,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 - For hver patient:
   - Parser journaldata for at udtrække ny adresse samt evt. telefonnummer og terminsdato
   - Hvis terminsdato mangler i journalen, beregnes denne fra gestationsalder (i journalen)
-  - Hvis adresse mangler i journalen, slås den op via CPR API'et
+  - Trækker aktuelle adresse fra CPR-opslag via API
   - Validerer og finder distriktsoplysninger via Dataforsyning API'et og District Map API'et
   - Sammenligner ny og eksisterende adresse/distrikt og opdaterer Novax-databasen med ny data (`update_novax_userdata`)
 

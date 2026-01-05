@@ -2,9 +2,15 @@
 import logging
 import datetime
 
-from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdata  # , get_test_data, get_test_data_move, test_connection
+from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdata
 from dag_novax_district_control.novax_utils import parse_address, parse_journal_data
-from dag_novax_district_control.clients.db_client import get_last_run_info, create_novax_run_record, update_novax_run_record, create_novax_record
+from dag_novax_district_control.clients.db_client import (
+    get_last_run_info,
+    create_novax_run_record,
+    update_novax_run_record,
+    create_novax_record,
+    get_processed_nameids_in_period,
+)
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
 
@@ -79,9 +85,23 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
         logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
         return
 
-    # TODO: Filter out patients already updated in this period based on NovaxRecord entries
-    #       This should only be necessary if re-running completed periods
+    # Filter out patients already updated in this period based on NovaxRecord entries.
+    # Only applied when we're re-running a period that already has completed runs.
+    already_processed_nameids = get_processed_nameids_in_period(start_date, end_date)
+    if already_processed_nameids:
+        before = len(res)
+        res = [entry for entry in res if str(entry.navnid) not in already_processed_nameids]
+        skipped = before - len(res)
+        logger.info(
+            f"Re-run detected: skipping {skipped} already-processed patients in {start_date}..{end_date}."
+        )
+
     logger.info(f"Retrieved {len(res)} records from Novax for the period from {start_date} to {end_date}")
+    if not res:
+        if novax_run_id is not None:
+            update_novax_run_record(run_id=novax_run_id, completed=True)
+        logger.info("No remaining records after filtering; exiting.")
+        return
 
     # Process each UserData entry
     entry_status = []
@@ -92,26 +112,19 @@ async def check_and_update_district(from_date=None, to_date=None) -> None:
 
         # Look up current address from CPR
         cpr_info = cpr_client.lookup_address(entry.cpr)
-        if cpr_info and cpr_info.get('address'):
-            entry.new_address = parse_address(cpr_info['address']['full_address'])
+        if cpr_info and cpr_info.get('aktuelAdresse'):
+            entry.new_address = parse_address(f"{cpr_info['aktuelAdresse']['standardadresse']}, {cpr_info['aktuelAdresse']['postnummer']}")
         else:
             logger.warning(f"No address found for CPR: {entry.cpr}, using journal data if available.")
             # Parse address from journal data if no CPR address is found
             entry.new_address = parse_address(entry.parsed_journal.get('address', None))
 
-        # Determine which address to use for district lookup
-        lookup_address = entry.new_address if (
-            entry.new_address.street != entry.current_address.street or
-            entry.new_address.number != entry.current_address.number or
-            entry.new_address.postal_code != entry.current_address.postal_code
-        ) else entry.current_address
-
         # Look up address details for district info in Dataforsyning
-        address_info = dataforsyning_client.lookup_address(lookup_address.full_address)
+        address_info = dataforsyning_client.lookup_address(entry.new_address.full_address)
         if address_info and address_info.get('adgangsadresse', {}).get('x') and address_info.get('adgangsadresse', {}).get('y'):
             entry.new_district = map_client.get_district(address_info['adgangsadresse']['x'], address_info['adgangsadresse']['y'])
         else:
-            logger.warning(f"Address not found in Dataforsyning: {lookup_address.full_address}")
+            logger.warning(f"Address not found in Dataforsyning: {entry.new_address.full_address}")
 
         # Check new phone number from journal data
         entry.new_tlf_nr = entry.parsed_journal.get('phone', None)
