@@ -4,7 +4,7 @@ import re
 
 def parse_address(address):
     """
-    Parse adresse fra en streng til en Address objekt.
+    Parse adresse fra en streng til et Address objekt.
 
     :param address: Fuld adresse som en streng, fx "Regimentvej 16F, 3. tv, 8920 Randers NV"
     """

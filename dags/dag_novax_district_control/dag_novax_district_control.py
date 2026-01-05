@@ -12,12 +12,12 @@ dag_args["retries"] = 0
 with DAG(
     dag_id="dag_novax_district_control",
     start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="15 01 * * *",
+    schedule_interval="15 1 * * *",
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
     description="Check and update Novax district records by querying relevant clients",
-    tags=['novax', 'district', 'dataforsyning', 'cpr',],
+    tags=['novax', 'district', 'dataforsyning', 'cpr'],
 ) as dag:
 
     task = PythonOperator(
