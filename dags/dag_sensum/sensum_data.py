@@ -42,11 +42,11 @@ def fetch_and_store_sensum_data(
         with sftp_hook.get_conn() as sftp_conn:
             for pattern in file_patterns:
                 files = []
-                for dir in directories:
-                    files += _get_files(
+                for subdir in directories:
+                    files_list += _get_files(
                         sftp_conn=sftp_conn,
                         directory="/D:/SFTP-EGDW/",
-                        subdirectory=dir,
+                        subdirectory=subdir,
                         pattern=pattern,
                     )
                 if files:
