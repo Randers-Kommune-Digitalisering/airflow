@@ -169,6 +169,58 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     return userdata_list
 
 
+def get_upcoming_due_dates(from_date: datetime, to_date: datetime) -> list[UserData]:
+    """
+    Retrieves pregnancy records with due dates within the specified date range.
+
+    :param from_date: The start date to filter due dates from (inclusive).
+    :param to_date: The end date to filter due dates to (exclusive).
+    """
+    query = """
+        SELECT
+            NAVNDETALJER.NAVNID,
+            navn.CPR,
+            navn.ADRESSE,
+            navn.DISTRIKT,
+            NAVNDETALJER.TERMIN
+        FROM
+            NAVNDETALJER
+        LEFT JOIN
+            navn ON NAVNDETALJER.NAVNID = navn.ID
+        WHERE
+            NAVNDETALJER.TERMIN >= :from_date
+            AND NAVNDETALJER.TERMIN < :to_date
+    """
+
+    data = get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
+    if not data:
+        return []
+
+    userdata_list = []
+    for entry in data:
+        for k, v in entry.items():
+            if isinstance(v, str):
+                entry[k] = v.strip()
+        entry['parsed_address'] = parse_address(entry['ADRESSE'])
+
+        due_date_value = entry.get('TERMIN')
+        if isinstance(due_date_value, pd.Timestamp):
+            due_date_value = due_date_value.to_pydatetime()
+
+        data_obj = UserData(
+            cpr=entry['CPR'],
+            navnid=entry['NAVNID'],
+            address=entry['parsed_address'],
+            district=entry['DISTRIKT'],
+            tlf_nr=None,
+            timestamp=None,
+            journal=None,
+            due_date=due_date_value
+        )
+        userdata_list.append(data_obj)
+    return userdata_list
+
+
 def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
     """
     Updates the DISTRIKT field for a given NAVNID in the navn table.

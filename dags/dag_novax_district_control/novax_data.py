@@ -49,7 +49,7 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str = None):
+    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str = None, due_date: datetime = None):
         self.cpr: str = cpr
         self.navnid: int = navnid
         self.current_address: Address = address
@@ -62,6 +62,7 @@ class UserData:
         self.new_district: str = None
         self.new_tlf_nr: str = None
         self.parsed_journal: dict = None
+        self.due_date: datetime = due_date
 
     def to_dict(self):
         return {
@@ -74,5 +75,6 @@ class UserData:
             'new_address': self.new_address.to_dict() if hasattr(self.new_address, 'to_dict') else None,
             'new_district': self.new_district,
             'new_tlf_nr': self.new_tlf_nr,
-            'parsed_journal': self.parsed_journal
+            'parsed_journal': self.parsed_journal,
+            'due_date': self.due_date.strftime('%Y-%m-%d') if self.due_date else (self.parsed_journal.get('due_date') or self.parsed_journal.get('calculated_due_date')) if isinstance(self.parsed_journal, dict) else None
         }
