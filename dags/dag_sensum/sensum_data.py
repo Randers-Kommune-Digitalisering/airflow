@@ -41,16 +41,16 @@ def fetch_and_store_sensum_data(
         file_list_list = []
         with sftp_hook.get_conn() as sftp_conn:
             for pattern in file_patterns:
-                files_list = []
+                files = []
                 for dir in directories:
-                    files_list += _get_files(
+                    files += _get_files(
                         sftp_conn=sftp_conn,
                         directory="/D:/SFTP-EGDW/",
                         subdirectory=dir,
                         pattern=pattern,
                     )
-                if files_list:
-                    file_list_list.append(files_list)
+                if files:
+                    file_list_list.append(files)
                 else:
                     logger.error(f"No files found for pattern {pattern}")
                     return False
