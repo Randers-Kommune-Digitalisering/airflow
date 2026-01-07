@@ -4,8 +4,8 @@ import time
 
 
 class DataforsyningClient:
-    def __init__(self, conn_id='dataforsyning_default'):
-        connection = BaseHook.get_connection(conn_id)
+    def __init__(self):
+        connection = BaseHook.get_connection("dataforsyning")
         self.base_url = connection.host
         self.session = requests.Session()
 
@@ -62,7 +62,7 @@ class DataforsyningClient:
 
 
 class DistrictMapClient:
-    def __init__(self, conn_id='district_map_default'):
+    def __init__(self, conn_id='district_map'):
         connection = BaseHook.get_connection(conn_id)
         self.base_url = connection.host
         self.session = requests.Session()

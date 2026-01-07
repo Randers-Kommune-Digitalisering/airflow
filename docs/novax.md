@@ -26,15 +26,15 @@ Koden består af et DAG-job, der udfører følgende trin:
 :key: | **Airflow Connections**
 
 **Novax DB:**
-- **`novax_sql_default`**  
+- **`novax_sql`**  
   Bruges som Connection id i Airflow til at hente host, database, bruger, adgangskode og port til Novax SQL-databasen
 
 **Dataforsyning API:**
-- **`dataforsyning_default`**  
+- **`dataforsyning`**  
   Bruges som Connection id i Airflow til at hente host og evt. nøgle til Dataforsyning API'et
 
 **District Map API:**
-- **`district_map_default`**  
+- **`district_map`**  
   Bruges som Connection id i Airflow til at hente host til District Map API'et
 
 **CPR API:**
