@@ -31,20 +31,6 @@ class Address:
         else:
             raise ValueError("Either full_address or all address components must be provided.")
 
-    def to_dict(self):
-        obj = {
-            'street': self.street,
-            'number': self.number,
-            'postal_code': self.postal_code,
-            'city': self.city,  # optional
-            'full_address': self.full_address
-        }
-        if hasattr(self, 'x'):
-            obj['x'] = self.x
-        if hasattr(self, 'y'):
-            obj['y'] = self.y
-        return obj
-
 
 class UserData:
     def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str | None = None):
@@ -69,7 +55,7 @@ class UserData:
             'current_district': self.current_district,
             'current_tlf_nr': self.current_tlf_nr,
             'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S') if self.timestamp else None,
-            'new_address': self.new_address.to_dict() if hasattr(self.new_address, 'to_dict') else None,
+            'new_address': self.new_address.__dict__ if self.new_address else None,
             'new_district': self.new_district,
             'new_tlf_nr': self.new_tlf_nr,
             'parsed_journal': self.parsed_journal

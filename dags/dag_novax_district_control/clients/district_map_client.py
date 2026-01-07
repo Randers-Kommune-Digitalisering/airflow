@@ -5,7 +5,7 @@ import time
 
 class DataforsyningClient:
     def __init__(self):
-        connection = BaseHook.get_connection("dataforsyning")
+        connection = BaseHook.get_connection("dataforsyningen")
         self.base_url = connection.host
         self.session = requests.Session()
 
