@@ -43,7 +43,7 @@ def fetch_and_store_sensum_data(
             for pattern in file_patterns:
                 files = []
                 for subdir in directories:
-                    files_list += _get_files(
+                    files += _get_files(
                         sftp_conn=sftp_conn,
                         directory="/D:/SFTP-EGDW/",
                         subdirectory=subdir,
@@ -309,7 +309,7 @@ def sager_afdeling_medarbejder_merge_df(
         raise
 
 
-def indsats_df(
+def process_indsats_df(
     indsats_df: pd.DataFrame,
     group_by: List[str],
     agg_dict: Dict[str, Any],
@@ -341,14 +341,19 @@ def indsats_df(
         raise
 
 
-def create_merge_lambda(config: dict) -> Callable:
-    """
-    Returns a lambda that calls the correct merge function with config parameters.
+MERGE_FUNCTIONS: Dict[str, Callable] = {
+    "merge_dataframes": merge_dataframes,
+    "merge_df_ydelse": merge_df_ydelse,
+    "sager_afdeling_medarbejder_merge_df": sager_afdeling_medarbejder_merge_df,
+    "process_indsats_df": process_indsats_df,
+}
 
-    :param config: Configuration dictionary specifying merge function and parameters.
-    :return: Callable lambda for merging DataFrames.
-    """
-    merge_func = globals().get(config["merge_func"])
+
+def create_merge_lambda(config: dict) -> Callable:
+    merge_func = MERGE_FUNCTIONS.get(config["merge_func"])
+    if merge_func is None:
+        raise ValueError(f"Merge function '{config['merge_func']}' is not allowed.")
+
     if all(key in config for key in ["merge_on", "group_by", "agg_columns", "columns"]):
 
         def merge_lambda(*dfs):
@@ -372,4 +377,5 @@ def create_merge_lambda(config: dict) -> Callable:
 
     else:
         raise Exception("Missing required keys in config")
+
     return merge_lambda

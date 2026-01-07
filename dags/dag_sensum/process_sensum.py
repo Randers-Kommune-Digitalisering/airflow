@@ -15,7 +15,7 @@ def process_sensum() -> None:
 
     for config in SENSUM_CONFIG:
         sensum_sftp_hook = SFTPHook(ftp_conn_id="sensum_sftp")
-        merge_lambda = create_merge_lambda(config)
+        merge_lambda = create_merge_lambda(config=config)
         fetch_and_store_sensum_data(
             sftp_hook=sensum_sftp_hook,
             db_engine=sensum_db_engine,

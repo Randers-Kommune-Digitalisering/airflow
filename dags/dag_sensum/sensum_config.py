@@ -10,7 +10,7 @@ SENSUM_CONFIG = [
             "IndsatsSlutDato": "first",
         },
         "columns": ["IndsatsStartDato", "IndsatsStatus", "IndsatsSlutDato"],
-        "merge_func": "indsats_df",
+        "merge_func": "process_indsats_df",
     },
     {
         "name": "aktive_sager",
