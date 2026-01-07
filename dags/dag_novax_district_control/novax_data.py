@@ -1,11 +1,5 @@
 from datetime import datetime
 from dag_novax_district_control.novax_utils import parse_address
-from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
-# from dag_novax_district_control.clients.cpr_client import CPRClient
-
-dataforsyning_client = DataforsyningClient()
-map_client = DistrictMapClient()
-# cpr_client = CPRClient()
 
 
 class Address:
