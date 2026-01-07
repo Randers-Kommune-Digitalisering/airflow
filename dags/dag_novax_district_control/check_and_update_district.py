@@ -14,10 +14,6 @@ from dag_novax_district_control.clients.db_client import (
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
 
-dataforsyning_client = DataforsyningClient()
-map_client = DistrictMapClient()
-cpr_client = CPRClient()
-
 logger = logging.getLogger(__name__)
 
 
@@ -37,6 +33,11 @@ def check_and_update_district(from_date=None, to_date=None) -> None:
     :param from_date: The start date to filter records from.
     :param to_date: The end date to filter records to.
     """
+    # Initialize clients
+    dataforsyning_client = DataforsyningClient()
+    map_client = DistrictMapClient()
+    cpr_client = CPRClient()
+
     # Get last run dates and status if from_date and to_date not set
     today = datetime.datetime.now().date()
     last_run_date = None
