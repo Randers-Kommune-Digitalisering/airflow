@@ -152,8 +152,3 @@ def check_and_update_district(from_date=None, to_date=None) -> None:
         logger.error(f"Errors occurred during check_and_update_district for run ID: {novax_run_id}")
         raise Exception(f"check_and_update_district failed for run ID: {novax_run_id}")
     return
-
-
-# Task wrapper for Airflow
-def check_and_update_district_task(**kwargs):
-    check_and_update_district()
