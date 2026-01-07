@@ -35,7 +35,7 @@ class DataforsyningClient:
             'q': query,
             'type': 'adgangsadresse',
             'side': 1,
-            'per_side': 104,
+            'per_side': 1,
             'noformat': 1,
             'srid': 25832,
             'kommunekode': 730
@@ -62,8 +62,8 @@ class DataforsyningClient:
 
 
 class DistrictMapClient:
-    def __init__(self, conn_id='district_map'):
-        connection = BaseHook.get_connection(conn_id)
+    def __init__(self):
+        connection = BaseHook.get_connection("district_map")
         self.base_url = connection.host
         self.session = requests.Session()
 
