@@ -2,14 +2,11 @@ from airflow.hooks.base import BaseHook
 import requests
 import time
 
-DATAFORSYNING_API_URL = 'https://api.dataforsyningen.dk'
-MAP_API_URL = 'http://sandkasse-srv.randers.dk:10000/'
-
 
 class DataforsyningClient:
     def __init__(self, conn_id='dataforsyning_default'):
         connection = BaseHook.get_connection(conn_id)
-        self.base_url = connection.host or DATAFORSYNING_API_URL
+        self.base_url = connection.host
         self.session = requests.Session()
 
     def _get_with_retry(self, url: str, params: dict, retries: int = 3, delay_seconds: int = 5) -> requests.Response:
@@ -67,7 +64,7 @@ class DataforsyningClient:
 class DistrictMapClient:
     def __init__(self, conn_id='district_map_default'):
         connection = BaseHook.get_connection(conn_id)
-        self.base_url = connection.host or MAP_API_URL
+        self.base_url = connection.host
         self.session = requests.Session()
 
     def get_district(self, coordinate_x, coordinate_y) -> dict:
