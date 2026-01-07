@@ -337,7 +337,7 @@ def process_indsats_df(
         result.columns = columns
         return result
     except Exception as e:
-        logger.error(f"Error in indsats_df: {e}")
+        logger.error(f"Error in process_indsats_df: {e}")
         raise
 
 
