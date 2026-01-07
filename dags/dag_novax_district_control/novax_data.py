@@ -3,13 +3,17 @@ from dag_novax_district_control.novax_utils import parse_address
 
 
 class Address:
-    def __init__(self, street: str = None, number: str = None, postal_code: str = None, city: str = None, full_address: str = None):
+    def __init__(self, street: str | None = None, number: str | None = None, postal_code: str | None = None, city: str | None = None, full_address: str | None = None):
+        """
+        Initialize Address either from components or from full address string.
+        Either provide all components (street, number, postal_code, city (optional)) or full_address.
+        """
         # Initialize from address components
         if street and number and postal_code:
             self.street: str = street
             self.number: str = number
             self.postal_code: str = postal_code
-            self.city: str = city  # optional
+            self.city: str | None = city  # optional
             self.full_address: str = f"{street} {number}, {postal_code} {city}" if city else f"{street} {number}, {postal_code}"
 
         # Initialize from full_address, parsing it into components
@@ -43,19 +47,19 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str = None):
+    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str | None = None):
         self.cpr: str = cpr
         self.navnid: int = navnid
         self.current_address: Address = address
         self.current_district: str = district
         self.current_tlf_nr: str = tlf_nr
         self.timestamp: datetime = timestamp
-        self.journal: str = journal
+        self.journal: str | None = journal
 
-        self.new_address: Address = None
-        self.new_district: str = None
-        self.new_tlf_nr: str = None
-        self.parsed_journal: dict = None
+        self.new_address: Address | None = None
+        self.new_district: str | None = None
+        self.new_tlf_nr: str | None = None
+        self.parsed_journal: dict | None = None
 
     def to_dict(self):
         return {
