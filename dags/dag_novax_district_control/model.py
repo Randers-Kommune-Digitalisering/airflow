@@ -7,7 +7,6 @@ from dataclasses import dataclass
 Base = declarative_base()
 
 
-@dataclass
 class NovaxHistory(Base):
     __tablename__ = 'novax_journal_runs'
     id = Column(Integer, primary_key=True)
@@ -18,7 +17,6 @@ class NovaxHistory(Base):
     records = relationship('NovaxRecord', back_populates='history')
 
 
-@dataclass
 class NovaxRecord(Base):
     __tablename__ = 'novax_journal_records'
     id = Column(Integer, primary_key=True)
