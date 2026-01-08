@@ -32,40 +32,34 @@ def fetch_and_store_sensum_data(
     :param output_table: Name of the output table in the database.
     :return: True if successful, otherwise False.
     """
-    try:
-        logger.info(f"Processing {output_table}")
-        if not (file_patterns and directories):
-            logger.error("Directories or file patterns are missing")
-            return False
+    logger.info(f"Processing {output_table}")
+    if not (file_patterns and directories):
+        raise ValueError("Directories or file patterns are missing")
 
-        file_list_list = []
-        with sftp_hook.get_conn() as sftp_conn:
-            for pattern in file_patterns:
-                files = []
-                for directory in directories:
-                    files += _get_files(
-                        sftp_conn=sftp_conn,
-                        directory=directory,
-                        pattern=pattern,
-                    )
-                if files:
-                    file_list_list.append(files)
-                else:
-                    logger.error(f"No files found for pattern {pattern}")
-                    return False
-
-            if all(file_list_list):
-                return _process_and_save_files(
-                    file_list_list=file_list_list,
+    file_list_list = []
+    with sftp_hook.get_conn() as sftp_conn:
+        for pattern in file_patterns:
+            files = []
+            for directory in directories:
+                files += _get_files(
                     sftp_conn=sftp_conn,
-                    merge_func=merge_func,
-                    db_engine=db_engine,
-                    output_table=output_table,
+                    directory=directory,
+                    pattern=pattern,
                 )
-        return False
-    except Exception as e:
-        logger.error(f"An error occurred: {e}")
-        return False
+            if files:
+                file_list_list.append(files)
+            else:
+                raise FileNotFoundError(f"No files found for pattern {pattern}")
+
+        if all(file_list_list):
+            return _process_and_save_files(
+                file_list_list=file_list_list,
+                sftp_conn=sftp_conn,
+                merge_func=merge_func,
+                db_engine=db_engine,
+                output_table=output_table,
+            )
+    return False
 
 
 def _get_files(
