@@ -30,7 +30,7 @@ def process_sharepoint_list_items() -> None:
     sharepoint_db_hook = PostgresHook(postgres_conn_id="sharepoint_db")
     sharepoint_db_engine = sharepoint_db_hook.get_sqlalchemy_engine()
 
-    async def _run() -> None:
+    async def _fetch_transform_and_save_sharepoint_items() -> None:
         """Fetch, transform, and save SharePoint items asynchronously."""
         items = await ms_graph_get_sharepoint_list_items_async(
             client=ms_graph_client,
@@ -63,4 +63,4 @@ def process_sharepoint_list_items() -> None:
             "SharePoint data successfully fetched, processed, and saved into DB"
         )
 
-    asyncio.run(_run())
+    asyncio.run(_fetch_transform_and_save_sharepoint_items())
