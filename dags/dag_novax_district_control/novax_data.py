@@ -33,12 +33,12 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: int, address: Address, district: str, tlf_nr: str, timestamp: datetime, journal: str | None = None):
+    def __init__(self, cpr: str, navnid: int, address: Address | None, district: str, tlf_nr: str | None, timestamp: datetime, journal: str | None = None):
         self.cpr: str = cpr
         self.navnid: int = navnid
-        self.current_address: Address = address
+        self.current_address: Address | None = address
         self.current_district: str = district
-        self.current_tlf_nr: str = tlf_nr
+        self.current_tlf_nr: str | None = tlf_nr
         self.timestamp: datetime = timestamp
         self.journal: str | None = journal
 
@@ -51,7 +51,7 @@ class UserData:
         return {
             'cpr': self.cpr,
             'navnid': self.navnid,
-            'current_address': self.current_address.to_dict() if hasattr(self.current_address, 'to_dict') else None,
+            'current_address': self.current_address.__dict__ if self.current_address else None,
             'current_district': self.current_district,
             'current_tlf_nr': self.current_tlf_nr,
             'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S') if self.timestamp else None,
