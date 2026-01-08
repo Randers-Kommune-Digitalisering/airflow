@@ -46,17 +46,3 @@ class UserData:
         self.new_district: str | None = None
         self.new_tlf_nr: str | None = None
         self.parsed_journal: dict | None = None
-
-    def to_dict(self):
-        return {
-            'cpr': self.cpr,
-            'navnid': self.navnid,
-            'current_address': self.current_address.__dict__ if self.current_address else None,
-            'current_district': self.current_district,
-            'current_tlf_nr': self.current_tlf_nr,
-            'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S') if self.timestamp else None,
-            'new_address': self.new_address.__dict__ if self.new_address else None,
-            'new_district': self.new_district,
-            'new_tlf_nr': self.new_tlf_nr,
-            'parsed_journal': self.parsed_journal
-        }
