@@ -89,15 +89,15 @@ def transform_sharepoint_items(items: List[Dict[str, Any]]) -> List[Dict[str, An
         projektleder = fields_data.get("Projektleder0")
         projektejer = fields_data.get("Projektejer0")
 
-        def extract_projektleder(user):
+        def extract_user_info(user):
             if isinstance(user, list) and user:
                 user = user[0]
             if isinstance(user, dict):
                 return user.get("LookupValue"), user.get("Email")
             return None, None
 
-        projektleder_name, projektleder_email = extract_projektleder(projektleder)
-        projektejer_name, projektejer_email = extract_projektleder(projektejer)
+        projektleder_name, projektleder_email = extract_user_info(projektleder)
+        projektejer_name, projektejer_email = extract_user_info(projektejer)
 
         renamed_fields = {}
         for k, v in fields_data.items():
