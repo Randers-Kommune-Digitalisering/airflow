@@ -9,7 +9,7 @@ dag_args["retries"] = 1
 
 with DAG(
     dag_id="dag_sensum",
-    start_date=datetime(year=2026, month=1, day=6, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=1, day=8, tz=timezone("Europe/Copenhagen")),
     schedule="0 0 * * 1",
     catchup=False,
     default_args=dag_args,
