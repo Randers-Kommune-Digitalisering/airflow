@@ -42,11 +42,10 @@ def fetch_and_store_sensum_data(
         with sftp_hook.get_conn() as sftp_conn:
             for pattern in file_patterns:
                 files = []
-                for subdir in directories:
+                for directory in directories:
                     files += _get_files(
                         sftp_conn=sftp_conn,
-                        directory="/D:/SFTP-EGDW/",
-                        subdirectory=subdir,
+                        directory=directory,
                         pattern=pattern,
                     )
                 if files:
@@ -72,25 +71,22 @@ def fetch_and_store_sensum_data(
 def _get_files(
     sftp_conn: SFTPClient,
     directory: str,
-    subdirectory: str,
     pattern: str,
     only_latest: bool = False,
 ) -> List[str]:
     """
-    Find files on SFTP matching a pattern, within a directory and subdirectory.
+    Find files on SFTP matching a pattern, within a directory.
 
     :param sftp_conn: Paramiko SFTP connection.
-    :param directory: Parent directory on SFTP.
-    :param subdirectory: Subdirectory on SFTP.
+    :param directory: Directory on SFTP.
     :param pattern: Filename pattern.
     :param only_latest: If True, only return the latest file.
     :return: List of file paths.
     """
     try:
-        full_dir = os.path.join(directory, subdirectory)
         files = [
-            os.path.join(full_dir, f)
-            for f in sftp_conn.listdir(full_dir)
+            os.path.join(directory, f)
+            for f in sftp_conn.listdir(directory)
             if fnmatch.fnmatch(f, pattern)
         ]
         if only_latest and files:

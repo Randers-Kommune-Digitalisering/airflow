@@ -3,7 +3,7 @@ SENSUM_CONFIG = [
         "name": "aktive_indsatser",
         "patterns": ["Indsatser_*.csv"],
         "group_by": "IndsatsId",
-        "directories": ["sensum_randers"],
+        "directories": ["/D:/SFTP-EGDW/sensum_randers"],
         "agg_columns": {
             "IndsatsStartDato": "first",
             "IndsatsStatus": "first",
@@ -16,7 +16,7 @@ SENSUM_CONFIG = [
         "name": "aktive_sager",
         "patterns": ["Sager_*.csv", "Afdeling_*.csv", "Medarbejder_*.csv"],
         "group_by": "SagId",
-        "directories": ["sensum_randers"],
+        "directories": ["/D:/SFTP-EGDW/sensum_randers"],
         "agg_columns": {
             "SagNavn": "first",
             "SagType": "first",
@@ -39,7 +39,7 @@ SENSUM_CONFIG = [
         "name": "ydelse",
         "patterns": ["Ydelse_*.csv", "Afdeling_*.csv"],
         "group_by": "YdelseId",
-        "directories": ["Frem"],
+        "directories": ["/D:/SFTP-EGDW/Frem"],
         "agg_columns": {
             "YdelseNavn": "first",
             "StartDato": "first",
@@ -54,7 +54,7 @@ SENSUM_CONFIG = [
         "patterns": ["Sager_*.csv", "Indsatser_*.csv"],
         "merge_on": "SagId",
         "group_by": "IndsatsId",
-        "directories": ["sensum_randers"],
+        "directories": ["/D:/SFTP-EGDW/sensum_randers"],
         "agg_columns": {
             "IndsatsStatus": "first",
             "Indsats": "first",
