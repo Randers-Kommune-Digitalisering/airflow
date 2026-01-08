@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta
 import re
+from fastapi.datastructures import Address
 
 
-def parse_address(address):
+def parse_address(address: str) -> Address | None:
     """
     Parse adresse fra en streng til et Address objekt.
 
