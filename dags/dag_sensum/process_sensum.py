@@ -14,7 +14,7 @@ def process_sensum() -> None:
     sensum_db_engine = sensum_db_hook.get_sqlalchemy_engine()
 
     for config in SENSUM_CONFIG:
-        sensum_sftp_hook = SFTPHook(ftp_conn_id="sensum_sftp")
+        sensum_sftp_hook = SFTPHook(ssh_conn_id="sensum_sftp")
         merge_lambda = create_merge_lambda(config=config)
         fetch_and_store_sensum_data(
             sftp_hook=sensum_sftp_hook,
