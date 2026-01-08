@@ -43,7 +43,7 @@ def parse_address(address: str) -> Address | None:
     )
 
 
-def calculate_due(gestations_uger: int, gestations_dage: int, dato_str: str = None, dato_obj: datetime = None):
+def calculate_due(gestations_uger: int, gestations_dage: int, dato_str: str | None = None, dato_obj: datetime | None = None) -> datetime:
     """
     Beregn terminsdato ud fra en given dato og gestationsalder.
 
@@ -73,7 +73,7 @@ def calculate_due(gestations_uger: int, gestations_dage: int, dato_str: str = No
     return due_date
 
 
-def parse_journal_data(journal_string, journal_date=None):
+def parse_journal_data(journal_string: str, journal_date: datetime | None = None) -> dict:
     """
     Parse journal data from Novax to dict.
 
