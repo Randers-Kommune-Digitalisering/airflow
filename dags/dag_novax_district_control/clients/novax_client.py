@@ -203,9 +203,9 @@ def get_upcoming_due_dates(from_date: datetime, to_date: datetime) -> list[UserD
                 entry[k] = v.strip()
         entry['parsed_address'] = parse_address(entry['ADRESSE'])
 
-        due_date_value = entry.get('TERMIN')
-        if isinstance(due_date_value, pd.Timestamp):
-            due_date_value = due_date_value.to_pydatetime()
+        # due_date_value = entry.get('TERMIN')
+        # if isinstance(due_date_value, pd.Timestamp):
+        #     due_date_value = due_date_value.to_pydatetime()
 
         data_obj = UserData(
             cpr=entry['CPR'],
@@ -214,8 +214,7 @@ def get_upcoming_due_dates(from_date: datetime, to_date: datetime) -> list[UserD
             district=entry['DISTRIKT'],
             tlf_nr=None,
             timestamp=None,
-            journal=None,
-            due_date=due_date_value
+            journal=None
         )
         userdata_list.append(data_obj)
     return userdata_list
