@@ -1,6 +1,10 @@
+from __future__ import annotations
 from datetime import datetime, timedelta
 import re
-from fastapi.datastructures import Address
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from dag_novax_district_control.novax_data import Address
 
 
 def parse_address(address: str) -> Address | None:
