@@ -163,12 +163,11 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     return userdata_list
 
 
-def get_upcoming_due_dates(from_date: datetime, to_date: datetime) -> list[UserData]:
+def get_upcoming_due_dates(from_date: datetime) -> list[UserData]:
     """
     Retrieves pregnancy records with due dates within the specified date range.
 
     :param from_date: The start date to filter due dates from (inclusive).
-    :param to_date: The end date to filter due dates to (exclusive).
     """
     query = """
         SELECT
@@ -183,10 +182,9 @@ def get_upcoming_due_dates(from_date: datetime, to_date: datetime) -> list[UserD
             navn ON NAVNDETALJER.NAVNID = navn.ID
         WHERE
             NAVNDETALJER.TERMIN >= :from_date
-            AND NAVNDETALJER.TERMIN < :to_date
     """
 
-    data = get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
+    data = get_sql_data(query, params={"from_date": from_date})
     if not data:
         return []
 
