@@ -2,10 +2,12 @@ import logging
 import fnmatch
 import os
 import pandas as pd
+import tempfile
+import time
 
 from datetime import datetime, timedelta
 from paramiko import SFTPClient
-from typing import List, Callable, Optional, Dict, Any
+from typing import List, Callable, Dict, Any
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
@@ -92,13 +94,42 @@ def _get_files(
         return []
 
 
-def _handle_files(files: List[str], sftp_conn: SFTPClient) -> Optional[pd.DataFrame]:
+def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str]:
+    """
+    Download all relevant files from SFTP to temporary local files.
+
+    :param files: List of remote file paths.
+    :param sftp_conn: Active SFTP connection.
+    :return: List of local file paths.
+    """
+    local_files = []
+
+    for i, remote_path in enumerate(files, start=1):
+        local_fd, local_path = tempfile.mkstemp(suffix=os.path.basename(remote_path))
+        logger.info(f"Downloading file {i}/{len(files)}: {remote_path} -> {local_path}")
+
+        with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(
+            remote_path, "rb"
+        ) as f_remote:
+            while True:
+                chunk = f_remote.read(1024 * 1024)  # 1 MB chunks
+                if not chunk:
+                    break
+                f_local.write(chunk)
+                time.sleep(0.01)
+
+        local_files.append(local_path)
+
+    return local_files
+
+
+def _handle_files(files: list[str], sftp_conn: SFTPClient) -> pd.DataFrame | None:
     """
     Read and combine relevant Sensum files from SFTP into a single DataFrame.
 
-    :param files: List of file paths.
-    :param sftp_conn: Paramiko SFTP connection.
-    :return: DataFrame or None.
+    :param files: List of remote file paths.
+    :param sftp_conn: Active SFTP connection.
+    :return: Combined DataFrame or None.
     """
     try:
         if not files:
@@ -114,23 +145,31 @@ def _handle_files(files: List[str], sftp_conn: SFTPClient) -> Optional[pd.DataFr
         max_date = date - timedelta(days=1)
         min_date = datetime(date.year - 2, date.month, 1)
 
-        logger.debug(f"Data period: {min_date} - {max_date}")
+        logger.info(f"Data period: {min_date} - {max_date}")
 
-        files = [
+        relevant_files = [
             f
             for f in files
             if datetime.fromtimestamp(sftp_conn.stat(f).st_mtime) >= min_date
         ]
 
+        if not relevant_files:
+            logger.info("No files found after min_date.")
+            return None
+
+        local_files = _download_files_locally(relevant_files, sftp_conn)
+
         df_list = []
-        for filename in files:
-            with sftp_conn.open(filename) as f:
-                df = pd.read_csv(f, sep=";", header=0, decimal=",")
-                df_list.append(df)
+        for local_path in local_files:
+            df = pd.read_csv(local_path, sep=";", header=0, decimal=",")
+            df_list.append(df)
+
         if df_list:
-            df = pd.concat(df_list, ignore_index=True).drop_duplicates()
-            return df
+            combined_df = pd.concat(df_list, ignore_index=True).drop_duplicates()
+            return combined_df
+
         return None
+
     except Exception as e:
         logger.error(f"Error handling files: {e}")
         return None
