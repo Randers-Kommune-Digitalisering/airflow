@@ -160,9 +160,16 @@ def _handle_files(files: list[str], sftp_conn: SFTPClient) -> pd.DataFrame | Non
         local_files = _download_files_locally(relevant_files, sftp_conn)
 
         df_list = []
-        for local_path in local_files:
-            df = pd.read_csv(local_path, sep=";", header=0, decimal=",")
-            df_list.append(df)
+        try:
+            for local_path in local_files:
+                df = pd.read_csv(local_path, sep=";", header=0, decimal=",")
+                df_list.append(df)
+        finally:
+            for local_path in local_files:
+                try:
+                    os.remove(local_path)
+                except Exception as e:
+                    logger.warning(f"Could not remove temp file {local_path}: {e}")
 
         if df_list:
             combined_df = pd.concat(df_list, ignore_index=True).drop_duplicates()
