@@ -1,13 +1,12 @@
-
-
-from dag_novax_district_control.novax_data import UserData
+from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 import pandas as pd
 from airflow.hooks.base import BaseHook
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from datetime import datetime
 import logging
 
 from dag_novax_district_control.novax_utils import parse_address
+from dag_novax_district_control.novax_data import UserData
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +15,8 @@ def get_sqlalchemy_engine():
     """
     Create and return a SQLAlchemy engine using Airflow connection settings.
     """
-    airflow_conn = BaseHook.get_connection("novax_sql_default")
-    user = airflow_conn.login
-    password = airflow_conn.password
-    host = airflow_conn.host
-    db = airflow_conn.schema
-    connection_string = f"mssql+pymssql://{user}:{password}@{host}/{db}"
-    engine = create_engine(connection_string)
+    hook = MsSqlHook(mssql_conn_id="novax_sql")
+    engine = hook.get_sqlalchemy_engine()
     return engine
 
 
@@ -30,7 +24,7 @@ def test_connection() -> bool:
     """
     Test the connection to the Novax database using Airflow connection settings.
     """
-    airflow_conn = BaseHook.get_connection("novax_sql_default")
+    airflow_conn = BaseHook.get_connection("novax_sql")
     logger.info(f"Trying to connect with Airflow connection: id={airflow_conn.conn_id}, host={airflow_conn.host}, schema={airflow_conn.schema}, login={airflow_conn.login}, port={airflow_conn.port}, extra={airflow_conn.extra}")
     try:
         engine = get_sqlalchemy_engine()
