@@ -119,15 +119,11 @@ def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str
             with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(
                 remote_path, "rb"
             ) as f_remote:
-                chunk_count = 0
                 while True:
                     chunk = f_remote.read(1024 * 1024)  # 1 MB
                     if not chunk:
                         break
                     f_local.write(chunk)
-                    chunk_count += 1
-                    if chunk_count % 100 == 0:
-                        time.sleep(0.01)
         except Exception as e:
             logger.error(f"Error downloading {remote_path}: {e}")
             continue
