@@ -168,8 +168,7 @@ def _handle_files(
     logger.info(f"Latest file: {os.path.basename(latest_file)}")
 
     max_date = latest_date - timedelta(days=1)
-    # min_date = datetime(latest_date.year - 2, latest_date.month, 1)
-    min_date = datetime(latest_date.year, latest_date.month, 1)
+    min_date = datetime(latest_date.year - 2, latest_date.month, 1)
     logger.info(f"Data period: {min_date} - {max_date}")
 
     relevant_files = [f for f, mtime in files if mtime >= min_date]
