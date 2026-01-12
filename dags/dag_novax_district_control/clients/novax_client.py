@@ -165,7 +165,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
 
 def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
     """
-    Updates the DISTRIKT field for a given NAVNID in the navn table.
+    Updates the provided fields for a given NAVNID in the Novax database.
 
     :param navnid: The NAVNID of the record to update (required).
     :param due_date: The new due date to set (optional).
@@ -264,18 +264,3 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
     logger.info(f"Updated NAVNDETALJER.TS_KOMID and NAVNDETALJER.KOMMUNE_OPR for NAVNID {navnid} to 730 {'was successful' if res else 'failed'}.")
 
     return all(success) if success else True
-
-
-def get_test_data_move() -> list[dict]:
-    query = """SELECT TOP 10 FLYTTE.NAVNID, navn.ADRESSE, navn.DISTRIKT, PERSONDISTRICT.DISTRICT AS PERSONDISTRIKT
-               FROM FLYTTE
-               LEFT JOIN navn ON FLYTTE.NAVNID = navn.ID
-               LEFT JOIN PERSONDISTRICT ON FLYTTE.NAVNID = PERSONDISTRICT.NAVNID"""
-
-    data = get_sql_data(query)
-    for entry in data:
-        for k, v in entry.items():
-            if isinstance(v, str):
-                entry[k] = v.strip()
-        entry['parsed_address'] = parse_address(entry['ADRESSE'])
-    return data

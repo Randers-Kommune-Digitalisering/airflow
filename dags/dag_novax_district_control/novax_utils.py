@@ -38,7 +38,6 @@ def parse_address(address: str) -> Address | None:
         city_part = city_part.strip()
         city_name = f"{city_part} {city_name}".strip()
 
-    from dag_novax_district_control.novax_data import Address
     return Address(
         street=street_name,
         number=house_number,

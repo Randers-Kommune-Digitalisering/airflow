@@ -23,7 +23,8 @@ def check_and_update_district() -> None:
     # Start date is inclusive, end date is exclusive
     start_date, end_date = determine_date_range()
     if start_date is None or end_date is None:
-        logger.info("No date range determined for processing. Exiting.")
+        logger.info("No date range determined for processing. Exiting as failed run.")
+        raise Exception("check_and_update_district failed: no date range")
         return
 
     # Get data from Novax and parse to UserData (+Address) objects
@@ -112,9 +113,9 @@ def check_and_update_district() -> None:
 
     # Log final status
     success = all(entry_status)
-    if success and update_success:
+    if success:
         logger.info("Successfully completed check_and_update_district")
     else:
         logger.error("Errors occurred during check_and_update_district")
-        raise Exception("check_and_update_district failed")
+        raise Exception("check_and_update_district failed: some updates failed")
     return
