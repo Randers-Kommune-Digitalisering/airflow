@@ -2,10 +2,11 @@ import logging
 import fnmatch
 import os
 import pandas as pd
+import tempfile
 
 from datetime import datetime, timedelta
 from paramiko import SFTPClient
-from typing import List, Callable, Optional, Dict, Any
+from typing import Callable, Any
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
@@ -16,8 +17,8 @@ logger = logging.getLogger(__name__)
 def fetch_and_store_sensum_data(
     sftp_hook: SFTPHook,
     db_engine: Engine,
-    file_patterns: List[str],
-    directories: List[str],
+    file_patterns: list[str],
+    directories: list[str],
     merge_func: Callable,
     output_table: str,
 ) -> bool:
@@ -63,81 +64,137 @@ def fetch_and_store_sensum_data(
 
 
 def _get_files(
-    sftp_conn: SFTPClient,
-    directory: str,
-    pattern: str,
-    only_latest: bool = False,
-) -> List[str]:
+    sftp_conn: SFTPClient, directory: str, pattern: str, only_latest: bool = False
+) -> list[tuple[str, datetime]]:
     """
-    Find files on SFTP matching a pattern, within a directory.
+    Get files from SFTP directory matching pattern, returning filename and modification time.
 
-    :param sftp_conn: Paramiko SFTP connection.
-    :param directory: Directory on SFTP.
-    :param pattern: Filename pattern.
-    :param only_latest: If True, only return the latest file.
-    :return: List of file paths.
+    :param sftp_conn: Active SFTP connection
+    :param directory: Remote directory to scan
+    :param pattern: Filename pattern (e.g., '*.csv')
+    :param only_latest: If True, return only the latest file
+    :return: List of tuples (remote_path, modification_datetime)
     """
     try:
         files = [
-            os.path.join(directory, f)
-            for f in sftp_conn.listdir(directory)
-            if fnmatch.fnmatch(f, pattern)
+            (
+                os.path.join(directory, attr.filename),
+                datetime.fromtimestamp(attr.st_mtime),
+            )
+            for attr in sftp_conn.listdir_attr(directory)
+            if fnmatch.fnmatch(attr.filename, pattern)
         ]
-        if only_latest and files:
-            latest_file = max(files, key=lambda f: sftp_conn.stat(f).st_mtime)
-            return [latest_file]
+        if not files:
+            logger.info("No files matching pattern found.")
+            return []
+
+        # Sort files by mtime descending
+        files.sort(key=lambda x: x[1], reverse=True)
+
+        if only_latest:
+            return [files[0]]
+
         return files
     except Exception as e:
-        logger.error(f"Error getting files: {e}")
+        logger.error(f"Error getting files from {directory}: {e}")
         return []
 
 
-def _handle_files(files: List[str], sftp_conn: SFTPClient) -> Optional[pd.DataFrame]:
+def _download_files_locally(files: list[str], sftp_conn: SFTPClient) -> list[str]:
+    """
+    Download remote files to local temp files with chunked reading.
+
+    :param files: List of remote file paths
+    :param sftp_conn: Active SFTP connection
+    :return: List of local file paths
+    """
+    local_files = []
+
+    for i, remote_path in enumerate(files, start=1):
+        local_fd, local_path = tempfile.mkstemp(suffix=os.path.splitext(remote_path)[1])
+        logger.debug(
+            f"Downloading file {i}/{len(files)}: {remote_path} -> {local_path}"
+        )
+
+        fd_closed = False
+        try:
+            with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(
+                remote_path, "rb"
+            ) as f_remote:
+                fd_closed = True  # fdopen closes the fd when exiting the context
+                while True:
+                    chunk = f_remote.read(1024 * 1024)  # 1 MB
+                    if not chunk:
+                        break
+                    f_local.write(chunk)
+        except Exception as e:
+            logger.error(f"Error downloading {remote_path}: {e}")
+            continue
+        finally:
+            if not fd_closed:
+                try:
+                    os.close(local_fd)
+                except Exception as e:
+                    logger.warning(
+                        f"Could not close file descriptor for {local_path}: {e}"
+                    )
+
+        local_files.append(local_path)
+
+    return local_files
+
+
+def _handle_files(
+    files: list[tuple[str, datetime]], sftp_conn: SFTPClient
+) -> pd.DataFrame | None:
     """
     Read and combine relevant Sensum files from SFTP into a single DataFrame.
 
-    :param files: List of file paths.
-    :param sftp_conn: Paramiko SFTP connection.
-    :return: DataFrame or None.
+    :param files: List of tuples (remote_path, modification_datetime)
+    :param sftp_conn: Active SFTP connection
+    :return: Combined DataFrame or None
     """
+    if not files:
+        logger.error("No files provided.")
+        return None
+
+    latest_file, latest_date = max(files, key=lambda x: x[1])
+    logger.info(f"Latest file: {os.path.basename(latest_file)}")
+
+    max_date = latest_date - timedelta(days=1)
+    min_date = datetime(latest_date.year - 2, latest_date.month, 1)
+    logger.info(f"Data period: {min_date} - {max_date}")
+
+    relevant_files = [f for f, mtime in files if mtime >= min_date]
+    logger.info(f"Found {len(relevant_files)} relevant files.")
+
+    if not relevant_files:
+        return None
+
+    local_files = _download_files_locally(files=relevant_files, sftp_conn=sftp_conn)
+
+    df_list = []
     try:
-        if not files:
-            logger.error("No files found.")
-            return None
+        for local_path in local_files:
+            df = pd.read_csv(local_path, sep=";", header=0, decimal=",")
+            df_list.append(df)
+    finally:
+        for local_path in local_files:
+            try:
+                os.remove(local_path)
+                logger.debug(f"Removed temp file {local_path}")
+            except Exception as e:
+                logger.warning(f"Could not remove temp file {local_path}: {e}")
 
-        latest_file = max(files, key=lambda f: sftp_conn.stat(f).st_mtime)
-        logger.info(f"Latest file: {os.path.basename(latest_file)}")
+    if df_list:
+        combined_df = pd.concat(df_list, ignore_index=True).drop_duplicates()
+        return combined_df
 
-        last_modified_time = sftp_conn.stat(latest_file).st_mtime
-        date = datetime.fromtimestamp(last_modified_time)
-
-        max_date = date - timedelta(days=1)
-        min_date = datetime(date.year - 2, date.month, 1)
-
-        logger.debug(f"Data period: {min_date} - {max_date}")
-
-        files = [
-            f
-            for f in files
-            if datetime.fromtimestamp(sftp_conn.stat(f).st_mtime) >= min_date
-        ]
-
-        df_list = []
-        for filename in files:
-            with sftp_conn.open(filename) as f:
-                df = pd.read_csv(f, sep=";", header=0, decimal=",")
-                df_list.append(df)
-        if df_list:
-            df = pd.concat(df_list, ignore_index=True).drop_duplicates()
-            return df
-        return None
-    except Exception as e:
-        logger.error(f"Error handling files: {e}")
-        return None
+    return None
 
 
 def _process_and_save_files(
-    file_list_list: List[List[str]],
+    file_list_list: list[list[tuple[str, datetime]]],
     sftp_conn: SFTPClient,
     merge_func: Callable,
     db_engine: Engine,
@@ -146,7 +203,7 @@ def _process_and_save_files(
     """
     Merge and store Sensum data in the database.
 
-    :param file_list_list: List of lists of file paths.
+    :param file_list_list: List of lists of (remote_path, modification_datetime)
     :param sftp_conn: Paramiko SFTP connection.
     :param merge_func: Function to merge DataFrames.
     :param db_engine: SQLAlchemy Engine.
@@ -157,11 +214,15 @@ def _process_and_save_files(
         _handle_files(files=file_list, sftp_conn=sftp_conn)
         for file_list in file_list_list
     ]
+
     if all(df is not None and not df.empty for df in dfs):
         result = merge_func(*dfs)
         try:
             result.to_sql(
-                name=output_table, con=db_engine, if_exists="replace", index=False
+                name=output_table,
+                con=db_engine,
+                if_exists="replace",
+                index=False,
             )
             logger.info(f"Successfully saved {output_table} to the database")
             return True
@@ -173,16 +234,17 @@ def _process_and_save_files(
         except Exception as e:
             logger.error(f"Failed to save {output_table} to the database: {e}")
             return False
+
     return False
 
 
 def merge_dataframes(
     df1: pd.DataFrame,
     df2: pd.DataFrame,
-    merge_on: List[str],
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    merge_on: list[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Merge two DataFrames, group and aggregate.
@@ -209,9 +271,9 @@ def merge_dataframes(
 def merge_df_ydelse(
     ydelse_df: pd.DataFrame,
     afdeling_df: pd.DataFrame,
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Merge ydelse and afdeling DataFrames, group and aggregate.
@@ -243,9 +305,9 @@ def sager_afdeling_medarbejder_merge_df(
     sager_df: pd.DataFrame,
     afdeling_df: pd.DataFrame,
     medarbejder_df: pd.DataFrame,
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Merge sager, afdeling, and medarbejder DataFrames, filter and aggregate.
@@ -301,9 +363,9 @@ def sager_afdeling_medarbejder_merge_df(
 
 def process_indsats_df(
     indsats_df: pd.DataFrame,
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Rename and aggregate indsats DataFrame.
@@ -331,7 +393,7 @@ def process_indsats_df(
         raise
 
 
-MERGE_FUNCTIONS: Dict[str, Callable] = {
+MERGE_FUNCTIONS: dict[str, Callable] = {
     "merge_dataframes": merge_dataframes,
     "merge_df_ydelse": merge_df_ydelse,
     "sager_afdeling_medarbejder_merge_df": sager_afdeling_medarbejder_merge_df,
