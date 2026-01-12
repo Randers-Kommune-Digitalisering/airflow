@@ -3,6 +3,7 @@ import fnmatch
 import os
 import pandas as pd
 import tempfile
+import time
 
 from datetime import datetime, timedelta
 from paramiko import SFTPClient
@@ -122,11 +123,16 @@ def _download_files_locally(files: list[str], sftp_conn: SFTPClient) -> list[str
                 remote_path, "rb"
             ) as f_remote:
                 fd_closed = True  # fdopen closes the fd when exiting the context
+
+                chunk_count = 0
                 while True:
                     chunk = f_remote.read(1024 * 1024)  # 1 MB
                     if not chunk:
                         break
                     f_local.write(chunk)
+                    chunk_count += 1
+                    if chunk_count % 100 == 0:
+                        time.sleep(0.01)
         except Exception as e:
             logger.error(f"Error downloading {remote_path}: {e}")
             continue
@@ -162,7 +168,8 @@ def _handle_files(
     logger.info(f"Latest file: {os.path.basename(latest_file)}")
 
     max_date = latest_date - timedelta(days=1)
-    min_date = datetime(latest_date.year - 2, latest_date.month, 1)
+    # min_date = datetime(latest_date.year - 2, latest_date.month, 1)
+    min_date = datetime(latest_date.year, latest_date.month, 1)
     logger.info(f"Data period: {min_date} - {max_date}")
 
     relevant_files = [f for f, mtime in files if mtime >= min_date]
