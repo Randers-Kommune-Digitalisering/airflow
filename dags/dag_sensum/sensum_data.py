@@ -3,7 +3,6 @@ import fnmatch
 import os
 import pandas as pd
 import tempfile
-import time
 
 from datetime import datetime, timedelta
 from paramiko import SFTPClient
@@ -113,12 +112,12 @@ def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str
 
     for i, remote_path in enumerate(files, start=1):
         local_fd, local_path = tempfile.mkstemp(suffix=os.path.splitext(remote_path)[1])
-        logger.info(f"Downloading file {i}/{len(files)}: {remote_path} -> {local_path}")
+        logger.debug(f"Downloading file {i}/{len(files)}: {remote_path} -> {local_path}")
 
+        fd_closed = False
         try:
-            with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(
-                remote_path, "rb"
-            ) as f_remote:
+            with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(remote_path, "rb") as f_remote:
+                fd_closed = True  # fdopen closes the fd when exiting the context
                 while True:
                     chunk = f_remote.read(1024 * 1024)  # 1 MB
                     if not chunk:
@@ -127,6 +126,12 @@ def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str
         except Exception as e:
             logger.error(f"Error downloading {remote_path}: {e}")
             continue
+        finally:
+            if not fd_closed:
+                try:
+                    os.close(local_fd)
+                except Exception as e:
+                    logger.warning(f"Could not close file descriptor for {local_path}: {e}")
 
         local_files.append(local_path)
 
