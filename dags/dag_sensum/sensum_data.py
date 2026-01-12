@@ -6,7 +6,7 @@ import tempfile
 
 from datetime import datetime, timedelta
 from paramiko import SFTPClient
-from typing import List, Callable, Dict, Any, Tuple
+from typing import Callable, Any
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 def fetch_and_store_sensum_data(
     sftp_hook: SFTPHook,
     db_engine: Engine,
-    file_patterns: List[str],
-    directories: List[str],
+    file_patterns: list[str],
+    directories: list[str],
     merge_func: Callable,
     output_table: str,
 ) -> bool:
@@ -65,7 +65,7 @@ def fetch_and_store_sensum_data(
 
 def _get_files(
     sftp_conn: SFTPClient, directory: str, pattern: str, only_latest: bool = False
-) -> List[Tuple[str, datetime]]:
+) -> list[tuple[str, datetime]]:
     """
     Get files from SFTP directory matching pattern, returning filename and modification time.
 
@@ -100,7 +100,7 @@ def _get_files(
         return []
 
 
-def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str]:
+def _download_files_locally(files: list[str], sftp_conn: SFTPClient) -> list[str]:
     """
     Download remote files to local temp files with chunked reading.
 
@@ -112,11 +112,15 @@ def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str
 
     for i, remote_path in enumerate(files, start=1):
         local_fd, local_path = tempfile.mkstemp(suffix=os.path.splitext(remote_path)[1])
-        logger.debug(f"Downloading file {i}/{len(files)}: {remote_path} -> {local_path}")
+        logger.debug(
+            f"Downloading file {i}/{len(files)}: {remote_path} -> {local_path}"
+        )
 
         fd_closed = False
         try:
-            with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(remote_path, "rb") as f_remote:
+            with os.fdopen(local_fd, "wb") as f_local, sftp_conn.open(
+                remote_path, "rb"
+            ) as f_remote:
                 fd_closed = True  # fdopen closes the fd when exiting the context
                 while True:
                     chunk = f_remote.read(1024 * 1024)  # 1 MB
@@ -131,7 +135,9 @@ def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str
                 try:
                     os.close(local_fd)
                 except Exception as e:
-                    logger.warning(f"Could not close file descriptor for {local_path}: {e}")
+                    logger.warning(
+                        f"Could not close file descriptor for {local_path}: {e}"
+                    )
 
         local_files.append(local_path)
 
@@ -139,7 +145,7 @@ def _download_files_locally(files: List[str], sftp_conn: SFTPClient) -> List[str
 
 
 def _handle_files(
-    files: List[Tuple[str, datetime]], sftp_conn: SFTPClient
+    files: list[tuple[str, datetime]], sftp_conn: SFTPClient
 ) -> pd.DataFrame | None:
     """
     Read and combine relevant Sensum files from SFTP into a single DataFrame.
@@ -188,7 +194,7 @@ def _handle_files(
 
 
 def _process_and_save_files(
-    file_list_list: List[List[Tuple[str, datetime]]],
+    file_list_list: list[list[tuple[str, datetime]]],
     sftp_conn: SFTPClient,
     merge_func: Callable,
     db_engine: Engine,
@@ -235,10 +241,10 @@ def _process_and_save_files(
 def merge_dataframes(
     df1: pd.DataFrame,
     df2: pd.DataFrame,
-    merge_on: List[str],
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    merge_on: list[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Merge two DataFrames, group and aggregate.
@@ -265,9 +271,9 @@ def merge_dataframes(
 def merge_df_ydelse(
     ydelse_df: pd.DataFrame,
     afdeling_df: pd.DataFrame,
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Merge ydelse and afdeling DataFrames, group and aggregate.
@@ -299,9 +305,9 @@ def sager_afdeling_medarbejder_merge_df(
     sager_df: pd.DataFrame,
     afdeling_df: pd.DataFrame,
     medarbejder_df: pd.DataFrame,
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Merge sager, afdeling, and medarbejder DataFrames, filter and aggregate.
@@ -357,9 +363,9 @@ def sager_afdeling_medarbejder_merge_df(
 
 def process_indsats_df(
     indsats_df: pd.DataFrame,
-    group_by: List[str],
-    agg_dict: Dict[str, Any],
-    columns: List[str],
+    group_by: list[str],
+    agg_dict: dict[str, Any],
+    columns: list[str],
 ) -> pd.DataFrame:
     """
     Rename and aggregate indsats DataFrame.
@@ -387,7 +393,7 @@ def process_indsats_df(
         raise
 
 
-MERGE_FUNCTIONS: Dict[str, Callable] = {
+MERGE_FUNCTIONS: dict[str, Callable] = {
     "merge_dataframes": merge_dataframes,
     "merge_df_ydelse": merge_df_ydelse,
     "sager_afdeling_medarbejder_merge_df": sager_afdeling_medarbejder_merge_df,
