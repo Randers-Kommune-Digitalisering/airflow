@@ -34,21 +34,21 @@ SENSUM_CONFIG = [
             "Status",
         ],
         "merge_func": "sager_afdeling_medarbejder_merge_df",
+    },
+    {
+        "name": "ydelse",
+        "patterns": ["Ydelse_*.csv", "Afdeling_*.csv"],
+        "group_by": "YdelseId",
+        "directories": ["/D:/SFTP-EGDW/Frem"],
+        "agg_columns": {
+            "YdelseNavn": "first",
+            "StartDato": "first",
+            "SlutDato": "first",
+            "Navn": "first",
+        },
+        "columns": ["YdelseNavn", "StartDato", "SlutDato", "AfdelingNavn"],
+        "merge_func": "merge_df_ydelse",
     }
-    # {
-    #     "name": "ydelse",
-    #     "patterns": ["Ydelse_*.csv", "Afdeling_*.csv"],
-    #     "group_by": "YdelseId",
-    #     "directories": ["/D:/SFTP-EGDW/Frem"],
-    #     "agg_columns": {
-    #         "YdelseNavn": "first",
-    #         "StartDato": "first",
-    #         "SlutDato": "first",
-    #         "Navn": "first",
-    #     },
-    #     "columns": ["YdelseNavn", "StartDato", "SlutDato", "AfdelingNavn"],
-    #     "merge_func": "merge_df_ydelse",
-    # },
     # {
     #     "name": "indsats_fordeling",
     #     "patterns": ["Sager_*.csv", "Indsatser_*.csv"],
