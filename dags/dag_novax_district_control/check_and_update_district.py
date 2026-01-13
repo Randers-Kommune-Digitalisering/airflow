@@ -36,9 +36,11 @@ def check_and_update_district() -> None:
 
     # Process each UserData entry
     update_requests_by_navnid: dict = {}
+    skipped_navnids: set = set()
     for entry in res:
         if entry.journal is None:
             logger.warning(f"No journal data for navnid: {entry.navnid}, skipping entry.")
+            skipped_navnids.add(entry.navnid)
             continue
 
         # Parse journal note to dict
@@ -124,11 +126,18 @@ def check_and_update_district() -> None:
                     existing[key] = value
 
     # Perform single Novax batch update
-    update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
+    if update_requests_by_navnid:
+        update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
+    else:
+        update_results = {}
 
     # Log update results per entry
     entry_status = []
     for entry in res:
+        if entry.navnid in skipped_navnids:
+            logger.warning(f"Skipped navnid {entry.navnid}: missing journal data (no update attempted).")
+            continue
+
         update_success = bool(update_results.get(entry.navnid))
         entry_status.append(update_success)
 
@@ -150,6 +159,9 @@ def check_and_update_district() -> None:
             logger.error(f"Failed to update Novax userdata for navnid {entry.navnid}")
 
     # Log final status
+    if skipped_navnids:
+        logger.info(f"Skipped {len(skipped_navnids)} entr{'y' if len(skipped_navnids) == 1 else 'ies'} due to missing journal data.")
+
     success = all(entry_status)
     if success:
         logger.info("Successfully completed check_and_update_district")

@@ -82,7 +82,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                 for upd in updates:
                     navnid = upd.get("navnid")
                     if navnid is None:
-                        results[navnid] = False
+                        logger.error("Batch update entry missing required 'navnid': %r, skipping entry", upd)
                         continue
 
                     try:
@@ -217,7 +217,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                 session.rollback()
             except Exception:
                 pass
-            results = {k: False for k in results.keys()}
+            results = {upd.get("navnid"): False for upd in updates}
 
     return results
 
@@ -293,7 +293,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     return userdata_list
 
 
-def update_novax_userdata(navnid: int | str, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
+def update_novax_userdata(navnid: str, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
     """
     Updates the provided fields for a given NAVNID in the Novax database.
 

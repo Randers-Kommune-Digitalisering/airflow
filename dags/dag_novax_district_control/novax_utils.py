@@ -34,9 +34,9 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: int, address: Address | None, district: str, tlf_nr: str | None, timestamp: datetime, journal: str | None = None):
+    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, tlf_nr: str | None, timestamp: datetime, journal: str | None = None):
         self.cpr: str = cpr
-        self.navnid: int = navnid
+        self.navnid: str = navnid
         self.current_address: Address | None = address
         self.current_district: str = district
         self.current_tlf_nr: str | None = tlf_nr
