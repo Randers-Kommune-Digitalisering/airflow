@@ -1,11 +1,11 @@
 import logging
 
-from typing import List, Optional, Dict, Any
+from typing import Any
 from msgraph.graph_service_client import GraphServiceClient
 
 logger = logging.getLogger(__name__)
 
-SHAREPOINT_FIELDS: List[str] = [
+SHAREPOINT_FIELDS: list[str] = [
     "Title",
     "Fase",
     "Uddybning",
@@ -25,8 +25,8 @@ async def ms_graph_get_sharepoint_list_items_async(
     client: GraphServiceClient,
     site_id: str,
     list_id: str,
-    fields: Optional[List[str]] = None,
-) -> List[Dict[str, Any]]:
+    fields: list[str] | None = None,
+) -> list[dict[str, Any]]:
     """
     Retrieve all SharePoint list items from Microsoft Graph API.
 
@@ -64,7 +64,7 @@ async def ms_graph_get_sharepoint_list_items_async(
     return result
 
 
-def transform_sharepoint_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def transform_sharepoint_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Transform and rename fields from SharePoint list items.
 
