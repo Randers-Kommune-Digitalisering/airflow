@@ -27,6 +27,9 @@ def process_sharepoint_list_items() -> None:
     site_id = sharepoint_config.get("site_id")
     list_id = sharepoint_config.get("list_id")
 
+    if not site_id or not list_id:
+        raise ValueError("SharePoint site_id or list_id is missing in Airflow connection.")
+
     ms_graph_hook = KiotaRequestAdapterHook(conn_id="ms_graph_sharepoint_handleplan")
     ms_graph_adapter = ms_graph_hook.get_conn()
     ms_graph_client = GraphServiceClient(request_adapter=ms_graph_adapter)
