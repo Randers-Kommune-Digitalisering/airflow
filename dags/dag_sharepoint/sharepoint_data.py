@@ -37,16 +37,19 @@ async def ms_graph_get_sharepoint_list_items_async(
     :return: List of dictionaries with SharePoint list fields.
     """
 
+    orderby = "createdDateTime asc"
     if fields:
         select_fields = ",".join(fields)
         url = (
             f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items"
             f"?$expand=fields($select={select_fields})"
+            f"&$orderby={orderby}"
         )
     else:
         url = (
             f"https://graph.microsoft.com/v1.0/sites/{site_id}/lists/{list_id}/items"
             "?$expand=fields"
+            f"&$orderby={orderby}"
         )
 
     all_items = []
