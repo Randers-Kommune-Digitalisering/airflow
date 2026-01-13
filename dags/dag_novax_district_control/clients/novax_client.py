@@ -1,12 +1,12 @@
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 import pandas as pd
-from airflow.hooks.base import BaseHook
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 
 from dag_novax_district_control.novax_utils import parse_address
-from dag_novax_district_control.novax_data import UserData
+from dag_novax_district_control.novax_utils import UserData
 
 logger = logging.getLogger(__name__)
 
@@ -18,22 +18,6 @@ def get_sqlalchemy_engine():
     hook = MsSqlHook(mssql_conn_id="novax_sql")
     engine = hook.get_sqlalchemy_engine()
     return engine
-
-
-def test_connection() -> bool:
-    """
-    Test the connection to the Novax database using Airflow connection settings.
-    """
-    airflow_conn = BaseHook.get_connection("novax_sql")
-    logger.info(f"Trying to connect with Airflow connection: id={airflow_conn.conn_id}, host={airflow_conn.host}, schema={airflow_conn.schema}, login={airflow_conn.login}, port={airflow_conn.port}, extra={airflow_conn.extra}")
-    try:
-        engine = get_sqlalchemy_engine()
-        with engine.connect() as conn:
-            logger.info(f'Connection to database {airflow_conn.schema} successful: {conn}')
-            return True
-    except Exception as e:
-        logger.error(f'Failed to connect to database: {e}')
-        return False
 
 
 def get_sql_data(query: str, params: dict | None = None) -> list[dict]:
@@ -64,32 +48,178 @@ def get_sql_data(query: str, params: dict | None = None) -> list[dict]:
             conn.close()
 
 
-def update_sql_data(query: str, params: dict | None = None) -> bool:
-    """
-    Execute an update/insert/delete SQL command.
+def update_novax_userdatas_batch(updates: list[dict]) -> dict:
+    """Batch-update many NAVNID records using a single SQLAlchemy Session.
 
-    :param query: The SQL query to execute.
-    :param params: Optional dictionary of parameters to bind to the query.
+    This keeps 1 connection open for the whole batch and performs a single outer
+    commit at the end. Each NAVNID update runs in a nested transaction (SAVEPOINT)
+    so failures don't automatically abort the full batch.
+
+    Expected update dict keys:
+      - navnid (required)
+      - due_date (optional)
+      - new_district (optional)
+      - new_address (optional)
+      - new_tlf_nr (optional)
+
+    Returns: mapping {navnid: bool}
     """
     engine = get_sqlalchemy_engine()
-    conn = None
-    try:
-        conn = engine.connect()
-        trans = conn.begin()
-        conn.execute(text(query), params or {})
-        trans.commit()
-        return True
-    except Exception as e:
-        logger.error(f"SQL error executing update: {e}")
-        if conn:
+    results: dict = {}
+
+    def _exec(session: Session, query: str, params: dict | None = None) -> None:
+        session.execute(text(query), params or {})
+
+    def _exec_with_rowcount(
+        session: Session, query: str, params: dict | None = None
+    ) -> int:
+        result = session.execute(text(query), params or {})
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    with Session(engine) as session:
+        try:
+            with session.begin():
+                for upd in updates:
+                    navnid = upd.get("navnid")
+                    if navnid is None:
+                        logger.error("Batch update entry missing required 'navnid': %r, skipping entry", upd)
+                        continue
+
+                    try:
+                        with session.begin_nested():
+                            due_date = upd.get("due_date")
+                            new_district = upd.get("new_district")
+                            new_address = upd.get("new_address")
+                            new_tlf_nr = upd.get("new_tlf_nr")
+
+                            if due_date is not None:
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE NAVNDETALJER
+                                    SET TERMIN = :due_date
+                                    WHERE NAVNID = :navnid
+                                    """,
+                                    {"due_date": due_date, "navnid": navnid},
+                                )
+
+                            if new_district is not None:
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE navn
+                                    SET DISTRIKT = :new_district
+                                    WHERE ID = :navnid
+                                    """,
+                                    {"new_district": new_district, "navnid": navnid},
+                                )
+
+                                # Close any existing district records with different district
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE PERSONDISTRICT
+                                    SET DATETO = CAST(GETDATE() AS date)
+                                    WHERE NAVNID = :navnid
+                                      AND DATEFROM <= CAST(GETDATE() AS date)
+                                      AND (DATETO > CAST(GETDATE() AS date) OR DATETO = '1753-01-01 00:00:00.000')
+                                      AND DISTRICT <> :new_district
+                                    """,
+                                    {"new_district": new_district, "navnid": navnid},
+                                )
+
+                                # Insert new district record if not already present
+                                _exec(
+                                    session,
+                                    """
+                                    IF NOT EXISTS (
+                                        SELECT 1
+                                        FROM PERSONDISTRICT
+                                        WHERE NAVNID = :navnid
+                                          AND DISTRICT = :new_district
+                                          AND DATEFROM <= CAST(GETDATE() AS date)
+                                          AND (DATETO IS NULL OR DATETO >= CAST(GETDATE() AS date) OR DATETO = '1753-01-01 00:00:00.000')
+                                    )
+                                    BEGIN
+                                        INSERT INTO PERSONDISTRICT (NAVNID, DISTRICT, DATEFROM, DATETO)
+                                        VALUES (:navnid, :new_district, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
+                                    END
+                                    """,
+                                    {"new_district": new_district, "navnid": navnid},
+                                )
+
+                            if new_address is not None:
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE navn
+                                    SET ADRESSE = :new_address
+                                    WHERE ID = :navnid
+                                    """,
+                                    {"new_address": new_address, "navnid": navnid},
+                                )
+
+                            if new_tlf_nr is not None:
+                                # Make the provided number primary and demote all others
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE TELEFON
+                                    SET PRIMAER = 0
+                                    WHERE NAVNID = :navnid
+                                      AND TELEFONNUMMER <> :new_tlf_nr
+                                    """,
+                                    {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
+                                )
+
+                                updated_rows = _exec_with_rowcount(
+                                    session,
+                                    """
+                                    UPDATE TELEFON
+                                    SET PRIMAER = 1,
+                                        TS_UPDD = GETDATE()
+                                    WHERE NAVNID = :navnid
+                                      AND TELEFONNUMMER = :new_tlf_nr
+                                    """,
+                                    {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
+                                )
+
+                                if updated_rows == 0:
+                                    _exec(
+                                        session,
+                                        """
+                                        INSERT INTO TELEFON (NAVNID, TELEFONNUMMER, PRIMAER, TS_UPDD)
+                                        VALUES (:navnid, :new_tlf_nr, 1, GETDATE())
+                                        """,
+                                        {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
+                                    )
+
+                            # Always update area code to 730
+                            _exec(
+                                session,
+                                """
+                                UPDATE NAVNDETALJER
+                                SET TS_KOMID = 730,
+                                    KOMMUNE_OPR = 730
+                                WHERE NAVNID = :navnid
+                                """,
+                                {"navnid": navnid},
+                            )
+
+                        results[navnid] = True
+                    except Exception as e:
+                        logger.error(f"Batch update failed for NAVNID {navnid!r}: {e}")
+                        results[navnid] = False
+
+        except Exception as e:
+            logger.error(f"Batch commit failed; rolling back whole batch: {e}")
             try:
-                trans.rollback()
-            except Exception as rollback_err:
-                logger.error(f"Error during transaction rollback: {rollback_err}")
-        return False
-    finally:
-        if conn:
-            conn.close()
+                session.rollback()
+            except Exception:
+                pass
+            results = {upd.get("navnid"): False for upd in updates}
+
+    return results
 
 
 def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserData]:
@@ -163,7 +293,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
     return userdata_list
 
 
-def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
+def update_novax_userdata(navnid: str, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
     """
     Updates the provided fields for a given NAVNID in the Novax database.
 
@@ -180,87 +310,15 @@ def update_novax_userdata(navnid: int, due_date: datetime = None, new_district: 
         logger.error("NAVNID is required to update Novax userdata.")
         return False
 
-    # Ensure NAVNID is an integer (guards against accidental unsafe string input).
-    try:
-        navnid = int(navnid)
-    except (TypeError, ValueError):
-        logger.error(f"Invalid NAVNID value: {navnid!r}")
-        return False
-
-    success = []
-
-    # Update due date if provided
-    if due_date is not None:
-        query = """
-            UPDATE NAVNDETALJER
-            SET TERMIN = :due_date
-            WHERE NAVNID = :navnid
-        """
-        res = update_sql_data(query, params={"due_date": due_date, "navnid": navnid})
-        success.append(res)
-        logger.info(f"Updated NAVNDETALJER.TERMIN for NAVNID {navnid} to {due_date} {'was successful' if res else 'failed'}.")
-
-    # Update district if provided
-    if new_district is not None:
-        query1 = """
-            UPDATE navn
-            SET DISTRIKT = :new_district
-            WHERE ID = :navnid
-        """
-        res1 = update_sql_data(query1, params={"new_district": new_district, "navnid": navnid})
-        success.append(res1)
-        logger.info(f"Updated navn.DISTRIKT for NAVNID {navnid} to {new_district} {'was successful' if res1 else 'failed'}.")
-
-        query2 = """
-            UPDATE PERSONDISTRICT
-            SET DISTRICT = :new_district
-            WHERE NAVNID = :navnid
-            AND DATEFROM <= GETDATE()
-            AND (DATETO IS NULL OR DATETO >= GETDATE() OR DATETO = '1753-01-01 00:00:00.000')
-        """
-        res2 = update_sql_data(query2, params={"new_district": new_district, "navnid": navnid})
-        success.append(res2)
-        logger.info(f"Updated PERSONDISTRICT.DISTRICT for NAVNID {navnid} to {new_district} {'was successful' if res2 else 'failed'}.")
-
-    # Update address if provided
-    if new_address is not None:
-        query = """
-            UPDATE navn
-            SET ADRESSE = :new_address
-            WHERE ID = :navnid
-        """
-        res = update_sql_data(query, params={"new_address": new_address, "navnid": navnid})
-        success.append(res)
-        logger.info(f"Updated navn.ADRESSE for NAVNID {navnid} to {new_address} {'was successful' if res else 'failed'}.")
-
-    # Update telephone number if provided
-    if new_tlf_nr is not None:
-        # First, delete all existing TELEFON records for the NAVNID
-        delete_query = """
-            DELETE FROM TELEFON
-            WHERE NAVNID = :navnid
-        """
-        delete_res = update_sql_data(delete_query, params={"navnid": navnid})
-        logger.info(f"Deleted existing TELEFON records for NAVNID {navnid} {'was successful' if delete_res else 'failed'}.")
-
-        # Then, insert the new telephone number
-        query = """
-            INSERT INTO TELEFON (NAVNID, TELEFONNUMMER, PRIMAER, TS_UPDD)
-            VALUES (:navnid, :new_tlf_nr, 1, GETDATE())
-        """
-        res = update_sql_data(query, params={"navnid": navnid, "new_tlf_nr": new_tlf_nr})
-        success.append(res)
-        logger.info(f"Updated TELEFON.TELEFONNUMMER for NAVNID {navnid} to {new_tlf_nr} {'was successful' if res else 'failed'}.")
-
-    # Also update area code to 730
-    query = """
-        UPDATE NAVNDETALJER
-        SET TS_KOMID = 730,
-            KOMMUNE_OPR = 730
-        WHERE NAVNID = :navnid
-    """
-    res = update_sql_data(query, params={"navnid": navnid})
-    success.append(res)
-    logger.info(f"Updated NAVNDETALJER.TS_KOMID and NAVNDETALJER.KOMMUNE_OPR for NAVNID {navnid} to 730 {'was successful' if res else 'failed'}.")
-
-    return all(success) if success else True
+    results = update_novax_userdatas_batch(
+        [
+            {
+                "navnid": navnid,
+                "due_date": due_date,
+                "new_district": new_district,
+                "new_address": new_address,
+                "new_tlf_nr": new_tlf_nr,
+            }
+        ]
+    )
+    return bool(results.get(navnid))
