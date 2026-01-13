@@ -114,14 +114,36 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                                     {"new_district": new_district, "navnid": navnid},
                                 )
 
+                                # Close any existing district records with different district
                                 _exec(
                                     session,
                                     """
                                     UPDATE PERSONDISTRICT
-                                    SET DISTRICT = :new_district
+                                    SET DATETO = CAST(GETDATE() AS date)
                                     WHERE NAVNID = :navnid
-                                      AND DATEFROM <= GETDATE()
-                                      AND (DATETO IS NULL OR DATETO >= GETDATE() OR DATETO = '1753-01-01 00:00:00.000')
+                                      AND DATEFROM <= CAST(GETDATE() AS date)
+                                      AND (DATETO > CAST(GETDATE() AS date) OR DATETO = '1753-01-01 00:00:00.000')
+                                      AND DISTRICT <> :new_district
+                                    """,
+                                    {"new_district": new_district, "navnid": navnid},
+                                )
+
+                                # Insert new district record if not already present
+                                _exec(
+                                    session,
+                                    """
+                                    IF NOT EXISTS (
+                                        SELECT 1
+                                        FROM PERSONDISTRICT
+                                        WHERE NAVNID = :navnid
+                                          AND DISTRICT = :new_district
+                                          AND DATEFROM <= CAST(GETDATE() AS date)
+                                          AND (DATETO IS NULL OR DATETO >= CAST(GETDATE() AS date) OR DATETO = '1753-01-01 00:00:00.000')
+                                    )
+                                    BEGIN
+                                        INSERT INTO PERSONDISTRICT (NAVNID, DISTRICT, DATEFROM, DATETO)
+                                        VALUES (:navnid, :new_district, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
+                                    END
                                     """,
                                     {"new_district": new_district, "navnid": navnid},
                                 )
@@ -138,7 +160,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                                 )
 
                             if new_tlf_nr is not None:
-                                # Make the provided number primary and demote all others.
+                                # Make the provided number primary and demote all others
                                 _exec(
                                     session,
                                     """
@@ -172,7 +194,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                                         {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
                                     )
 
-                            # Always update area code to 730.
+                            # Always update area code to 730
                             _exec(
                                 session,
                                 """
