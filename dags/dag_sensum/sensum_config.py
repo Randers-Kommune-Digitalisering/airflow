@@ -76,5 +76,5 @@ SENSUM_CONFIG = [
             "IndsatsParagraf",
         ],
         "merge_func": "merge_dataframes",
-    },
+    }
 ]

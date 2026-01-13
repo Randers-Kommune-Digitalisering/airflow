@@ -69,8 +69,7 @@ def check_and_update_persons() -> None:
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0, read=30.0)) as delta_client:
             with Session(bind=meta_engine) as meta_session:
-                persons = meta_session.query(PersonMedDB).all()
-                persons_with_email = [p for p in persons if p.email]
+                persons_with_email = meta_session.query(PersonMedDB).filter(PersonMedDB.email.isnot(None)).all()
 
                 sem = asyncio.BoundedSemaphore(CONCURRENCY)
 

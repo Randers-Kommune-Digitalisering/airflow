@@ -30,8 +30,8 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 Schedule er sat op til at køre automatisk på følgende tidspunkter:
 
-- **Tidspunkt:** Kl. 00:00 hver mandag
+- **Tidspunkt:** Kl. 02:00 hver mandag
 - **Cron syntax:**  
   ```
-  0 0 * * 1
+  0 2 * * 1
   ```
