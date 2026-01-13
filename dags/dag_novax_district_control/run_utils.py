@@ -1,7 +1,7 @@
 import datetime
 from airflow.operators.python import get_current_context
 from airflow.models import DagRun
-from airflow.utils import timezone as airflow_tz
+from airflow.utils import timezone
 from airflow.utils.session import create_session
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunType
@@ -20,7 +20,7 @@ def _as_local_date(value, tz) -> datetime.date | None:
         return None
     if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
         return value
-    coerced = airflow_tz.coerce_datetime(value)
+    coerced = timezone.coerce_datetime(value)
     return coerced.in_timezone(tz).date()
 
 
@@ -30,7 +30,7 @@ def _as_local_dt(value, tz):
     """
     if value is None:
         return None
-    coerced = airflow_tz.coerce_datetime(value)
+    coerced = timezone.coerce_datetime(value)
     return coerced.in_timezone(tz)
 
 
@@ -58,7 +58,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
     ctx = get_current_context()
     dag = ctx["dag"]
     dag_id = dag.dag_id
-    dag_tz = getattr(dag, "timezone", None) or airflow_tz.UTC
+    dag_tz = getattr(dag, "timezone", None) or timezone.UTC
 
     dag_run = ctx.get("dag_run")
     current_run_id = dag_run.run_id if dag_run else None
@@ -69,7 +69,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
         # Infer for scheduled daily DAGs, otherwise fall back to "now".
         current_data_interval_end = _infer_daily_interval_end(current_logical_date, dag_tz)
     if current_data_interval_end is None:
-        current_data_interval_end = airflow_tz.now().in_timezone(dag_tz)
+        current_data_interval_end = timezone.now().in_timezone(dag_tz)
 
     end_date = _as_local_date(current_data_interval_end, dag_tz)
 
@@ -86,7 +86,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
         if current_run_id is not None:
             query = query.filter(DagRun.run_id != current_run_id)
         if current_logical_date is not None:
-            query = query.filter(DagRun.execution_date < airflow_tz.coerce_datetime(current_logical_date))
+            query = query.filter(DagRun.execution_date < timezone.coerce_datetime(current_logical_date))
         prev_success = query.order_by(desc(DagRun.execution_date)).first()
 
     if prev_success is None:
