@@ -67,6 +67,19 @@ async def ms_graph_get_sharepoint_list_items_async(
     return result
 
 
+def parse_sharepoint_user_field(user: Any) -> tuple[str | None, str | None]:
+    """
+    Parse a SharePoint "person/user" field value and return (name, email).
+
+    The field can be a dict or a list containing a dict
+    """
+    if isinstance(user, list) and user:
+        user = user[0]
+    if isinstance(user, dict):
+        return user.get("LookupValue"), user.get("Email")
+    return None, None
+
+
 def transform_sharepoint_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Transform and rename fields from SharePoint list items.
@@ -74,41 +87,47 @@ def transform_sharepoint_items(items: list[dict[str, Any]]) -> list[dict[str, An
     :param items: List of dictionaries with SharePoint list fields.
     :return: List of transformed dictionaries.
     """
+
     rename_map = {
         "Status_x002d_uddybning": "Status - uddybning",
         "Afdeling_x002f_delomr_x00e5_de": "Afdeling/delområde",
         "Program_x002f_overordnetindsats_": "Program eller konkret indsats",
     }
-    filtered_items = []
+
+    filtered_items: list[dict[str, Any]] = []
+
     for item in items:
         fields_data = item.copy()
+
         for key in ["Forvaltning", "Spor", "Afdeling_x002f_delomr_x00e5_de"]:
             if key in fields_data and isinstance(fields_data[key], list):
                 fields_data[key] = ", ".join(fields_data[key])
+
         if "Teknologi" in fields_data and isinstance(
             fields_data["Teknologi"], (set, list)
         ):
             fields_data["Teknologi"] = ", ".join(fields_data["Teknologi"])
+
+        # Raw user fields from SharePoint data
         projektleder = fields_data.get("Projektleder0")
         projektejer = fields_data.get("Projektejer0")
 
-        def extract_user_info(user):
-            if isinstance(user, list) and user:
-                user = user[0]
-            if isinstance(user, dict):
-                return user.get("LookupValue"), user.get("Email")
-            return None, None
+        # Extract normalized user info
+        projektleder_name, projektleder_email = parse_sharepoint_user_field(projektleder)
+        projektejer_name, projektejer_email = parse_sharepoint_user_field(projektejer)
 
-        projektleder_name, projektleder_email = extract_user_info(projektleder)
-        projektejer_name, projektejer_email = extract_user_info(projektejer)
+        # Rename fields and drop raw user objects
+        renamed_fields: dict[str, Any] = {}
+        for key, value in fields_data.items():
+            if key not in ("Projektleder0", "Projektejer0"):
+                renamed_fields[rename_map.get(key, key)] = value
 
-        renamed_fields = {}
-        for k, v in fields_data.items():
-            if k not in ("Projektleder0", "Projektejer0"):
-                renamed_fields[rename_map.get(k, k)] = v
+        # Add flattened user information
         renamed_fields["Projektleder_Name"] = projektleder_name
         renamed_fields["Projektleder_Email"] = projektleder_email
         renamed_fields["Projektejer_Name"] = projektejer_name
         renamed_fields["Projektejer_Email"] = projektejer_email
+
         filtered_items.append(renamed_fields)
+
     return filtered_items
