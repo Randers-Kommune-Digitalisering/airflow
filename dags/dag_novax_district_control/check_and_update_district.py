@@ -1,6 +1,6 @@
 
 import logging
-from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdata
+from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdatas_batch
 from dag_novax_district_control.novax_utils import parse_address, parse_journal_data
 from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
@@ -35,8 +35,12 @@ def check_and_update_district() -> None:
         return
 
     # Process each UserData entry
-    entry_status = []
+    update_requests_by_navnid: dict = {}
     for entry in res:
+        if entry.journal is None:
+            logger.warning(f"No journal data for navnid: {entry.navnid}, skipping entry.")
+            continue
+
         # Parse journal note to dict
         entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
         entry.journal = None  # Clear raw journal text to save space/logging
@@ -58,24 +62,37 @@ def check_and_update_district() -> None:
                     entry.new_address = parsed_new_address
 
         else:
-            logger.warning(f"No address found for navnid: {entry.navnid}, using journal data if available.")
             # Parse address from journal data if no CPR address is found
-            entry.new_address = parse_address(entry.parsed_journal.get('address', None))
+            logger.warning(f"No address found for navnid: {entry.navnid}, using journal data if available.")
+            parsed_new_address = parse_address(entry.parsed_journal.get('address', None))
+            if parsed_new_address:
+                if (
+                    not entry.current_address or
+                    entry.current_address.street != parsed_new_address.street or
+                    entry.current_address.number != parsed_new_address.number or
+                    entry.current_address.postal_code != parsed_new_address.postal_code
+                ):
+                    logger.info(f"Address change detected for navnid: {entry.navnid}. Updating address.")
+                    entry.new_address = parsed_new_address
 
         # Look up address details for district info in Dataforsyning
         address_to_lookup = entry.new_address if entry.new_address is not None else entry.current_address
-        address_info = dataforsyning_client.lookup_address(address_to_lookup.full_address)
-        if address_info and address_info.get('adgangsadresse', {}).get('x') and address_info.get('adgangsadresse', {}).get('y'):
-            new_district = map_client.get_district(address_info['adgangsadresse']['x'], address_info['adgangsadresse']['y'])
 
-            # Check if district has changed
-            if new_district and new_district != entry.current_district:
-                logger.info(f"District change detected for navnid: {entry.navnid}. Updating district from {entry.current_district} to {new_district}.")
-                entry.new_district = new_district
-            elif new_district is None:
-                logger.warning(f"District not found for navnid: {entry.navnid} at address: {address_to_lookup.full_address}")
+        if address_to_lookup:
+            address_info = dataforsyning_client.lookup_address(address_to_lookup.full_address)
+            if address_info and address_info.get('adgangsadresse', {}).get('x') and address_info.get('adgangsadresse', {}).get('y'):
+                new_district = map_client.get_district(address_info['adgangsadresse']['x'], address_info['adgangsadresse']['y'])
+
+                # Check if district has changed
+                if new_district and new_district != entry.current_district:
+                    logger.info(f"District change detected for navnid: {entry.navnid}. Updating district from {entry.current_district} to {new_district}.")
+                    entry.new_district = new_district
+                elif new_district is None:
+                    logger.warning(f"District not found for navnid: {entry.navnid} at address: {address_to_lookup.full_address}")
+            else:
+                logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.full_address}")
         else:
-            logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.full_address}")
+            logger.warning(f"No valid address to look up district for navnid: {entry.navnid}")
 
         # Check new phone number from journal data
         new_tlf_nr = entry.parsed_journal.get('phone', None)
@@ -83,17 +100,38 @@ def check_and_update_district() -> None:
             logger.info(f"Phone number change detected for navnid: {entry.navnid}. Updating phone number from {entry.current_tlf_nr} to {new_tlf_nr}.")
             entry.new_tlf_nr = new_tlf_nr
 
-        # Update Novax with new address, phone number, district if changed + due date
-        update_success = update_novax_userdata(
-            navnid=entry.navnid,
-            due_date=entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None)),
-            new_district=entry.new_district,
-            new_address=entry.new_address.full_address if entry.new_address else None,
-            new_tlf_nr=entry.new_tlf_nr
-        )
+        # Get due date from journal data
+        due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
+
+        # Prepare update payload
+        update_payload = {
+            "navnid": entry.navnid,
+            "due_date": due_date,
+            "new_district": entry.new_district,
+            "new_address": entry.new_address.full_address if entry.new_address else None,
+            "new_tlf_nr": entry.new_tlf_nr
+        }
+
+        # Merge objects with identical NAVNID if any (prefer non-None values)
+        existing = update_requests_by_navnid.get(entry.navnid)
+        if existing is None:
+            update_requests_by_navnid[entry.navnid] = update_payload
+        else:
+            for key, value in update_payload.items():
+                if key == "navnid":
+                    continue
+                if value is not None:
+                    existing[key] = value
+
+    # Perform single Novax batch update
+    update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
+
+    # Log update results per entry
+    entry_status = []
+    for entry in res:
+        update_success = bool(update_results.get(entry.navnid))
         entry_status.append(update_success)
 
-        # Log update result
         if update_success:
             updated_properties = []
             if entry.new_address:
