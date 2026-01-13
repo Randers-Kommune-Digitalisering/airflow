@@ -5,6 +5,7 @@ from airflow.utils import timezone
 from airflow.utils.session import create_session
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunType
+import pendulum
 from sqlalchemy import desc
 import logging
 
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 FINISHED_STATES = {DagRunState.SUCCESS, DagRunState.FAILED}
 
 
-def _as_local_date(value, tz) -> datetime.date | None:
+def _as_local_date(value: datetime.date | datetime.datetime | pendulum.DateTime | None, tz: str) -> datetime.date | None:
     """
     Convert a datetime-like value to a timezone-aware date in the given timezone.
     """
@@ -24,7 +25,7 @@ def _as_local_date(value, tz) -> datetime.date | None:
     return coerced.in_timezone(tz).date()
 
 
-def _as_local_dt(value, tz):
+def _as_local_dt(value: datetime.date | datetime.datetime | pendulum.DateTime | None, tz: str) -> datetime.datetime | None:
     """
     Convert a datetime-like value to a timezone-aware datetime in the given timezone.
     """
@@ -34,7 +35,7 @@ def _as_local_dt(value, tz):
     return coerced.in_timezone(tz)
 
 
-def _infer_daily_interval_end(logical_date, tz):
+def _infer_daily_interval_end(logical_date: datetime.date | datetime.datetime | pendulum.DateTime | None, tz: str) -> datetime.datetime | None:
     """
     Infer the end of a daily data interval based on the logical date and timezone.
     """
