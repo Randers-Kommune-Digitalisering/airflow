@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def process_sharepoint_list_items() -> None:
+    """
+    Fetches items from a SharePoint list using Microsoft Graph API, transforms the data,
+    and saves the results into a PostgreSQL database table.
+    """
 
     conn = BaseHook.get_connection("sharepoint_handleplan_config")
     sharepoint_config = conn.extra_dejson
@@ -42,8 +46,7 @@ def process_sharepoint_list_items() -> None:
         transformed_items = transform_sharepoint_items(items)
 
         if not transformed_items:
-            logger.warning("No SharePoint data found.")
-            return
+            raise ValueError("No SharePoint data found.")
 
         sharepoint_df = pd.DataFrame(transformed_items)
 
