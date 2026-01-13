@@ -51,9 +51,9 @@ class UserData:
 
 def parse_address(address: str) -> Address | None:
     """
-    Parse adresse fra en streng til et Address objekt.
+    Parse address from a string into an Address object.
 
-    :param address: Fuld adresse som en streng, fx "Regimentvej 16F, 3. tv, 8920 Randers NV"
+    :param address: Full address as a string, e.g., "Regimentvej 16F, 3. tv, 8920 Randers NV"
     """
     if not address:
         return None
@@ -88,14 +88,14 @@ def parse_address(address: str) -> Address | None:
     )
 
 
-def calculate_due(gestations_uger: int, gestations_dage: int, dato_str: str | None = None, dato_obj: datetime | None = None) -> datetime:
+def calculate_due(gestations_weeks: int, gestations_days: int, dato_str: str | None = None, dato_obj: datetime | None = None) -> datetime:
     """
-    Beregn terminsdato ud fra en given dato og gestationsalder.
+    Calculate due date based on gestational age and given date.
 
-    :param gestations_uger: Antal fulde uger i gestationsalderen, fx 17
-    :param gestations_dage: Antal dage i gestationsalderen, fx 1
-    :param dato_str: Dato som string i formatet 'dd.mm.yyyy', fx '26.11.2025'
-    :param dato_obj: Dato som datetime objekt
+    :param gestations_weeks: Number of full weeks in gestational age, e.g., 17
+    :param gestations_days: Number of days in gestational age, e.g., 1
+    :param dato_str: Date as a string in the format 'dd.mm.yyyy', e.g., '26.11.2025'
+    :param dato_obj: Date as a datetime object
     """
     # Convert dato_str to datetime object
     if dato_obj is not None:
@@ -107,11 +107,11 @@ def calculate_due(gestations_uger: int, gestations_dage: int, dato_str: str | No
     else:
         raise ValueError("Either dato_str or dato_obj must be provided")
     # Total gestational days
-    gestations_total_dage = gestations_uger * 7 + gestations_dage
+    gestations_total_days = gestations_weeks * 7 + gestations_days
     # Normal pregnancy length in days
     pregnancy_days = 40 * 7  # 280 days
     # Days remaining until due date
-    days_until_due = pregnancy_days - gestations_total_dage
+    days_until_due = pregnancy_days - gestations_total_days
     # Calculate due date (subtract 1 day to match clinical convention)
     due_date = dato + timedelta(days=days_until_due - 1)
 
