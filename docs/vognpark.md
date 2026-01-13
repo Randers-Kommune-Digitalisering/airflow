@@ -21,11 +21,24 @@ Kode består af et DAG-job, der udfører følgende trin:
 :key: | **Airflow Connections**
 
 **Postgres DB:**
-- **`vognpark_db`** Bruges som `Connection id` i Airflow til at hente host, database, user, pass og port til Postgres DB'en
+- **`vognpark_db`**
+
+**Conn Type**: Postgres
+
+ Bruges som `Connection id` i Airflow til at hente host, database, user, pass og port til Postgres DB'en
+
+ *Required felter*:
+  - Connection id, Host, Database, Login, Password and Port(5432)
 
 **SFTP:**
-- **`shared_sftp`** Bruges som `Connection id` i Airflow til at hente host, schema, user, pass og port til SFTP'en
+- **`shared_sftp`**
 
+**Conn Type**: SFTP
+
+ Bruges som `Connection id` i Airflow til at hente host, schema, user, pass og port til SFTP'en
+
+ *Required felter*:
+  - Connection id, Host, Username, Password og Port(22)
 
 ## Schedule
 
