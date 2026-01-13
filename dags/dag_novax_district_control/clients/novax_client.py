@@ -9,12 +9,16 @@ from dag_novax_district_control.novax_utils import parse_address
 from dag_novax_district_control.novax_utils import UserData
 
 logger = logging.getLogger(__name__)
+engine = None
 
 
 def get_sqlalchemy_engine():
     """
     Create and return a SQLAlchemy engine using Airflow connection settings.
     """
+    global engine
+    if engine is not None:
+        return engine
     hook = MsSqlHook(mssql_conn_id="novax_sql")
     engine = hook.get_sqlalchemy_engine()
     return engine
@@ -260,6 +264,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             (EMNEBREV LIKE N'%gravid%')
             AND Godkommu.JOURNALDATO >= :from_date
             AND Godkommu.JOURNALDATO < :to_date
+            AND navn.CPR = '1604106TT2'
         GROUP BY
             Godkommu.JOURNALDATO,
             Godkommu.NAVNID,

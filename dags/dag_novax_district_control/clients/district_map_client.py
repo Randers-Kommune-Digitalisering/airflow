@@ -17,8 +17,7 @@ class DataforsyningClient:
                 response.raise_for_status()
                 return response
             except requests.exceptions.HTTPError as e:
-                status_code = getattr(e.response, "status_code", None)
-                if status_code not in [200, 400] and attempt < retries:
+                if response.status_code not in [200, 400] and attempt < retries:
                     attempt += 1
                     time.sleep(delay_seconds)
                     continue

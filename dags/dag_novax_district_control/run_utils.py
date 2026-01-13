@@ -90,29 +90,6 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
         prev_success = query.order_by(desc(DagRun.execution_date)).first()
 
     if prev_success is None:
-        with create_session() as session:
-            recent = (
-                session.query(DagRun)
-                .filter(DagRun.dag_id == dag_id)
-                .order_by(desc(DagRun.execution_date))
-                .limit(5)
-                .all()
-            )
-        logger.info(
-            "No previous SUCCESS found. Recent runs: %s",
-            [
-                {
-                    "run_id": r.run_id,
-                    "state": r.state,
-                    "logical_date": _as_local_dt(getattr(r, "logical_date", None), dag_tz),
-                    "execution_date": _as_local_dt(getattr(r, "execution_date", None), dag_tz),
-                    "run_type": getattr(r, "run_type", None),
-                    "data_interval_end": _as_local_dt(getattr(r, "data_interval_end", None), dag_tz),
-                    "end_date": _as_local_dt(getattr(r, "end_date", None), dag_tz),
-                }
-                for r in recent
-            ],
-        )
         # No previous successful runs; start from DAG start_date
         dag_start = getattr(dag, "start_date", None)
         start_date = _as_local_date(dag_start, dag_tz)
