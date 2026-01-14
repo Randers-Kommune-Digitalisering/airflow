@@ -46,6 +46,7 @@ class UserData:
         self.new_address: Address | None = None
         self.new_district: str | None = None
         self.new_tlf_nr: str | None = None
+        self.new_due_date: datetime | None = None
         self.parsed_journal: dict | None = None
 
 

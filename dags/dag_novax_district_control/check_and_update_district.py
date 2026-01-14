@@ -34,7 +34,7 @@ def check_and_update_district() -> None:
         return
 
     # Process each UserData entry
-    skipped_navnids: set = set()
+    skipped_navnids: set[str] = set()
     points_by_navnid: dict[str, tuple[float, float]] = {}
     address_by_navnid: dict[str, str] = {}
     for entry in res:
@@ -60,9 +60,7 @@ def check_and_update_district() -> None:
                     entry.current_address.number != parsed_new_address.number or
                     entry.current_address.postal_code != parsed_new_address.postal_code
                 ):
-                    logger.info(f"Address change detected for navnid: {entry.navnid}. Updating address.")
                     entry.new_address = parsed_new_address
-
         else:
             # Parse address from journal data if no CPR address is found
             logger.warning(f"No address found for navnid: {entry.navnid}, using journal data if available.")
@@ -74,7 +72,6 @@ def check_and_update_district() -> None:
                     entry.current_address.number != parsed_new_address.number or
                     entry.current_address.postal_code != parsed_new_address.postal_code
                 ):
-                    logger.info(f"Address change detected for navnid: {entry.navnid}. Updating address.")
                     entry.new_address = parsed_new_address
 
         # Look up address details for district info in Dataforsyning
@@ -95,37 +92,47 @@ def check_and_update_district() -> None:
         # Check new phone number from journal data
         new_tlf_nr = entry.parsed_journal.get('phone', None)
         if new_tlf_nr and new_tlf_nr != entry.current_tlf_nr:
-            logger.info(f"Phone number change detected for navnid: {entry.navnid}. Updating phone number from {entry.current_tlf_nr} to {new_tlf_nr}.")
             entry.new_tlf_nr = new_tlf_nr
 
         # Get due date from journal data
-        due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
+        entry.new_due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
 
     # Get districts for all address coordinates in batch
     keyed_points = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
     districts_by_navnid = district_db_client.get_district_names_by_key(keyed_points)
 
     # Build update requests (merge objects with identical NAVNID; prefer non-None values)
-    update_requests_by_navnid: dict = {}
+    update_requests_by_navnid: dict[str, dict] = {}
     for entry in res:
         if entry.navnid in skipped_navnids:
             continue
+        detected_changes: list[str] = []
 
         # Check if district has changed
         if entry.navnid in points_by_navnid:
             new_district = districts_by_navnid.get(entry.navnid)
             if new_district and new_district != entry.current_district:
-                logger.info(
-                    f"District change detected for navnid: {entry.navnid}. Updating district from {entry.current_district or None} to {new_district}."
-                )
                 entry.new_district = new_district
             elif new_district is None:
                 address = address_by_navnid.get(entry.navnid, "<unknown>")
                 logger.warning(f"District not found for navnid: {entry.navnid} at address: {address}")
 
+        # Log detected changes
+        if entry.new_address is not None:
+            old_address = entry.current_address.full_address if entry.current_address else None
+            detected_changes.append(f"address: {old_address or None} -> {entry.new_address.full_address}")
+        if entry.new_district is not None and entry.new_district != entry.current_district:
+            detected_changes.append(f"district: {entry.current_district or None} -> {entry.new_district}")
+        if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:
+            detected_changes.append(f"phone: {entry.current_tlf_nr or None} -> {entry.new_tlf_nr}")
+        if entry.new_due_date is not None:
+            detected_changes.append(f"due date: {entry.new_due_date}")
+        if detected_changes:
+            logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
+
         update_payload = {
             "navnid": entry.navnid,
-            "due_date": due_date,
+            "due_date": entry.new_due_date,
             "new_district": entry.new_district,
             "new_address": entry.new_address.full_address if entry.new_address else None,
             "new_tlf_nr": entry.new_tlf_nr
@@ -142,8 +149,6 @@ def check_and_update_district() -> None:
                     existing[key] = value
 
     # Perform single Novax batch update
-    logger.info(f"Preparing to update Novax userdata for {len(update_requests_by_navnid)} entr{'y' if len(update_requests_by_navnid) == 1 else 'ies'}.")
-    return
     if update_requests_by_navnid:
         update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
     else:
