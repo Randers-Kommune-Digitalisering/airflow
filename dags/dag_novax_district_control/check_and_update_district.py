@@ -120,7 +120,7 @@ def check_and_update_district() -> None:
         # Log detected changes
         if entry.new_address is not None:
             old_address = entry.current_address.full_address if entry.current_address else None
-            detected_changes.append(f"address: {old_address or None} -> {entry.new_address.full_address}")
+            detected_changes.append(f"address: {old_address} -> {entry.new_address.full_address}")
         if entry.new_district is not None and entry.new_district != entry.current_district:
             detected_changes.append(f"district: {entry.current_district or None} -> {entry.new_district}")
         if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:

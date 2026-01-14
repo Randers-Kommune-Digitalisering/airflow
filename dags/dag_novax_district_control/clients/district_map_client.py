@@ -129,8 +129,11 @@ class DistrictMapDBClient:
             if key is None:
                 continue
             row.pop("key", None)
-            # Assign row to result dict
-            result[str(key)] = row if row else None
+
+            # If all remaining columns are None, treat this as "not found" and keep value as None
+            has_non_none_value = any(value is not None for value in row.values())
+            result[str(key)] = row if has_non_none_value else None
+
         return result
 
     def get_district_names_by_key(self, keyed_points: list[tuple[str, float, float]]) -> dict[str, str | None]:
