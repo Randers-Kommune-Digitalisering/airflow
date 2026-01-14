@@ -3,7 +3,7 @@ import logging
 from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdatas_batch
 from dag_novax_district_control.novax_utils import parse_address, parse_journal_data
 from dag_novax_district_control.run_utils import determine_date_range
-from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapClient
+from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ def check_and_update_district() -> None:
     """
     # Initialize clients
     dataforsyning_client = DataforsyningClient()
-    map_client = DistrictMapClient()
+    district_db_client = DistrictMapDBClient()
     cpr_client = CPRClient()
 
     # Determine date range for processing
@@ -34,8 +34,9 @@ def check_and_update_district() -> None:
         return
 
     # Process each UserData entry
-    update_requests_by_navnid: dict = {}
     skipped_navnids: set = set()
+    points_by_navnid: dict[str, tuple[float, float]] = {}
+    address_by_navnid: dict[str, str] = {}
     for entry in res:
         if entry.journal is None:
             logger.warning(f"No journal data for navnid: {entry.navnid}, skipping entry.")
@@ -47,7 +48,7 @@ def check_and_update_district() -> None:
         entry.journal = None  # Clear raw journal text to save space/logging
 
         # Look up current address from CPR
-        cpr_info = cpr_client.lookup_address(entry.cpr)
+        cpr_info = None  # cpr_client.lookup_address(entry.cpr)
         if cpr_info and cpr_info.get('aktuelAdresse'):
 
             # Check if address has changed
@@ -82,14 +83,10 @@ def check_and_update_district() -> None:
         if address_to_lookup:
             address_info = dataforsyning_client.lookup_address(address_to_lookup.full_address)
             if address_info and address_info.get('adgangsadresse', {}).get('x') and address_info.get('adgangsadresse', {}).get('y'):
-                new_district = map_client.get_district(address_info['adgangsadresse']['x'], address_info['adgangsadresse']['y'])
-
-                # Check if district has changed
-                if new_district and new_district != entry.current_district:
-                    logger.info(f"District change detected for navnid: {entry.navnid}. Updating district from {entry.current_district} to {new_district}.")
-                    entry.new_district = new_district
-                elif new_district is None:
-                    logger.warning(f"District not found for navnid: {entry.navnid} at address: {address_to_lookup.full_address}")
+                x = address_info['adgangsadresse']['x']
+                y = address_info['adgangsadresse']['y']
+                points_by_navnid[entry.navnid] = (x, y)
+                address_by_navnid[entry.navnid] = address_to_lookup.full_address
             else:
                 logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.full_address}")
         else:
@@ -104,7 +101,28 @@ def check_and_update_district() -> None:
         # Get due date from journal data
         due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
 
-        # Prepare update payload
+    # Get districts for all address coordinates in batch
+    keyed_points = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
+    districts_by_navnid = district_db_client.get_district_names_by_key(keyed_points)
+
+    # Build update requests (merge objects with identical NAVNID; prefer non-None values)
+    update_requests_by_navnid: dict = {}
+    for entry in res:
+        if entry.navnid in skipped_navnids:
+            continue
+
+        # Check if district has changed
+        if entry.navnid in points_by_navnid:
+            new_district = districts_by_navnid.get(entry.navnid)
+            if new_district and new_district != entry.current_district:
+                logger.info(
+                    f"District change detected for navnid: {entry.navnid}. Updating district from {entry.current_district or None} to {new_district}."
+                )
+                entry.new_district = new_district
+            elif new_district is None:
+                address = address_by_navnid.get(entry.navnid, "<unknown>")
+                logger.warning(f"District not found for navnid: {entry.navnid} at address: {address}")
+
         update_payload = {
             "navnid": entry.navnid,
             "due_date": due_date,
@@ -113,7 +131,6 @@ def check_and_update_district() -> None:
             "new_tlf_nr": entry.new_tlf_nr
         }
 
-        # Merge objects with identical NAVNID if any (prefer non-None values)
         existing = update_requests_by_navnid.get(entry.navnid)
         if existing is None:
             update_requests_by_navnid[entry.navnid] = update_payload
@@ -125,6 +142,8 @@ def check_and_update_district() -> None:
                     existing[key] = value
 
     # Perform single Novax batch update
+    logger.info(f"Preparing to update Novax userdata for {len(update_requests_by_navnid)} entr{'y' if len(update_requests_by_navnid) == 1 else 'ies'}.")
+    return
     if update_requests_by_navnid:
         update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
     else:
