@@ -1,9 +1,11 @@
 
 import re
 import requests
+import logging
 from airflow.hooks.base import BaseHook
-
 from utils.token_provider import BearerAuth
+
+logger = logging.getLogger(__name__)
 
 
 class CPRClient():
@@ -19,10 +21,12 @@ class CPRClient():
         self.session = cpr_session
         self.base_url = cpr_hook.host
 
-    def lookup_address(self, cpr_number: str) -> dict:
+    def lookup_address(self, cpr_number: str) -> dict | None:
         endpoint = f'/PersonBaseDataExtendedService/lookup/address/{cpr_number}'
         res = self.session.get(f"{self.base_url}{endpoint}")
-        res.raise_for_status()
+        if res.status_code != 200:
+            logger.warning(f"Failed to lookup address for CPR {cpr_number[:6]}-XXXX: HTTP {res.status_code}")
+            return None
 
         data = res.json()
         std = data.get('aktuelAdresse', {}).get('standardadresse')
