@@ -50,7 +50,6 @@ def check_and_update_district() -> None:
         # Look up current address from CPR
         cpr_info = cpr_client.lookup_address(entry.cpr)
         if cpr_info and cpr_info.get('aktuelAdresse'):
-
             # Check if address has changed
             parsed_new_address = parse_address(f"{cpr_info['aktuelAdresse'].get('standardadresse', '')}, {cpr_info['aktuelAdresse'].get('postnummer', '')}")
             if parsed_new_address:
@@ -165,14 +164,12 @@ def check_and_update_district() -> None:
         if entry.navnid in skipped_navnids:
             logger.warning(f"Missing journal data for navnid {entry.navnid} (no update attempted).")
             continue
-
         if entry.navnid not in updated_navnids:
             logger.info(f"No changes detected for navnid {entry.navnid} (no update attempted).")
             continue
 
         update_success = bool(update_results.get(entry.navnid))
         entry_status.append(update_success)
-
         if update_success:
             logger.info(f"Successfully updated Novax userdata for navnid {entry.navnid}")
         else:
