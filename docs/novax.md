@@ -13,7 +13,7 @@ Koden består af et DAG-job, der udfører følgende trin:
   - Parser journaldata for at udtrække ny adresse samt evt. telefonnummer og terminsdato
   - Hvis terminsdato mangler i journalen, beregnes denne fra gestationsalder (i journalen)
   - Trækker aktuelle adresse fra CPR-opslag via API
-  - Validerer og finder distriktsoplysninger via Dataforsyning API'et og District Map API'et
+  - Validerer og finder distriktsoplysninger via Dataforsyningens API samt distriksoplysninger i GIS-databasen
   - Sammenligner ny og eksisterende adresse/distrikt og opdaterer Novax-databasen med ny data (`update_novax_userdata`)
 
 **OBS:** Perioden for dataudtræk bestemmes automatisk ud fra, hvornår jobbet sidst blev kørt. Det betyder, at jobbet som standard behandler alle nye eller ændrede data frem til og med i går, medmindre du selv vælger en anden periode.
@@ -27,19 +27,19 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 **Novax DB:**
 - **`novax_sql`**  
-  Bruges som Connection id i Airflow til at hente host, database, bruger, adgangskode og port til Novax SQL-databasen
+  Bruges som Connection id i Airflow til at hente host, database, bruger, adgangskode og port til Novax SQL-databasen.
 
 **Dataforsyning API:**
-- **`dataforsyning`**  
-  Bruges som Connection id i Airflow til at hente host og evt. nøgle til Dataforsyning API'et
+- **`dataforsyningen`**  
+  Bruges som Connection id i Airflow til at hente host til Dataforsyningens API.
 
 **District Map API:**
-- **`district_map`**  
-  Bruges som Connection id i Airflow til at hente host til District Map API'et
+- **`gis_db`**  
+  Bruges som Connection id i Airflow til at hente host, bruger, adgangskode og port til GIS PostgreSQL databasen.
 
 **CPR API:**
 - **`cpr_replica_prod`**  
-  Bruges som Connection id i Airflow til at hente host, client id, secret og token-url til CPR API'et
+  Bruges som Connection id i Airflow til at hente host, client id, secret og token-url til CPR API'et.
 
 ## Schedule
 
