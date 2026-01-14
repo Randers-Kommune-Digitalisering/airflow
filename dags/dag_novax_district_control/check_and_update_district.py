@@ -48,7 +48,7 @@ def check_and_update_district() -> None:
         entry.journal = None  # Clear raw journal text to save space/logging
 
         # Look up current address from CPR
-        cpr_info = None  # cpr_client.lookup_address(entry.cpr)
+        cpr_info = cpr_client.lookup_address(entry.cpr)
         if cpr_info and cpr_info.get('aktuelAdresse'):
 
             # Check if address has changed
@@ -138,6 +138,10 @@ def check_and_update_district() -> None:
             "new_tlf_nr": entry.new_tlf_nr
         }
 
+        # Skip update when there are no changes (i.e., all update fields are None)
+        if all(value is None for key, value in update_payload.items() if key != "navnid"):
+            continue  # No changes to update
+
         existing = update_requests_by_navnid.get(entry.navnid)
         if existing is None:
             update_requests_by_navnid[entry.navnid] = update_payload
@@ -155,29 +159,22 @@ def check_and_update_district() -> None:
         update_results = {}
 
     # Log update results per entry
+    updated_navnids = set(update_requests_by_navnid.keys())
     entry_status = []
     for entry in res:
         if entry.navnid in skipped_navnids:
-            logger.warning(f"Skipped navnid {entry.navnid}: missing journal data (no update attempted).")
+            logger.warning(f"Missing journal data for navnid {entry.navnid} (no update attempted).")
+            continue
+
+        if entry.navnid not in updated_navnids:
+            logger.info(f"No changes detected for navnid {entry.navnid} (no update attempted).")
             continue
 
         update_success = bool(update_results.get(entry.navnid))
         entry_status.append(update_success)
 
         if update_success:
-            updated_properties = []
-            if entry.new_address:
-                updated_properties.append(f"address: {entry.new_address.full_address}")
-            if entry.new_district:
-                updated_properties.append(f"district: {entry.new_district}")
-            if entry.new_tlf_nr:
-                updated_properties.append(f"phone number: {entry.new_tlf_nr}")
-            if due_date := entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None)):
-                updated_properties.append(f"due date: {due_date}")
-            if updated_properties:
-                logger.info(f"Successfully updated Novax userdata for navnid {entry.navnid} with changes: {', '.join(updated_properties)}")
-            else:
-                logger.info(f"No updates needed for navnid {entry.navnid}")
+            logger.info(f"Successfully updated Novax userdata for navnid {entry.navnid}")
         else:
             logger.error(f"Failed to update Novax userdata for navnid {entry.navnid}")
 
@@ -185,7 +182,8 @@ def check_and_update_district() -> None:
     if skipped_navnids:
         logger.info(f"Skipped {len(skipped_navnids)} entr{'y' if len(skipped_navnids) == 1 else 'ies'} due to missing journal data.")
 
-    success = all(entry_status)
+    # If nothing was attempted, treat the run as successful.
+    success = all(entry_status) if entry_status else True
     if success:
         logger.info("Successfully completed check_and_update_district")
     else:
