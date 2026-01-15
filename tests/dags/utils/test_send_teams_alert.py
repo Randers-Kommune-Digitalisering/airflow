@@ -1,7 +1,6 @@
-
 from unittest.mock import patch, MagicMock
 
-from utils.notifications import send_teams_alert
+from dags.utils.notifications import send_teams_alert
 
 
 def test_send_teams_alert():
@@ -17,7 +16,7 @@ def test_send_teams_alert():
     mock_conn = MagicMock()
     mock_conn.host = "https://mock-webhook-url"
 
-    with patch('utils.notifications.BaseHook.get_connection', return_value=mock_conn), patch('utils.notifications.requests.post') as mock_post:
+    with patch('dags.utils.notifications.BaseHook.get_connection', return_value=mock_conn), patch('dags.utils.notifications.requests.post') as mock_post:
         send_teams_alert(mock_context)
         mock_post.assert_called_once()
         args, _ = mock_post.call_args

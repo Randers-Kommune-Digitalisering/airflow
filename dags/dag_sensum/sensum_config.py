@@ -1,80 +1,61 @@
 SENSUM_CONFIG = [
     {
-        "name": "aktive_indsatser",
-        "patterns": ["Indsatser_*.csv"],
-        "group_by": "IndsatsId",
-        "directories": ["/D:/SFTP-EGDW/sensum_randers"],
-        "agg_columns": {
-            "IndsatsStartDato": "first",
-            "IndsatsStatus": "first",
-            "IndsatsSlutDato": "first",
-        },
-        "columns": ["IndsatsStartDato", "IndsatsStatus", "IndsatsSlutDato"],
-        "merge_func": "process_indsats_df",
+        "name": "aktive_indsatser_alt",
+        "dir": "/D:/SFTP-EGDW/sensum_randers",
+        "key_col": "IndsatsId",
+        "pattern": "Indsatser_*.csv",
+        "cols": [
+            "IndsatsStartDato",
+            "IndsatsStatus",
+            "IndsatsSlutDato"
+        ]
     },
     {
-        "name": "aktive_sager",
-        "patterns": ["Sager_*.csv", "Afdeling_*.csv", "Medarbejder_*.csv"],
-        "group_by": "SagId",
-        "directories": ["/D:/SFTP-EGDW/sensum_randers"],
-        "agg_columns": {
-            "SagNavn": "first",
-            "SagType": "first",
-            "MedarbejderFornavn": "first",
-            "MedarbejderEfternavn": "first",
-            "AfdelingNavn": "first",
-            "Status": "first",
-        },
-        "columns": [
+        "name": "aktive_sager_alt",
+        "dir": "/D:/SFTP-EGDW/sensum_randers",
+        "key_col": "SagId",
+        "pattern": "Sager_*.csv",
+        "cols": [
             "SagNavn",
             "SagType",
-            "MedarbejderFornavn",
-            "MedarbejderEfternavn",
             "AfdelingNavn",
-            "Status",
+            "Status"
         ],
-        "merge_func": "sager_afdeling_medarbejder_merge_df",
+        "sec_pattern": "Medarbejder_*.csv",
+        "sec_cols": ["Fornavn", "Efternavn"],
+        "merge_on": ["MedarbejderId", "PrimærAnsvarligMedarbejderId"],
+        "filter": ["Status", "Igangværende"]
     },
     {
-        "name": "ydelse",
-        "patterns": ["Ydelse_*.csv", "Afdeling_*.csv"],
-        "group_by": "YdelseId",
-        "directories": ["/D:/SFTP-EGDW/Frem"],
-        "agg_columns": {
-            "YdelseNavn": "first",
-            "StartDato": "first",
-            "SlutDato": "first",
-            "Navn": "first",
-        },
-        "columns": ["YdelseNavn", "StartDato", "SlutDato", "AfdelingNavn"],
-        "merge_func": "merge_df_ydelse",
+        "name": "ydelse_alt",
+        "dir": "/D:/SFTP-EGDW/Frem",
+        "key_col": "YdelseId",
+        "pattern": "Ydelse_*.csv",
+        "cols": [
+            "YdelseNavn",
+            "StartDato",
+            "SlutDato"
+        ],
+        "sec_pattern": "Afdeling_*.csv",
+        "sec_cols": ["Navn"],
+        "merge_on": ["AfdelingId"]
+    },
+    {
+        "name": "indsats_fordeling_alt",
+        "dir": "/D:/SFTP-EGDW/sensum_randers",
+        "key_col": "IndsatsId",
+        "pattern": "Indsatser_*.csv",
+        "cols": [
+            "IndsatsStatus",
+            "Indsats",
+            "IndsatsStartDato",
+            "IndsatsSlutDato",
+            "LeverandørIndsats",
+            "LeverandørNavn",
+            "IndsatsParagraf"
+        ],
+        "sec_pattern": "Sager_*.csv",
+        "sec_cols": ["AfdelingNavn"],
+        "merge_on": ["SagId"]
     }
-    # {
-    #     "name": "indsats_fordeling",
-    #     "patterns": ["Sager_*.csv", "Indsatser_*.csv"],
-    #     "merge_on": "SagId",
-    #     "group_by": "IndsatsId",
-    #     "directories": ["/D:/SFTP-EGDW/sensum_randers"],
-    #     "agg_columns": {
-    #         "IndsatsStatus": "first",
-    #         "Indsats": "first",
-    #         "AfdelingNavn": "first",
-    #         "IndsatsStartDato": "first",
-    #         "IndsatsSlutDato": "first",
-    #         "LeverandørIndsats": "first",
-    #         "LeverandørNavn": "first",
-    #         "IndsatsParagraf": "first",
-    #     },
-    #     "columns": [
-    #         "IndsatsStatus",
-    #         "Indsats",
-    #         "AfdelingNavn",
-    #         "IndsatsStartDato",
-    #         "IndsatsSlutDato",
-    #         "LeverandørIndsats",
-    #         "LeverandørNavn",
-    #         "IndsatsParagraf",
-    #     ],
-    #     "merge_func": "merge_dataframes",
-    # },
 ]

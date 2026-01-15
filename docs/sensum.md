@@ -9,8 +9,8 @@ Formålet med jobbet er at hente Sensum data fra en SFTP og gemme det i en Postg
 
 Koden består af et DAG-job, der udfører følgende trin:
 
-- Henter relevante Sensum-filer fra SFTP (`fetch_and_store_sensum_data`)
-- Læser og behandler filerne, merger og aggregerer data via konfigurerede merge-funktioner
+- Henter relevante Sensum-filer fra SFTP (`get_files`)
+- Læser og behandler filerne, merger data udfra konfigurering
 - Dataen gemmes i en Postgres Database
 
 **Dataflow:**
@@ -30,8 +30,4 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 Schedule er sat op til at køre automatisk på følgende tidspunkter:
 
-- **Tidspunkt:** Kl. 00:00 hver mandag
-- **Cron syntax:**  
-  ```
-  0 0 * * 1
-  ```
+- **Tidspunkt:** Kl. 00:00 hver søndag
