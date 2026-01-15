@@ -50,7 +50,8 @@ def _infer_daily_interval_end(logical_date: datetime.date | datetime.datetime | 
 def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
     """
     Determine the date range for processing based on provided dates or DAG context.
-    :return: A tuple of (start_date, end_date).
+    :return: A tuple of (start_date, end_date) where start is inclusive and end is exclusive.
+             Returns None when there is no new interval to process (e.g. start_date >= end_date).
     """
     # Determine the date range from the current Airflow run.
     # The processing window is based on full calendar days in the DAG's timezone
@@ -115,9 +116,14 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
         start_date = prev_success_end
 
     # Validate date range
+    logger.info(f"Determined date range for processing: start_date={start_date}, end_date={end_date}")
     if not start_date or not end_date:
         raise ValueError("Error inferring start_date and end_date from previous runs.")
     if start_date >= end_date:
-        logger.info(f"No new data to process: start_date {start_date} is not before end_date {end_date}.")
-        return None, None
+        logger.info(
+            "No new data to process: start_date %s is not before end_date %s.",
+            start_date,
+            end_date,
+        )
+        return None
     return start_date, end_date
