@@ -22,7 +22,7 @@ def get_files(
 ) -> list[str]:
     """
     Download files from SFTP server matching a pattern within a date range.
-    
+
     :param sftp_conn: SFTP client connection
     :type sftp_conn: SFTPClient
     :param dir: Directory to search for files
@@ -81,6 +81,7 @@ def files_to_postgres(
         sec_cols: list[str] | None = None,
         sec_file_paths: list[str] | None = None,
         merge_on: list[str] | None = None,
+        sec_prefix: str | None = None,
         filter: list[str] | None = None
 ) -> None:
     """
@@ -102,6 +103,8 @@ def files_to_postgres(
     :type sec_file_paths: list[str] | None
     :param merge_on: List of columns to merge on between primary and secondary data
     :type merge_on: list[str] | None
+    :param sec_prefix: Prefix to add to secondary columns to avoid name clashes
+    :type sec_prefix: str | None
     :param filter: List containing column name and value to filter the final DataFrame
     :type filter: list[str] | None
     """
@@ -141,6 +144,10 @@ def files_to_postgres(
         completed_df.drop(columns=merge_on, inplace=True)
     else:
         completed_df = combined
+
+    if sec_prefix and sec_cols:
+        sec_rename = {col: f"{sec_prefix}{col}" for col in sec_cols}
+        completed_df.rename(columns=sec_rename, inplace=True)
 
     if filter is not None:
         completed_df = completed_df[completed_df[filter[0]] == filter[1]]

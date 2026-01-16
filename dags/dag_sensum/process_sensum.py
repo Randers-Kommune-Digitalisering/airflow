@@ -24,6 +24,7 @@ def process_sensum() -> None:
             )
 
             if "sec_pattern" in config:
+                sec_prefix = config.get("sec_prefix", None)
                 sec_file_paths = get_files(
                     sftp_conn=sftp_conn,
                     dir=config['dir'],
@@ -39,6 +40,7 @@ def process_sensum() -> None:
                     sec_cols=config['sec_cols'],
                     sec_file_paths=sec_file_paths,
                     merge_on=config['merge_on'],
+                    sec_prefix=sec_prefix,
                     filter=filter
                 )
             else:

@@ -1,6 +1,6 @@
 SENSUM_CONFIG = [
     {
-        "name": "aktive_indsatser_alt",
+        "name": "aktive_indsatser",
         "dir": "/D:/SFTP-EGDW/sensum_randers",
         "key_col": "IndsatsId",
         "pattern": "Indsatser_*.csv",
@@ -11,7 +11,7 @@ SENSUM_CONFIG = [
         ]
     },
     {
-        "name": "aktive_sager_alt",
+        "name": "aktive_sager",
         "dir": "/D:/SFTP-EGDW/sensum_randers",
         "key_col": "SagId",
         "pattern": "Sager_*.csv",
@@ -24,10 +24,11 @@ SENSUM_CONFIG = [
         "sec_pattern": "Medarbejder_*.csv",
         "sec_cols": ["Fornavn", "Efternavn"],
         "merge_on": ["MedarbejderId", "PrimærAnsvarligMedarbejderId"],
+        "sec_prefix": "Medarbejder",
         "filter": ["Status", "Igangværende"]
     },
     {
-        "name": "ydelse_alt",
+        "name": "ydelse",
         "dir": "/D:/SFTP-EGDW/Frem",
         "key_col": "YdelseId",
         "pattern": "Ydelse_*.csv",
@@ -38,10 +39,11 @@ SENSUM_CONFIG = [
         ],
         "sec_pattern": "Afdeling_*.csv",
         "sec_cols": ["Navn"],
-        "merge_on": ["AfdelingId"]
+        "merge_on": ["AfdelingId"],
+        "sec_prefix": "Afdeling"
     },
     {
-        "name": "indsats_fordeling_alt",
+        "name": "indsats_fordeling",
         "dir": "/D:/SFTP-EGDW/sensum_randers",
         "key_col": "IndsatsId",
         "pattern": "Indsatser_*.csv",
