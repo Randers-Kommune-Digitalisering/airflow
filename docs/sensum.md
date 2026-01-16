@@ -21,10 +21,24 @@ Koden består af et DAG-job, der udfører følgende trin:
 :key: | **Airflow Connections**
 
 **Postgres DB:**
-- **`sensum_db`** Bruges som `Connection id` i Airflow til at hente host, database, user, pass og port til Sensum Postgres DB'en
+- **`sensum_db`**
+
+**Conn Type**: Postgres
+
+Bruges som `Connection id` i Airflow til at hente host, database, user, pass og port til Sensum Postgres DB'en
+
+*Required felter*:
+  - Connection id, Host, Database, Login, Password and Port(5432)
 
 **SFTP:**
-- **`sensum_sftp`** Bruges som `Connection id` i Airflow til at hente host, user, pass og port til Sensum SFTP'en
+- **`sensum_sftp`**
+
+**Conn Type**: SFTP
+
+ Bruges som `Connection id` i Airflow til at hente host, user, pass og port til Sensum SFTP'en
+
+ *Required felter*:
+  - Connection id, Host, Username, Password og Port(22)
 
 ## Schedule
 
