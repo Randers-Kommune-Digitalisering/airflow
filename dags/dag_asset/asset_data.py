@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from datetime import datetime
+from airflow.providers.http.hooks.http import HttpHook
 from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
@@ -316,4 +317,97 @@ def insert_computers_data(capa_cms: Engine, asset_engine: Engine) -> bool:
 
     except Exception as e:
         logger.error(f"Error inserting computers: {e}")
+        return False
+
+
+def _get_atea_headers(http_hook: HttpHook) -> dict:
+    """
+    Build HTTP headers for Atea API using the SubKey from Airflow connection.
+    """
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+    return {
+        "Authorization": f"SubKey {conn.password}",
+        "Cache-Control": "no-cache",
+        "Accept": "application/json",
+    }
+
+
+def fetch_atea_data(http_hook: HttpHook) -> list:
+    """
+    Fetch asset data from Atea API.
+    """
+    try:
+        logger.info("Fetching assets from Atea API...")
+
+        headers = _get_atea_headers(http_hook=http_hook)
+        http_hook.method = "GET"
+
+        res = http_hook.run(
+            endpoint="/api/assets/search",
+            data={
+                "PageSize": 2000,
+                "Page": 1,
+                "AssetType": "AB,AA",
+            },
+            headers=headers,
+        )
+
+        data = res.json()
+
+        if not isinstance(data, list):
+            raise ValueError(f"Unexpected response structure: {data}")
+
+        logger.info(f"Successfully retrieved data from Atea API. Total records: {len(data)}")
+        return data
+
+    except Exception:
+        logger.exception("Error while fetching data from Atea API")
+        raise
+
+
+def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
+    """
+    Fetch asset data from Atea API and update Computer table with price, order date, and warranty.
+    """
+    try:
+        atea_data = fetch_atea_data(http_hook=http_hook)
+        if not atea_data:
+            logger.error("No data fetched from Atea API.")
+            return False
+
+        # Map serial numbers to Atea info
+        serial_info_map = {
+            str(item.get('SerialNumber')).strip().lower(): {
+                'price': item.get('Price'),
+                'order_date': item.get('OrderDate'),
+                'warranty': item.get('Warranty')
+            }
+            for item in atea_data
+            if item.get('SerialNumber') and item.get('Price') and item.get('OrderDate') and item.get('Warranty')
+        }
+
+        with Session(asset_engine) as session:
+            computers = session.query(Computer).all()
+            updated = 0
+
+            for computer in computers:
+                serial_norm = str(computer.serial_number).strip().lower() if computer.serial_number else None
+                info = serial_info_map.get(serial_norm)
+                if info:
+                    try:
+                        computer.price = float(info['price'])
+                    except Exception:
+                        logger.warning(f"Could not convert price '{info['price']}' for serial '{serial_norm}'")
+                        continue
+                    computer.order_date = info['order_date']
+                    computer.warranty = info['warranty']
+                    updated += 1
+
+            session.commit()
+            logger.info(f"Updated price, order date, and warranty for {updated} computers from Atea API.")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error updating asset info from Atea: {e}")
         return False
