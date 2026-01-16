@@ -22,10 +22,24 @@ Kode består af et DAG-job, der udfører følgende trin:
 :key: | **Airflow Connections**
 
 **Postgres DB:**
-- **`zylinc_db`** Bruges som Connection id i Airflow til at hente host, database, user, pass og port til Postgres DB'en
+- **`zylinc_db`**
+
+**Conn Type**: Postgres
+ 
+ Bruges som Connection id i Airflow til at hente host, database, user, pass og port til Postgres DB'en
+
+ *Required felter*:
+  - Connection id, Host, Database, Login, Password and Port(5432)
 
 **Elasticsearch**
-- **`zylinc_elasticsearch`** Bruges som Connection id i Airflow til at hente host, schema, user, pass og port til Elasticsearch
+- **`zylinc_elasticsearch`**
+
+**Conn Type**: Elasticsearch
+
+ Bruges som Connection id i Airflow til at hente host, schema, user, pass og port til Elasticsearch
+
+ *Required felter*:
+  - Connection id, Host, Schema(https), Login, Password og Por(433)
 
 
 ## Schedule
