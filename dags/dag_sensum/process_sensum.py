@@ -19,7 +19,7 @@ def process_sensum() -> None:
             filter = config.get("filter", None)
             file_paths = get_files(
                 sftp_conn=sftp_conn,
-                dir=config["dir"],
+                directory=config["dir"],
                 pattern=config["pattern"]
             )
 
@@ -27,7 +27,7 @@ def process_sensum() -> None:
                 sec_prefix = config.get("sec_prefix", None)
                 sec_file_paths = get_files(
                     sftp_conn=sftp_conn,
-                    dir=config['dir'],
+                    directory=config['dir'],
                     pattern=config['sec_pattern']
                 )
 
@@ -41,7 +41,7 @@ def process_sensum() -> None:
                     sec_file_paths=sec_file_paths,
                     merge_on=config['merge_on'],
                     sec_prefix=sec_prefix,
-                    filter=filter
+                    filter_con=filter
                 )
             else:
                 files_to_postgres(
@@ -50,5 +50,5 @@ def process_sensum() -> None:
                     table_name=config['name'],
                     cols=config["cols"],
                     file_paths=file_paths,
-                    filter=filter
+                    filter_con=filter
                 )

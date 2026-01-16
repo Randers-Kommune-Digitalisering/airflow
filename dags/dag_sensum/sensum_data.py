@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def get_files(
         sftp_conn: SFTPClient,
-        dir: str,
+        directory: str,
         pattern: str,
         chunk_size: int = 1024 * 1024,
         sleep_time: float = 0.01
@@ -25,8 +25,8 @@ def get_files(
 
     :param sftp_conn: SFTP client connection
     :type sftp_conn: SFTPClient
-    :param dir: Directory to search for files
-    :type dir: str
+    :param directory: Directory to search for files
+    :type directory: str
     :param pattern: Filename pattern to match
     :type pattern: str
     :param chunk_size: Size of chunks to read from remote file
@@ -38,15 +38,15 @@ def get_files(
     """
     files = [
         (
-            os.path.join(dir, attr.filename),
+            os.path.join(directory, attr.filename),
             datetime.fromtimestamp(attr.st_mtime),
         )
-        for attr in sftp_conn.listdir_attr(dir)
+        for attr in sftp_conn.listdir_attr(directory)
         if fnmatch.fnmatch(attr.filename, pattern)
     ]
 
     if not files:
-        raise FileNotFoundError(f'No files found in directory "{dir}" matching pattern "{pattern}".')
+        raise FileNotFoundError(f'No files found in directory "{directory}" matching pattern "{pattern}".')
 
     files.sort(key=lambda x: x[1], reverse=True)
 
@@ -82,7 +82,7 @@ def files_to_postgres(
         sec_file_paths: list[str] | None = None,
         merge_on: list[str] | None = None,
         sec_prefix: str | None = None,
-        filter: list[str] | None = None
+        filter_con: list[str] | None = None
 ) -> None:
     """
     Load data from CSV files into a PostgreSQL table, optionally merging with secondary data and applying filters.
@@ -105,8 +105,8 @@ def files_to_postgres(
     :type merge_on: list[str] | None
     :param sec_prefix: Prefix to add to secondary columns to avoid name clashes
     :type sec_prefix: str | None
-    :param filter: List containing column name and value to filter the final DataFrame
-    :type filter: list[str] | None
+    :param filter_con: List containing column name and value to filter the final DataFrame
+    :type filter_con: list[str] | None
     """
 
     sec_params = [sec_cols, sec_file_paths, merge_on]
@@ -149,6 +149,6 @@ def files_to_postgres(
         sec_rename = {col: f"{sec_prefix}{col}" for col in sec_cols}
         completed_df.rename(columns=sec_rename, inplace=True)
 
-    if filter is not None:
-        completed_df = completed_df[completed_df[filter[0]] == filter[1]]
+    if filter_con is not None:
+        completed_df = completed_df[completed_df[filter_con[0]] == filter_con[1]]
     completed_df.to_sql(table_name, db_engine, if_exists="replace", index=False)
