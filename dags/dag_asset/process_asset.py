@@ -9,7 +9,7 @@ from dag_asset.asset_data import (
     insert_departments_data,
     insert_users_data,
     insert_computers_data,
-    insert_atea_data,
+    insert_atea_data
 )
 
 logger = logging.getLogger(__name__)
@@ -27,35 +27,30 @@ def process_assets() -> None:
     asset_engine = asset_db_hook.get_sqlalchemy_engine()
 
     if not create_asset_tables(db_engine=asset_engine):
-        logger.error("Failed to create asset tables")
-        return
+        raise ValueError("Failed to create asset tables")
 
     if not insert_departments_data(
         capa_cms=capa_cms_engine,
         asset_engine=asset_engine
     ):
-        logger.error("Failed to insert departments")
-        return
+        raise ValueError("Failed to insert departments data")
 
     if not insert_users_data(
         capa_cms=capa_cms_engine,
         asset_engine=asset_engine
     ):
-        logger.error("Failed to insert users")
-        return
+        raise ValueError("Failed to insert users data")
 
     if not insert_computers_data(
         capa_cms=capa_cms_engine,
         asset_engine=asset_engine
     ):
-        logger.error("Failed to insert computers")
-        return
+        raise ValueError("Failed to insert computers data")
 
     if not insert_atea_data(
         http_hook=atea_http_hook,
         asset_engine=asset_engine
     ):
-        logger.error("Failed to insert Atea data")
-        return
+        raise ValueError("Failed to insert Atea data")
 
     logger.info("Asset ETL completed successfully")
