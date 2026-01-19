@@ -14,7 +14,10 @@ logger = logging.getLogger(__name__)
 
 def create_asset_tables(db_engine: Engine) -> bool:
     """
-    Create asset tables if they do not exist.
+    Create asset database tables if they do not exist.
+
+    :param db_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if table creation succeeded, otherwise False.
     """
     try:
         Base.metadata.create_all(db_engine)
@@ -28,6 +31,10 @@ def create_asset_tables(db_engine: Engine) -> bool:
 def insert_departments_data(capa_cms: Engine, asset_engine: Engine) -> bool:
     """
     Fetch departments from CAPA DB and store them in asset DB.
+
+    :param capa_cms: SQLAlchemy Engine for the CAPA CMS DB.
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if departments were inserted/updated successfully, otherwise False.
     """
     sql_command = """
         SELECT DISTINCT USI.VALUE AS DEPARTMENT
@@ -71,7 +78,11 @@ def insert_departments_data(capa_cms: Engine, asset_engine: Engine) -> bool:
 
 def insert_users_data(capa_cms: Engine, asset_engine: Engine) -> bool:
     """
-    Fetch users and department relations from CAPA DB and store them in asset DB.
+    Fetch users and department relations from CAPA DB and store them in Asset DB.
+
+    :param capa_cms: SQLAlchemy Engine for the CAPA CMS DB.
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if users were inserted/updated successfully, otherwise False.
     """
     sql_command = """
         WITH PrimaryUsers AS (
@@ -143,7 +154,11 @@ def insert_users_data(capa_cms: Engine, asset_engine: Engine) -> bool:
 
 def insert_computers_data(capa_cms: Engine, asset_engine: Engine) -> bool:
     """
-    Fetch computer data from CAPA DB and store/update in asset DB.
+    Fetch computer data from CAPA DB and store/update in Asset DB.
+
+    :param capa_cms: SQLAlchemy Engine for the CAPA CMS DB.
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if computers were inserted/updated successfully, otherwise False.
     """
     sql_command = """
         SELECT
@@ -323,6 +338,9 @@ def insert_computers_data(capa_cms: Engine, asset_engine: Engine) -> bool:
 def _get_atea_headers(http_hook: HttpHook) -> dict:
     """
     Build HTTP headers for Atea API using the SubKey from Airflow connection.
+
+    :param http_hook: Airflow HttpHook for the Atea API
+    :return: Dictionary of HTTP headers
     """
     conn = http_hook.get_connection(http_hook.http_conn_id)
     return {
@@ -335,6 +353,9 @@ def _get_atea_headers(http_hook: HttpHook) -> dict:
 def fetch_atea_data(http_hook: HttpHook) -> list:
     """
     Fetch asset data from Atea API.
+
+    :param http_hook: Airflow HttpHook for the Atea API
+    :return: List of asset records returned by the Atea API.
     """
     try:
         logger.info("Fetching assets from Atea API...")
@@ -368,6 +389,10 @@ def fetch_atea_data(http_hook: HttpHook) -> list:
 def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     """
     Fetch asset data from Atea API and update Computer table with price, order date, and warranty.
+
+    :param http_hook: Airflow HttpHook for the Atea API
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if the update succeeded, otherwise False.
     """
     try:
         atea_data = fetch_atea_data(http_hook=http_hook)
