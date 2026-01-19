@@ -1,12 +1,16 @@
 import logging
+import io
+import pandas as pd
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 from datetime import datetime
 from airflow.providers.http.hooks.http import HttpHook
+from airflow.providers.sftp.hooks.sftp import SFTPHook
 from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
+from airflow.models import Variable
 
 
 logger = logging.getLogger(__name__)
@@ -435,4 +439,127 @@ def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
 
     except Exception as e:
         logger.error(f"Error updating asset info from Atea: {e}")
+        return False
+
+
+def insert_device_license_and_historical_data(
+    sftp_hook: SFTPHook,
+    http_hook: HttpHook,
+    asset_engine: Engine
+) -> bool:
+    """
+    Fetch Device License CSV, Comm2ig historical CSV, and Atea EAN from SFTP,
+    then update Computer table in Asset DB accordingly.
+
+    :param sftp_hook: Airflow SFTPHook for Asset SFTP.
+    :param http_hook: Airflow HttpHook for the Atea API.
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if updates succeeded, otherwise False.
+    """
+    device_license_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["device_license_file_path"]
+    comm2ig_historical_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["comm2ig_historical_file_path"]
+    ean_atea_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["ean_atea_file_path"]
+
+    try:
+        with sftp_hook.get_conn() as sftp_client:
+            logger.info("Fetching Device License CSV from SFTP...")
+            with sftp_client.open(device_license_file, 'r') as file:
+                device_license_csv = file.read().decode('utf-8')
+
+            logger.info("Fetching Comm2ig historical CSV from SFTP...")
+            with sftp_client.open(comm2ig_historical_file, 'r') as file:
+                comm2ig_csv = file.read().decode('utf-8')
+
+            logger.info("Fetching EAN Atea file from SFTP...")
+            with sftp_client.open(ean_atea_file, 'rb') as file:
+                ean_atea_bytes = file.read()
+
+        df_device_license = pd.read_csv(io.StringIO(device_license_csv))
+        df_device_license.columns = df_device_license.columns.str.strip()
+        if 'Name' not in df_device_license.columns:
+            logger.error("Device License CSV missing 'Name' column.")
+            return False
+        computer_names = [name.strip() for name in df_device_license['Name'].dropna()]
+
+        df_comm2ig = pd.read_csv(io.StringIO(comm2ig_csv), dtype=str, sep=',')
+        df_comm2ig.columns = df_comm2ig.columns.str.strip()
+        required_cols = ['Serienr.', 'Pris pr.stk. i kr. ekskl. moms', 'Fakturadato', 'EAN-nr.']
+        missing = [col for col in required_cols if col not in df_comm2ig.columns]
+        if missing:
+            logger.error(f"Comm2ig CSV missing required columns: {missing}")
+            return False
+
+        df_atea = pd.read_excel(io.BytesIO(ean_atea_bytes), dtype=str)
+        df_atea.columns = df_atea.columns.str.strip()
+        if 'Nummer' not in df_atea.columns or 'EAN-nr.' not in df_atea.columns:
+            logger.error("Atea Excel missing 'Nummer' or 'EAN-nr.' columns.")
+            return False
+
+        atea_data = fetch_atea_data(http_hook=http_hook)
+        if not atea_data:
+            logger.error("No data fetched from Atea API.")
+            return False
+
+        billto_map = {
+            str(item.get('BillTo')): item.get('SerialNumber')
+            for item in atea_data if item.get('BillTo') and item.get('SerialNumber')
+        }
+
+        with Session(asset_engine) as session:
+            computers = session.query(Computer).all()
+            name_to_computer = {c.unit_name: c for c in computers if c.unit_name}
+            serial_to_computer = {str(c.serial_number).lstrip('sS').lower(): c for c in computers if c.serial_number}
+            serial_exact_lookup = {str(c.serial_number): c for c in computers if c.serial_number}
+
+            # DeviceLicense/AD
+            updated_device = 0
+            for name in computer_names:
+                computer = name_to_computer.get(name)
+                if computer:
+                    computer.device_license = True
+                    updated_device += 1
+
+            # Comm2ig historisk data
+            updated_comm2ig = 0
+            for _, row in df_comm2ig.iterrows():
+                serial = row['Serienr.']
+                serial_norm = str(serial[1:]).lower() if str(serial).startswith('S') else str(serial).lower()
+                price = row['Pris pr.stk. i kr. ekskl. moms']
+                fakturadato = row['Fakturadato']
+                ean_nr = row.get('EAN-nr.', None)
+                if pd.isna(ean_nr) or str(ean_nr).strip().lower() in ['nan', '']:
+                    ean_nr = None
+
+                computer_obj = serial_to_computer.get(serial_norm)
+                if computer_obj:
+                    try:
+                        computer_obj.price = float(str(price).replace(',', '.'))
+                    except Exception:
+                        logger.warning(f"Could not convert price '{price}' for serial '{serial_norm}'")
+                        continue
+                    computer_obj.order_date = fakturadato
+                    computer_obj.kob_ean_nr = ean_nr
+                    updated_comm2ig += 1
+
+            # Atea KøbsEANnr
+            updated_atea = 0
+            for _, row in df_atea.iterrows():
+                nummer = str(row['Nummer']).strip()
+                ean_nr = row['EAN-nr.']
+                serial = billto_map.get(nummer)
+                computer_obj = serial_exact_lookup.get(serial)
+                if serial and computer_obj:
+                    computer_obj.kob_ean_nr = ean_nr
+                    updated_atea += 1
+
+            session.commit()
+
+            logger.info(f"Device License updated for {updated_device} computers")
+            logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
+            logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error updating Device License, Comm2ig, or Atea data: {e}")
         return False
