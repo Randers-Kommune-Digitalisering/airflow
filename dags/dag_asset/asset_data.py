@@ -1,6 +1,7 @@
 import logging
 import io
 import pandas as pd
+import requests
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
 from airflow.models import Variable
+
+from utils.token_provider import OAuth2TokenProvider
 
 
 logger = logging.getLogger(__name__)
@@ -562,4 +565,180 @@ def insert_device_license_and_historical_data(
 
     except Exception as e:
         logger.error(f"Error updating Device License, Comm2ig, or Atea data: {e}")
+        return False
+
+
+def delta_get_all_adm_units_ean(token_provider: OAuth2TokenProvider, base_url: str) -> list[dict]:
+    """
+    Query Delta system for all administrative units EAN numbers.
+
+    :param token_provider: OAuth2TokenProvider used to obtain/refresh Bearer token for Delta.
+    :param base_url: Base URL for the Delta API.
+    :return: List of dicts with keys: 'parent' (parent name), 'name' (child name), 'ean' (EAN number or None).
+    """
+    try:
+        offset = 0
+        limit = 1000
+        results = []
+
+        while True:
+            graph_query = {
+                "graphQueries": [
+                    {
+                        "computeAvailablePages": True,
+                        "graphQuery": {
+                            "structure": {
+                                "alias": "adm",
+                                "userKey": "APOS-Types-AdministrativeUnit"
+                            },
+                            "criteria": {
+                                "type": "AND",
+                                "criteria": [
+                                    {
+                                        "type": "MATCH",
+                                        "operator": "EQUAL",
+                                        "left": {"source": "DEFINITION", "alias": "adm.$state"},
+                                        "right": {"source": "STATIC", "value": "STATE_ACTIVE"}
+                                    }
+                                ]
+                            },
+                            "projection": {
+                                "identity": True,
+                                "attributes": ["APOS-Types-AdministrativeUnit-Attribute-EANnr"],
+                                "children": {
+                                    "identity": True,
+                                    "attributes": ["APOS-Types-AdministrativeUnit-Attribute-EANnr"]
+                                }
+                            }
+                        },
+                        "validDate": "NOW",
+                        "offset": offset,
+                        "limit": limit
+                    }
+                ]
+            }
+
+            # Get token
+            token = token_provider.get_token()
+            headers = {"Authorization": f"Bearer {token}"}
+
+            logger.debug(f"POST URL: {base_url}/api/object/graph-query")
+
+            res = requests.post(
+                url=f"{base_url}/api/object/graph-query",
+                headers=headers,
+                json=graph_query,
+                timeout=30
+            )
+
+            # If token has expired, refresh and try again
+            if res.status_code == 401:
+                logger.warning("Token expired, refreshing and retrying...")
+                token = token_provider.refresh()
+                headers["Authorization"] = f"Bearer {token}"
+                res = requests.post(
+                    url=f"{base_url}/api/object/graph-query",
+                    headers=headers,
+                    json=graph_query,
+                    timeout=30
+                )
+
+            res.raise_for_status()
+            payload = res.json()
+            graph_result = payload["graphQueryResult"][0]
+            available_pages = graph_result.get("availablePages", 0)
+            instances = graph_result.get("instances", [])
+
+            for inst in instances:
+                parent_name = inst.get("identity", {}).get("name")
+                parent_ean = next(
+                    (att["value"] for att in inst.get("attributes", [])
+                     if att.get("userKey") == "APOS-Types-AdministrativeUnit-Attribute-EANnr"),
+                    None
+                )
+                logger.debug(f"Parent: {parent_name}, EAN: {parent_ean}")
+                children = inst.get('childrenObjects', [])
+                for child in children:
+                    name = child.get('identity', {}).get('name', '')
+                    ean = next(
+                        (att['value'] for att in child.get('attributes', []) if att['userKey'] == 'APOS-Types-AdministrativeUnit-Attribute-EANnr'),
+                        None
+                    )
+                    if not ean and parent_ean:
+                        ean = parent_ean
+                        logger.debug(f"Child: {name} inherits parent EAN: {ean} from parent: {parent_name}")
+                    else:
+                        logger.debug(f"Child: {name}, EAN: {ean}")
+                    results.append({
+                        'parent': parent_name,
+                        'name': name,
+                        'ean': ean
+                    })
+
+            total_instances = available_pages * limit
+            if offset + limit >= total_instances or len(instances) < limit:
+                break
+
+            offset += limit
+
+        return results
+
+    except Exception as e:
+        logger.exception(f"Error while fetching departments administrative units EAN numbers from Delta: {e}")
+        raise
+
+
+def insert_department_ean_from_delta(
+    token_provider: OAuth2TokenProvider,
+    asset_engine: Engine,
+    delta_base_url: str,
+) -> bool:
+    """
+    Update Department EAN in the asset database using data from Delta.
+
+    :param token_provider: OAuth2TokenProvider used to obtain/refresh Bearer token for Delta.
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :param delta_base_url: Base URL for the Delta API
+    :return: True if the update succeeded, otherwise False.
+    """
+    try:
+        logger.info("Fetching department EAN numbers from Delta...")
+        delta_data = delta_get_all_adm_units_ean(
+            token_provider=token_provider,
+            base_url=delta_base_url,
+        )
+
+        if not delta_data:
+            logger.error("No departments/EAN numbers fetched from Delta.")
+            return False
+        logger.info(f"Found {len(delta_data)} departments with EAN numbers from Delta.")
+
+        with Session(asset_engine) as session:
+            departments = session.query(Department).all()
+            department_lookup = {
+                d.name.strip().lower(): d
+                for d in departments
+                if d.name
+            }
+
+            updated = 0
+            for adm in delta_data:
+                name = str(adm.get("name", "")).strip().lower()
+                ean = adm.get("ean")
+
+                if not name or not ean:
+                    continue
+
+                department = department_lookup.get(name)
+                if department:
+                    department.ean = str(ean).strip()
+                    updated += 1
+
+            session.commit()
+            logger.info(f"Updated EAN number for {updated} departments from Delta.")
+
+        return True
+
+    except Exception as e:
+        logger.exception(f"Error updating department EAN from Delta: {e}")
         return False
