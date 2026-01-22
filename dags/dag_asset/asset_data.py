@@ -357,7 +357,7 @@ def _get_atea_headers(http_hook: HttpHook) -> dict:
     }
 
 
-def fetch_atea_data(http_hook: HttpHook) -> list:
+def _fetch_atea_data(http_hook: HttpHook) -> list:
     """
     Fetch asset data from Atea API.
 
@@ -402,7 +402,7 @@ def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     :return: True if the update succeeded, otherwise False.
     """
     try:
-        atea_data = fetch_atea_data(http_hook=http_hook)
+        atea_data = _fetch_atea_data(http_hook=http_hook)
         if not atea_data:
             logger.error("No data fetched from Atea API.")
             return False
@@ -498,7 +498,7 @@ def insert_device_license_and_historical_data(
             logger.error("Atea Excel missing 'Nummer' or 'EAN-nr.' columns.")
             return False
 
-        atea_data = fetch_atea_data(http_hook=http_hook)
+        atea_data = _fetch_atea_data(http_hook=http_hook)
         if not atea_data:
             logger.error("No data fetched from Atea API.")
             return False
@@ -568,7 +568,7 @@ def insert_device_license_and_historical_data(
         return False
 
 
-def delta_get_all_adm_units_ean(token_provider: OAuth2TokenProvider, base_url: str) -> list[dict]:
+def _delta_get_all_adm_units_ean(token_provider: OAuth2TokenProvider, base_url: str) -> list[dict]:
     """
     Query Delta system for all administrative units EAN numbers.
 
@@ -703,7 +703,7 @@ def insert_department_ean_from_delta(
     """
     try:
         logger.info("Fetching department EAN numbers from Delta...")
-        delta_data = delta_get_all_adm_units_ean(
+        delta_data = _delta_get_all_adm_units_ean(
             token_provider=token_provider,
             base_url=delta_base_url,
         )
