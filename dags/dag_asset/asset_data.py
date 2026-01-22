@@ -29,7 +29,7 @@ def create_asset_tables(db_engine: Engine) -> bool:
     """
     try:
         Base.metadata.create_all(db_engine)
-        logger.info("Created Computer, Bruger, and Afdeling tables if not exists.")
+        logger.info("Created Computer, User, and Department tables if not exists.")
         return True
     except Exception as e:
         logger.error(f"Error creating tables: {e}")
@@ -80,7 +80,7 @@ def insert_departments_data(capa_cms_engine: Engine, asset_engine: Engine) -> bo
         return True
 
     except Exception as e:
-        logger.error(f"Error inserting departments into Afdeling table: {e}")
+        logger.error(f"Error inserting departments into Department table: {e}")
         return False
 
 
@@ -814,7 +814,7 @@ def upload_assets_to_topdesk(asset_engine: Engine, http_hook: HttpHook) -> bool:
             result = conn.execute(sql_command).fetchall()
 
         if not result:
-            logger.error("No data found in Computer/Bruger/Afdeling tables")
+            logger.error("No data found in Computer/User/Department tables")
             return False
 
         columns = [
