@@ -36,11 +36,11 @@ def create_asset_tables(db_engine: Engine) -> bool:
         return False
 
 
-def insert_departments_data(capa_cms: Engine, asset_engine: Engine) -> bool:
+def insert_departments_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
     """
     Fetch departments from CAPA DB and store them in asset DB.
 
-    :param capa_cms: SQLAlchemy Engine for the CAPA CMS DB.
+    :param capa_cms_engine: SQLAlchemy Engine for the CAPA CMS DB.
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
     :return: True if departments were inserted/updated successfully, otherwise False.
     """
@@ -51,10 +51,10 @@ def insert_departments_data(capa_cms: Engine, asset_engine: Engine) -> bool:
           AND USI.NAME = 'Department'
     """
 
-    logger.info(f"Executing Department SQL command: {sql_command}")
+    logger.debug(f"Executing Department SQL command: {sql_command}")
 
     try:
-        with capa_cms.connect() as conn:
+        with capa_cms_engine.connect() as conn:
             result = conn.execute(sql_command).fetchall()
             logger.debug(f"Department SQL result: {result}")
 
@@ -84,11 +84,11 @@ def insert_departments_data(capa_cms: Engine, asset_engine: Engine) -> bool:
         return False
 
 
-def insert_users_data(capa_cms: Engine, asset_engine: Engine) -> bool:
+def insert_users_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
     """
     Fetch users and department relations from CAPA DB and store them in Asset DB.
 
-    :param capa_cms: SQLAlchemy Engine for the CAPA CMS DB.
+    :param capa_cms_engine: SQLAlchemy Engine for the CAPA CMS DB.
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
     :return: True if users were inserted/updated successfully, otherwise False.
     """
@@ -115,10 +115,10 @@ def insert_users_data(capa_cms: Engine, asset_engine: Engine) -> bool:
             AND USI2.NAME = 'Department'
     """
 
-    logger.info(f"Executing User SQL command: {sql_command}")
+    logger.debug(f"Executing User SQL command: {sql_command}")
 
     try:
-        with capa_cms.connect() as conn:
+        with capa_cms_engine.connect() as conn:
             result = conn.execute(sql_command).fetchall()
             logger.debug(f"User SQL result: {result}")
 
@@ -160,11 +160,11 @@ def insert_users_data(capa_cms: Engine, asset_engine: Engine) -> bool:
         return False
 
 
-def insert_computers_data(capa_cms: Engine, asset_engine: Engine) -> bool:
+def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
     """
     Fetch computer data from CAPA DB and store/update in Asset DB.
 
-    :param capa_cms: SQLAlchemy Engine for the CAPA CMS DB.
+    :param capa_cms_engine: SQLAlchemy Engine for the CAPA CMS DB.
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
     :return: True if computers were inserted/updated successfully, otherwise False.
     """
@@ -256,12 +256,11 @@ def insert_computers_data(capa_cms: Engine, asset_engine: Engine) -> bool:
           AND U.TYPE = 1
     """
 
-    logger.info(f"Executing Computer SQL command: {sql_command}")
+    logger.debug(f"Executing Computer SQL command: {sql_command}")
 
     try:
-        with capa_cms.connect() as conn:
+        with capa_cms_engine.connect() as conn:
             result = conn.execute(sql_command).fetchall()
-            logger.debug(f"Computer SQL result: {result}")
 
         if not result:
             logger.error("No computer data found")

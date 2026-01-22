@@ -45,7 +45,7 @@ def process_assets() -> None:
         raise ValueError("Failed to create asset tables")
 
     if not insert_departments_data(
-        capa_cms=capa_cms_engine,
+        capa_cms_engine=capa_cms_engine,
         asset_engine=asset_engine
     ):
         raise ValueError("Failed to insert departments data")
@@ -58,13 +58,13 @@ def process_assets() -> None:
         raise ValueError("Failed to insert department EANs from Delta")
 
     if not insert_users_data(
-        capa_cms=capa_cms_engine,
+        capa_cms_engine=capa_cms_engine,
         asset_engine=asset_engine
     ):
         raise ValueError("Failed to insert users data")
 
     if not insert_computers_data(
-        capa_cms=capa_cms_engine,
+        capa_cms_engine=capa_cms_engine,
         asset_engine=asset_engine
     ):
         raise ValueError("Failed to insert computers data")
