@@ -12,6 +12,7 @@ from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
 from airflow.models import Variable
+from utils.utils import df_to_csv_bytes
 
 from utils.token_provider import OAuth2TokenProvider
 
@@ -741,4 +742,127 @@ def insert_department_ean_from_delta(
 
     except Exception as e:
         logger.exception(f"Error updating department EAN from Delta: {e}")
+        return False
+
+
+def upload_assets_to_topdesk(asset_engine: Engine, http_hook: HttpHook) -> bool:
+    """
+    Export asset data from the Asset DB and upload it to Topdesk API as a CSV.
+
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :param http_hook: Airflow HttpHook configured for the Topdesk API
+    :return: True if data was exported and uploaded successfully, otherwise False.
+    """
+    topdesk_asset_filename = Variable.get("asset_config", default_var=None, deserialize_json=True)["topdesk_file_path"]
+
+    sql_command = """
+        SELECT
+            STRING_AGG(a."name", ', ') AS "department",
+            STRING_AGG(a."ean", ', ') AS "department_ean",
+            b."full_name",
+            b."primary_user",
+            c."unit_name",
+            c."producent",
+            c."model",
+            c."device_type",
+            c."serial_number",
+            c."last_login_date",
+            c."last_run",
+            c."bitlocker_code",
+            c."bitlocker_status",
+            c."bitlocker_encryption_percentage",
+            c."os_version",
+            c."mac_address",
+            c."lan_mac_address",
+            c."device_license",
+            c."price",
+            c."order_date",
+            c."kob_ean_nr",
+            c."warranty",
+            c."drift"
+        FROM public."computer" c
+        LEFT JOIN public."user" b ON c."user_id" = b."user_id"
+        LEFT JOIN public."user_department" ba ON b."user_id" = ba."user_id"
+        LEFT JOIN public."department" a ON ba."department_id" = a."department_id"
+        GROUP BY
+            b."full_name",
+            b."primary_user",
+            c."unit_name",
+            c."producent",
+            c."model",
+            c."device_type",
+            c."serial_number",
+            c."last_login_date",
+            c."last_run",
+            c."bitlocker_code",
+            c."bitlocker_status",
+            c."bitlocker_encryption_percentage",
+            c."os_version",
+            c."mac_address",
+            c."lan_mac_address",
+            c."device_license",
+            c."price",
+            c."order_date",
+            c."kob_ean_nr",
+            c."warranty",
+            c."drift"
+    """
+
+    logger.info(f"Executing all asset data SQL command: {sql_command}")
+
+    try:
+        with asset_engine.connect() as conn:
+            result = conn.execute(sql_command).fetchall()
+
+        if not result:
+            logger.error("No data found in Computer/Bruger/Afdeling tables")
+            return False
+
+        columns = [
+            "department", "department_ean", "full_name", "primary_user", "unit_name", "producent", "model",
+            "device_type", "serial_number", "last_login_date", "last_run", "bitlocker_code", "bitlocker_status",
+            "bitlocker_encryption_percentage", "os_version", "mac_address", "lan_mac_address", "device_license",
+            "price", "order_date", "kob_ean_nr", "warranty", "drift"
+        ]
+        df = pd.DataFrame(result, columns=columns)
+
+        # Transform data to match TopDesk requirements
+        for col in ["last_login_date", "last_run", "order_date", "warranty"]:
+            if col in df.columns:
+                df[col] = df[col].apply(
+                    lambda val: "" if pd.isnull(val) else pd.to_datetime(val).strftime("%Y-%m-%dT%H:%M:%S.00")
+                    if str(val).strip() else str(val)
+                )
+
+        for col in ["drift", "device_license"]:
+            if col in df.columns:
+                df[col] = df[col].apply(
+                    lambda val: "TRUE" if val is True or str(val).lower() == "true" else ""
+                )
+
+        if "price" in df.columns:
+            df["price"] = df["price"].apply(
+                lambda val: "{:.2f}".format(float(val)) if pd.notnull(val) and str(val).strip() else ""
+            )
+
+        logger.info(f"File name: {topdesk_asset_filename}")
+
+        csv_bytes = df_to_csv_bytes(df, sep=';', encoding='UTF-8')
+        upload_path = f"/services/import-to-api-v1/api/sourceFiles?filename={topdesk_asset_filename}"
+
+        logger.info(f"Uploading {topdesk_asset_filename} to TopDesk {upload_path}")
+
+        http_hook.method = "PUT"
+
+        res = http_hook.run(
+            endpoint=upload_path,
+            data=csv_bytes,
+        )
+
+        logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: Code Status: {res.status_code}.")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error uploading {topdesk_asset_filename} to TopDesk: {e}")
         return False

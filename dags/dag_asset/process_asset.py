@@ -13,7 +13,8 @@ from dag_asset.asset_data import (
     insert_users_data,
     insert_computers_data,
     insert_atea_data,
-    insert_device_license_and_historical_data
+    insert_device_license_and_historical_data,
+    upload_assets_to_topdesk
 )
 from utils.token_provider import OAuth2TokenProvider
 
@@ -26,6 +27,7 @@ def process_assets() -> None:
     """
     atea_http_hook = HttpHook(http_conn_id="atea_api")
     delta_hook = BaseHook.get_connection("delta_prod")
+    topdesk_http_hook = HttpHook(http_conn_id="topdesk_api_test")
     asset_sftp_hook = SFTPHook(ssh_conn_id="asset_sftp")
     capa_cms_db_hook = MsSqlHook(mssql_conn_id="capa_cms_db")
     asset_db_hook = PostgresHook(postgres_conn_id="asset_db")
@@ -79,5 +81,11 @@ def process_assets() -> None:
         asset_engine=asset_engine
     ):
         raise ValueError("Failed to insert device license and historical data")
+
+    if not upload_assets_to_topdesk(
+        asset_engine=asset_engine,
+        http_hook=topdesk_http_hook
+    ):
+        raise ValueError("Failed to upload assets to TopDesk")
 
     logger.info("Asset ETL completed successfully")
