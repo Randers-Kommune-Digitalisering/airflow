@@ -3,11 +3,8 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from psycopg2.extras import execute_values
 import requests
 import time
-
-
-def _rows_to_dicts(cursor, rows: list[tuple]) -> list[dict]:
-    columns = [col[0] for col in cursor.description]
-    return [dict(zip(columns, row)) for row in rows]
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 
 class DataforsyningClient:
@@ -74,83 +71,41 @@ class DistrictMapDBClient:
         self._geometry_column: str = "wkb_geometry"
         self._srid: int = 25832
         self._max_values_page_size: int = 100
+        self._engine = None
 
-    def get_district_rows_by_key(self, keyed_points: list[tuple[str, float, float]]) -> dict[str, dict | None]:
-        """
-        Connects to PostGIS DB to perform a batch lookup of districts for many points.
-
-        :param keyed_points: A list of tuples (key, x, y) where key is an identifier for the point.
-        :returns: A dict mapping from key to district row (as dict) or None if not found.
-        """
-        if not keyed_points:
-            return {}
-
-        sql = f"""
-            WITH pts AS (
-                SELECT * FROM (VALUES %s) AS v(key, x, y)
-            )
-            SELECT
-                pts.key,
-                d.*
-            FROM pts
-            LEFT JOIN LATERAL (
-                SELECT d.*
-                FROM {self._table} d
-                WHERE ST_Contains(
-                    d.{self._geometry_column},
-                    ST_SetSRID(ST_MakePoint(pts.x, pts.y), {self._srid})
-                )
-                LIMIT 1
-            ) d ON TRUE
-            ORDER BY pts.key;
-        """
-        conn = self._hook.get_conn()
-        cursor = conn.cursor()
-        try:
-            # Use execute_values for efficient batch fetching
-            rows = execute_values(
-                cursor,
-                sql,
-                keyed_points,
-                page_size=min(len(keyed_points), self._max_values_page_size),
-                fetch=True,
-            )
-            dict_rows = _rows_to_dicts(cursor, rows)
-        finally:
-            try:
-                cursor.close()
-            finally:
-                conn.close()
-
-        # Initialize result dict with keys from keyed_points and default None values
-        result: dict[str, dict | None] = {key: None for key, _, _ in keyed_points}
-        for row in dict_rows:
-            key = row.get("key")
-            if key is None:
-                continue
-            row.pop("key", None)
-
-            # If all remaining columns are None, treat this as "not found" and keep value as None
-            has_non_none_value = any(value is not None for value in row.values())
-            result[str(key)] = row if has_non_none_value else None
-
-        return result
+    def _get_engine(self):
+        if self._engine is None:
+            self._engine = self._hook.get_sqlalchemy_engine()
+        return self._engine
 
     def get_district_names_by_key(self, keyed_points: list[tuple[str, float, float]]) -> dict[str, str | None]:
-        """
-        Batch lookup of district names (distriktnavn) for many points.
+        sql = text(f"""
+                WITH pts AS (
+                    SELECT * FROM (VALUES {",".join(["(:k{}, :x{}, :y{})".format(i,i,i) for i in range(len(keyed_points))])})
+                    AS v(key, x, y)
+                )
+                SELECT
+                    pts.key,
+                    d.distriktnavn
+                FROM pts
+                LEFT JOIN LATERAL (
+                    SELECT distriktnavn
+                    FROM {self._table}
+                    WHERE ST_Contains(
+                        {self._table}.{self._geometry_column},
+                        ST_SetSRID(ST_MakePoint(pts.x, pts.y), :srid)
+                    )
+                    LIMIT 1
+                ) d ON TRUE
+                ORDER BY pts.key;
+            """)
 
-        :param keyed_points: A list of tuples (key, x, y) where key is an identifier for the point (navnid).
-        :returns: A dict mapping from key to district name (str) or None if not found.
-        """
-        # Get district rows by key
-        rows_by_key = self.get_district_rows_by_key(keyed_points)
-        result: dict[str, str | None] = {}
+        params = {"srid": self._srid}
+        for i, (k, x, y) in enumerate(keyed_points):
+            params[f"k{i}"] = k
+            params[f"x{i}"] = x
+            params[f"y{i}"] = y
 
-        # Extract district names from rows
-        for key, row in rows_by_key.items():
-            name = None
-            if row is not None:
-                name = row.get("distriktnavn")
-            result[key] = str(name) if name is not None else None
-        return result
+        with Session(self._get_engine()) as session:
+            rows = session.execute(sql, params).all()
+            return dict(rows)
