@@ -1,10 +1,16 @@
 from airflow.hooks.base import BaseHook
-from airflow.providers.postgres.hooks.postgres import PostgresHook
-from psycopg2.extras import execute_values
 import requests
 import time
-from sqlalchemy import text
 from sqlalchemy.orm import Session
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from sqlalchemy import Column, String
+from sqlalchemy.ext.declarative import declarative_base
+from geoalchemy2 import Geometry
+from shapely import wkb
+from shapely.geometry import Point, multipolygon
+
+
+Base = declarative_base()
 
 
 class DataforsyningClient:
@@ -64,48 +70,28 @@ class DataforsyningClient:
         return response.json()
 
 
+class District(Base):
+    __tablename__ = 'sundhedsplejedistrikter_rk_all'
+    __table_args__ = {'schema': 'nye_tabeller'}
+    distriktnavn = Column(String, primary_key=True)
+    wkb_geometry = Column(Geometry(geometry_type='MULTIPOLYGON', srid=25832))
+
+
+class DistrictItem():
+    def __init__(self, name: str, geom: multipolygon.MultiPolygon):
+        self.name = name
+        self.geom = geom
+
+
 class DistrictMapDBClient:
     def __init__(self):
-        self._hook = PostgresHook(postgres_conn_id="gis_db")
-        self._table: str = "nye_tabeller.sundhedsplejedistrikter_rk_all"
-        self._geometry_column: str = "wkb_geometry"
-        self._srid: int = 25832
-        self._max_values_page_size: int = 100
-        self._engine = None
+        with Session(PostgresHook(postgres_conn_id="gis_db").get_sqlalchemy_engine()) as session:
+            districts = session.query(District).all()
+            self._districts: list[DistrictItem] = [DistrictItem(d.distriktnavn, wkb.loads(bytes(d.wkb_geometry.data))) for d in districts]
 
-    def _get_engine(self):
-        if self._engine is None:
-            self._engine = self._hook.get_sqlalchemy_engine()
-        return self._engine
-
-    def get_district_names_by_key(self, keyed_points: list[tuple[str, float, float]]) -> dict[str, str | None]:
-        sql = text(f"""
-                WITH pts AS (
-                    SELECT * FROM (VALUES {",".join(["(:k{}, :x{}, :y{})".format(i,i,i) for i in range(len(keyed_points))])})
-                    AS v(key, x, y)
-                )
-                SELECT
-                    pts.key,
-                    d.distriktnavn
-                FROM pts
-                LEFT JOIN LATERAL (
-                    SELECT distriktnavn
-                    FROM {self._table}
-                    WHERE ST_Contains(
-                        {self._table}.{self._geometry_column},
-                        ST_SetSRID(ST_MakePoint(pts.x, pts.y), :srid)
-                    )
-                    LIMIT 1
-                ) d ON TRUE
-                ORDER BY pts.key;
-            """)
-
-        params = {"srid": self._srid}
-        for i, (k, x, y) in enumerate(keyed_points):
-            params[f"k{i}"] = k
-            params[f"x{i}"] = x
-            params[f"y{i}"] = y
-
-        with Session(self._get_engine()) as session:
-            rows = session.execute(sql, params).all()
-            return dict(rows)
+    def get_district_names_by_key(self, points: list[tuple[str, float, float]]) -> dict[str, str | None]:
+        result = {}
+        for key, x, y in points:
+            pt = Point(x, y)
+            result[key] = next((d.name for d in self._districts if d.geom.contains(pt)), None)
+        return result
