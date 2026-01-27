@@ -1,5 +1,4 @@
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
-import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -12,7 +11,7 @@ logger = logging.getLogger(__name__)
 engine = None
 
 
-def get_sqlalchemy_engine():
+def _get_sqlalchemy_engine():
     """
     Create and return a SQLAlchemy engine using Airflow connection settings.
     """
@@ -24,32 +23,21 @@ def get_sqlalchemy_engine():
     return engine
 
 
-def get_sql_data(query: str, params: dict | None = None) -> list[dict]:
+def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
     """
     Execute a SQL query and return the results as a list of dictionaries.
 
     :param query: The SQL query to execute.
     :param params: Optional dictionary of parameters to bind to the query.
     """
-    engine = get_sqlalchemy_engine()
-    conn = None
+    engine = _get_sqlalchemy_engine()
     try:
-        conn = engine.connect()
-        # Use SQLAlchemy `text()` + bound parameters to avoid SQL injection.
-        result = pd.read_sql_query(text(query), con=conn, params=params)
-        records = result.to_dict(orient='records')
-        if isinstance(records, dict):
-            return [records]
-        elif isinstance(records, list):
-            return records
-        else:
-            return []
+        with engine.connect() as conn:
+            result = conn.execute(text(query), params or {})
+            return [dict(row) for row in result.mappings().all()]
     except Exception as e:
-        logger.error(f'Error executing query: {e}')
+        logger.error(f"Error executing query: {e}")
         return []
-    finally:
-        if conn:
-            conn.close()
 
 
 def update_novax_userdatas_batch(updates: list[dict]) -> dict:
@@ -68,7 +56,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
 
     Returns: mapping {navnid: bool}
     """
-    engine = get_sqlalchemy_engine()
+    engine = _get_sqlalchemy_engine()
     results: dict = {}
 
     def _exec(session: Session, query: str, params: dict | None = None) -> None:
@@ -272,7 +260,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             navn.DISTRIKT
     """
 
-    data = get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
+    data = _get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
     if not data:
         return []
 
