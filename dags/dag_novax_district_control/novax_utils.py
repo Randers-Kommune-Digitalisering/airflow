@@ -1,6 +1,10 @@
 from __future__ import annotations
 from datetime import datetime, timedelta
+import logging
 import re
+
+
+logger = logging.getLogger(__name__)
 
 
 class Address:
@@ -57,6 +61,7 @@ def parse_address(address: str) -> Address | None:
     :param address: Full address as a string, e.g., "Regimentvej 16F, 3. tv, 8920 Randers NV"
     """
     if not address:
+        logger.warning("Empty address string provided for parsing.")
         return None
 
     match = re.match(
@@ -70,6 +75,7 @@ def parse_address(address: str) -> Address | None:
         address.strip()
     )
     if not match:
+        logger.warning(f"Address string did not match expected format: {address}")
         return None
 
     street_name = match.group('street_name').strip()
@@ -80,6 +86,10 @@ def parse_address(address: str) -> Address | None:
     if city_part:
         city_part = city_part.strip()
         city_name = f"{city_part} {city_name}".strip()
+
+    if not street_name or not house_number or not postal_code:
+        logger.warning(f"Incomplete address components: street_name={street_name}, house_number={house_number}, postal_code={postal_code}")
+        return None
 
     return Address(
         street=street_name,
