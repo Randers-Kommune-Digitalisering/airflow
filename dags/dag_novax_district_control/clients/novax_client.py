@@ -252,12 +252,6 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
             (EMNEBREV LIKE N'%gravid%')
             AND Godkommu.JOURNALDATO >= :from_date
             AND Godkommu.JOURNALDATO < :to_date
-        GROUP BY
-            Godkommu.JOURNALDATO,
-            Godkommu.NAVNID,
-            navn.CPR,
-            navn.ADRESSE,
-            navn.DISTRIKT
     """
 
     data = _get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
