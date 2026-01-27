@@ -90,6 +90,12 @@ class DistrictMapDBClient:
             self._districts: list[DistrictItem] = [DistrictItem(d.distriktnavn, wkb.loads(bytes(d.wkb_geometry.data))) for d in districts]
 
     def get_district_names_by_key(self, points: list[tuple[str, float, float]]) -> dict[str, str | None]:
+        """
+        Returns a dictionary mapping keys to district names based on the provided points.
+
+        :param points: A list of tuples containing (key, x, y) coordinates, where key is a unique identifier (i.e. navnid).
+        :return: A dictionary mapping each key to the corresponding district name or None if not found
+        """
         result = {}
         for key, x, y in points:
             pt = Point(x, y)
