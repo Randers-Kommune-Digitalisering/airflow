@@ -33,6 +33,14 @@ def check_and_update_district() -> None:
     if not res:
         logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
         return
+    
+    # Filter out dublicates based on (navnid, timestamp) - keep latest entry per navnid
+    unique_entries: dict[str, any] = {}
+    for entry in res:
+        existing = unique_entries.get(entry.navnid)
+        if existing is None or entry.timestamp > existing.timestamp:
+            unique_entries[entry.navnid] = entry
+    res = list(unique_entries.values())
 
     # Process each UserData entry
     skipped_navnids: set[str] = set()
@@ -101,7 +109,7 @@ def check_and_update_district() -> None:
     keyed_points = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
     districts_by_navnid = district_db_client.get_district_names_by_key(keyed_points)
 
-    # Build update requests (merge objects with identical NAVNID; prefer non-None values)
+    # Build update request for each entry
     update_requests_by_navnid: dict[str, dict] = {}
     for entry in res:
         if entry.navnid in skipped_navnids:
@@ -119,17 +127,17 @@ def check_and_update_district() -> None:
 
         # Log detected changes
         if entry.new_address is not None:
-            old_address = entry.current_address.full_address if entry.current_address else None
-            detected_changes.append(f"address: {old_address} -> {entry.new_address.full_address}")
+            detected_changes.append(f"address")
         if entry.new_district is not None and entry.new_district != entry.current_district:
-            detected_changes.append(f"district: {entry.current_district or None} -> {entry.new_district}")
+            detected_changes.append(f"district")
         if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:
-            detected_changes.append(f"phone: {entry.current_tlf_nr or None} -> {entry.new_tlf_nr}")
+            detected_changes.append(f"phone")
         if entry.new_due_date is not None:
-            detected_changes.append(f"due date: {entry.new_due_date}")
+            detected_changes.append(f"due date")
         if detected_changes:
             logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
 
+        # Prepare update payload
         update_payload = {
             "navnid": entry.navnid,
             "due_date": entry.new_due_date,
@@ -138,19 +146,12 @@ def check_and_update_district() -> None:
             "new_tlf_nr": entry.new_tlf_nr
         }
 
-        # Skip update when there are no changes (i.e., all update fields are None)
+        # Skip update if there are no changes (i.e., all update fields are None)
         if all(value is None for key, value in update_payload.items() if key != "navnid"):
-            continue  # No changes to update
+            continue
 
-        existing = update_requests_by_navnid.get(entry.navnid)
-        if existing is None:
-            update_requests_by_navnid[entry.navnid] = update_payload
-        else:
-            for key, value in update_payload.items():
-                if key == "navnid":
-                    continue
-                if value is not None:
-                    existing[key] = value
+        # Add to update requests
+        update_requests_by_navnid[entry.navnid] = update_payload
 
     # Perform single Novax batch update
     return
