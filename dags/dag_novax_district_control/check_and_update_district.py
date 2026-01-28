@@ -33,7 +33,7 @@ def check_and_update_district() -> None:
     if not res:
         logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
         return
-    
+
     # Filter out dublicates based on (navnid, timestamp) - keep latest entry per navnid
     unique_entries: dict[str, any] = {}
     for entry in res:
@@ -58,29 +58,32 @@ def check_and_update_district() -> None:
 
         # Look up current address from CPR
         cpr_info = cpr_client.lookup_address(entry.cpr)
+
+        parsed_new_address = None
         if cpr_info and cpr_info.get('aktuelAdresse'):
-            # Check if address has changed
-            parsed_new_address = parse_address(f"{cpr_info['aktuelAdresse'].get('standardadresse', '')}, {cpr_info['aktuelAdresse'].get('postnummer', '')}")
-            if parsed_new_address:
-                if (
-                    not entry.current_address or
-                    entry.current_address.street != parsed_new_address.street or
-                    entry.current_address.number != parsed_new_address.number or
-                    entry.current_address.postal_code != parsed_new_address.postal_code
-                ):
-                    entry.new_address = parsed_new_address
+            # Try CPR address first
+            cpr_address_str = f"{cpr_info['aktuelAdresse'].get('standardadresse', '')}, {cpr_info['aktuelAdresse'].get('postnummer', '')}"
+            parsed_new_address = parse_address(cpr_address_str)
+
+            # Fallback to journal address if CPR address is present but unparsable
+            if parsed_new_address is None:
+                logger.warning(f"CPR address present but could not be parsed for navnid: {entry.navnid}, using journal data if available.")
         else:
-            # Parse address from journal data if no CPR address is found
-            logger.warning(f"No address found for navnid: {entry.navnid}, using journal data if available.")
-            parsed_new_address = parse_address(entry.parsed_journal.get('address', None))
-            if parsed_new_address:
-                if (
-                    not entry.current_address or
-                    entry.current_address.street != parsed_new_address.street or
-                    entry.current_address.number != parsed_new_address.number or
-                    entry.current_address.postal_code != parsed_new_address.postal_code
-                ):
-                    entry.new_address = parsed_new_address
+            logger.warning(f"No address found in CPR for navnid: {entry.navnid}, using journal data if available.")
+
+        # Fallback to journal address if no CPR address is found
+        if parsed_new_address is None and entry.parsed_journal.get('address', None):
+            parsed_new_address = parse_address(entry.parsed_journal.get('address'))
+
+        # Check if address has changed
+        if parsed_new_address:
+            if (
+                not entry.current_address or
+                entry.current_address.street != parsed_new_address.street or
+                entry.current_address.number != parsed_new_address.number or
+                entry.current_address.postal_code != parsed_new_address.postal_code
+            ):
+                entry.new_address = parsed_new_address
 
         # Look up address details for district info in Dataforsyning
         address_to_lookup = entry.new_address if entry.new_address is not None else entry.current_address
@@ -127,13 +130,13 @@ def check_and_update_district() -> None:
 
         # Log detected changes
         if entry.new_address is not None:
-            detected_changes.append(f"address")
+            detected_changes.append("address")
         if entry.new_district is not None and entry.new_district != entry.current_district:
-            detected_changes.append(f"district")
+            detected_changes.append("district")
         if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:
-            detected_changes.append(f"phone")
+            detected_changes.append("phone")
         if entry.new_due_date is not None:
-            detected_changes.append(f"due date")
+            detected_changes.append("due date")
         if detected_changes:
             logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
 
@@ -154,7 +157,7 @@ def check_and_update_district() -> None:
         update_requests_by_navnid[entry.navnid] = update_payload
 
     # Perform single Novax batch update
-    return
+    return  # TODO: Remove return statement; we don't want to update DB while testing
     if update_requests_by_navnid:
         update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
     else:
