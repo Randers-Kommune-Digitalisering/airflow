@@ -15,7 +15,7 @@ user_department = Table(
 class Department(Base):
     __tablename__ = 'department'
     department_id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String, nullable=False)
+    name = Column(String, unique=True, nullable=False)
     ean = Column(String)
     users = relationship('User', secondary=user_department, back_populates='departments')
 

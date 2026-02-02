@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 
 from sqlalchemy.engine import Engine
+from sqlalchemy import text, select
 from sqlalchemy.orm import Session
 from datetime import datetime
 from airflow.providers.http.hooks.http import HttpHook
@@ -25,15 +26,11 @@ def create_asset_tables(db_engine: Engine) -> bool:
     Create asset database tables if they do not exist.
 
     :param db_engine: SQLAlchemy Engine for the Asset DB.
-    :return: True if table creation succeeded, otherwise False.
+    :return: True if table creation succeeded.
     """
-    try:
-        Base.metadata.create_all(db_engine)
-        logger.info("Created Computer, User, and Department tables if not exists.")
-        return True
-    except Exception as e:
-        logger.error(f"Error creating tables: {e}")
-        return False
+    Base.metadata.create_all(db_engine)
+    logger.info("Created Computer, User, and Department tables if not exists.")
+    return True
 
 
 def insert_departments_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
@@ -42,7 +39,6 @@ def insert_departments_data(capa_cms_engine: Engine, asset_engine: Engine) -> bo
 
     :param capa_cms_engine: SQLAlchemy Engine for the CAPA CMS DB.
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
-    :return: True if departments were inserted/updated successfully, otherwise False.
     """
     sql_command = """
         SELECT DISTINCT USI.VALUE AS DEPARTMENT
@@ -53,35 +49,38 @@ def insert_departments_data(capa_cms_engine: Engine, asset_engine: Engine) -> bo
 
     logger.debug(f"Executing Department SQL command: {sql_command}")
 
-    try:
-        with capa_cms_engine.connect() as conn:
-            result = conn.execute(sql_command).fetchall()
-            logger.debug(f"Department SQL result: {result}")
+    with capa_cms_engine.connect() as conn:
+        departments = conn.execute(text(sql_command)).scalars().all()
+        logger.debug(f"Department SQL result: {departments}")
 
-        if not result:
-            logger.error("No department data found")
-            return False
+    if not departments:
+        raise ValueError("No department data found in CAPA DB")
 
-        with Session(asset_engine) as session:
-            existing_departments = {
-                d.name for d in session.query(Department.name).all()
-            }
+    with Session(asset_engine) as session:
+        existing_departments = {
+            str(name).strip().lower()
+            for name in session.execute(select(Department.name)).scalars().all()
+            if name
+        }
 
-            inserted = 0
-            for (department,) in result:
-                department = department.strip().lower() if isinstance(department, str) else department
-                if department not in existing_departments:
-                    session.add(Department(name=department))
-                    inserted += 1
+        inserted = 0
+        for department in departments:
+            if not isinstance(department, str):
+                continue
 
-            session.commit()
-            logger.info(f"Inserted {inserted} unique departments into Department table.")
+            department_norm = department.strip().lower()
+            if not department_norm:
+                continue
 
-        return True
+            if department_norm not in existing_departments:
+                session.add(Department(name=department_norm))
+                existing_departments.add(department_norm)
+                inserted += 1
 
-    except Exception as e:
-        logger.error(f"Error inserting departments into Department table: {e}")
-        return False
+        session.commit()
+
+    logger.info(f"Inserted {inserted} unique departments into Department table.")
+    return True
 
 
 def insert_users_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
