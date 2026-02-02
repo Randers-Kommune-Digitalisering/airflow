@@ -342,55 +342,46 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
         return False
 
 
-def _get_atea_headers(http_hook: HttpHook) -> dict:
-    """
-    Build HTTP headers for Atea API using the SubKey from Airflow connection.
-
-    :param http_hook: Airflow HttpHook for the Atea API
-    :return: Dictionary of HTTP headers
-    """
-    conn = http_hook.get_connection(http_hook.http_conn_id)
-    return {
-        "Authorization": f"SubKey {conn.password}",
-        "Cache-Control": "no-cache",
-        "Accept": "application/json",
-    }
-
-
 def _fetch_atea_data(http_hook: HttpHook) -> list:
     """
-    Fetch asset data from Atea API.
-
-    :param http_hook: Airflow HttpHook for the Atea API
-    :return: List of asset records returned by the Atea API.
+    Fetch asset data from Atea API
     """
-    try:
-        logger.info("Fetching assets from Atea API...")
+    logger.info("Fetching assets from Atea API ...")
 
-        headers = _get_atea_headers(http_hook=http_hook)
-        http_hook.method = "GET"
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+    if not conn.password:
+        raise ValueError("Missing SubKey (connection password) for Atea API connection.")
+
+    headers = {
+        "Authorization": f"SubKey {conn.password}",
+    }
+
+    http_hook.method = "GET"
+
+    page_size = 1000
+    page = 1
+    all_rows: list = []
+
+    while True:
+        logger.info(f"Fetching Atea assets page={page} page_size={page_size} ...")
 
         res = http_hook.run(
             endpoint="/api/assets/search",
-            data={
-                "PageSize": 2000,
-                "Page": 1,
-                "AssetType": "AB,AA",
-            },
+            data={"PageSize": page_size, "Page": page, "AssetType": "AB,AA"},
             headers=headers,
         )
 
         data = res.json()
 
-        if not isinstance(data, list):
-            raise ValueError(f"Unexpected response structure: {data}")
+        all_rows.extend(data)
 
-        logger.info(f"Successfully retrieved data from Atea API. Total records: {len(data)}")
-        return data
+        if len(data) < page_size:
+            break
 
-    except Exception:
-        logger.exception("Error while fetching data from Atea API")
-        raise
+        page += 1
+
+    logger.info(f"Successfully retrieved data from Atea API. Total records: {len(all_rows)} (pages fetched: {page})")
+    return all_rows
 
 
 def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
