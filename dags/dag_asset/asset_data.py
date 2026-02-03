@@ -86,26 +86,24 @@ def insert_departments_data(capa_cms_engine: Engine, asset_engine: Engine) -> bo
 def insert_users_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
     """
     Fetch users and department relations from CAPA DB and store them in Asset DB.
-
-    :param capa_cms_engine: SQLAlchemy Engine for the CAPA CMS DB.
-    :param asset_engine: SQLAlchemy Engine for the Asset DB.
-    :return: True if users were inserted/updated successfully, otherwise False.
     """
+
     sql_command = """
-        WITH PrimaryUsers AS (
-            SELECT DISTINCT UNIT.UNITID,
-                   REPLACE(REPLACE(LGI.VALUE, '@LAKSEN04', ''), '@RANDERS.DK', '') AS PRIMARY_USER
+        WITH Users AS (
+            SELECT DISTINCT
+                UNIT.UNITID,
+                LEFT(LGI.VALUE, CHARINDEX('@', LGI.VALUE + '@') - 1) AS USERNAME
             FROM UNIT
             JOIN LGI ON UNIT.UNITID = LGI.UNITID
             WHERE LGI.SECTION = 'Current Logon'
               AND LGI.NAME = 'User Name'
         )
         SELECT DISTINCT
-            DU.PRIMARY_USER,
+            U.USERNAME,
             USI.VALUE AS FULLNAME,
-            LOWER(USI2.VALUE) AS DEPARTMENT
-        FROM PrimaryUsers DU
-        JOIN UNIT ON UNIT.NAME = DU.PRIMARY_USER
+            LOWER(LTRIM(RTRIM(USI2.VALUE))) AS DEPARTMENT
+        FROM Users U
+        JOIN UNIT ON UNIT.NAME = U.USERNAME
         JOIN USI ON UNIT.UNITID = USI.UNITID
             AND USI.SECTION = 'General User Inventory'
             AND USI.NAME = 'Full Name'
@@ -116,47 +114,49 @@ def insert_users_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
 
     logger.debug(f"Executing User SQL command: {sql_command}")
 
-    try:
-        with capa_cms_engine.connect() as conn:
-            result = conn.execute(sql_command).fetchall()
-            logger.debug(f"User SQL result: {result}")
+    with capa_cms_engine.connect() as conn:
+        result = conn.execute(text(sql_command)).all()
+        logger.debug(f"User SQL result: {result}")
 
-        if not result:
-            logger.error("No user data found")
-            return False
+    with Session(asset_engine) as session:
+        departments = {
+            d.name: d
+            for d in session.execute(select(Department)).scalars().all()
+        }
 
-        with Session(asset_engine) as session:
-            departments = {d.name: d for d in session.query(Department).all()}
-            users = {u.primary_user: u for u in session.query(User).all()}
+        users = {
+            u.primary_user: u
+            for u in session.execute(select(User)).scalars().all()
+        }
 
-            inserted = 0
+        new_users: dict[str, User] = {}
 
-            for primary_user, fullname, department in result:
-                department = department.lower() if isinstance(department, str) else department
+        # Add new users (bulk)
+        for username, fullname, _ in result:
+            if username not in users and username not in new_users:
+                new_users[username] = User(
+                    primary_user=username,
+                    full_name=fullname
+                )
 
-                user = users.get(primary_user)
-                if not user:
-                    user = User(
-                        primary_user=primary_user,
-                        full_name=fullname
-                    )
-                    session.add(user)
-                    session.flush()
-                    users[primary_user] = user
-                    inserted += 1
+        if new_users:
+            session.add_all(new_users.values())
+            session.flush()
+            users.update(new_users)
 
-                dept_obj = departments.get(department)
-                if dept_obj and dept_obj not in user.departments:
-                    user.departments.append(dept_obj)
+        # Attach departments to users
+        for username, _, department in result:
+            user = users.get(username)
+            dept = departments.get(department)
 
-            session.commit()
-            logger.info(f"Inserted/updated {inserted} users and linked departments.")
+            if user and dept and dept not in user.departments:
+                user.departments.append(dept)
 
-        return True
+        session.commit()
 
-    except Exception as e:
-        logger.error(f"Error inserting users into User table: {e}")
-        return False
+    logger.info(
+        f"Inserted {len(new_users)} new users and linked departments.")
+    return True
 
 
 def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool:
@@ -457,52 +457,63 @@ def insert_device_license_and_historical_data(
         with sftp_hook.get_conn() as sftp_client:
             logger.info("Fetching Device License CSV from SFTP...")
             with sftp_client.open(device_license_file, 'r') as file:
-                device_license_csv = file.read().decode('utf-8')
+                df_device_license = pd.read_csv(
+                    file,
+                    usecols=['Name']
+                )
+                df_device_license.columns = df_device_license.columns.str.strip()
 
             logger.info("Fetching Comm2ig historical CSV from SFTP...")
             with sftp_client.open(comm2ig_historical_file, 'r') as file:
-                comm2ig_csv = file.read().decode('utf-8')
+                df_comm2ig = pd.read_csv(
+                    file,
+                    usecols=['Serienr.', 'Pris pr.stk. i kr. ekskl. moms', 'Fakturadato', 'EAN-nr.'],
+                )
+                df_comm2ig.columns = df_comm2ig.columns.str.strip()
 
             logger.info("Fetching EAN Atea file from SFTP...")
             with sftp_client.open(ean_atea_file, 'rb') as file:
-                ean_atea_bytes = file.read()
+                df_atea = pd.read_excel(
+                    file,
+                    dtype=str,
+                    usecols=['Nummer', 'EAN-nr.'],
 
-        df_device_license = pd.read_csv(io.StringIO(device_license_csv))
-        df_device_license.columns = df_device_license.columns.str.strip()
-        if 'Name' not in df_device_license.columns:
-            logger.error("Device License CSV missing 'Name' column.")
-            return False
-        computer_names = [name.strip() for name in df_device_license['Name'].dropna()]
+                )
+                df_atea.columns = df_atea.columns.str.strip()
 
-        df_comm2ig = pd.read_csv(io.StringIO(comm2ig_csv), dtype=str, sep=',')
-        df_comm2ig.columns = df_comm2ig.columns.str.strip()
-        required_cols = ['Serienr.', 'Pris pr.stk. i kr. ekskl. moms', 'Fakturadato', 'EAN-nr.']
-        missing = [col for col in required_cols if col not in df_comm2ig.columns]
-        if missing:
-            logger.error(f"Comm2ig CSV missing required columns: {missing}")
-            return False
-
-        df_atea = pd.read_excel(io.BytesIO(ean_atea_bytes), dtype=str)
-        df_atea.columns = df_atea.columns.str.strip()
-        if 'Nummer' not in df_atea.columns or 'EAN-nr.' not in df_atea.columns:
-            logger.error("Atea Excel missing 'Nummer' or 'EAN-nr.' columns.")
-            return False
-
+        # Fetch Atea API Data
         atea_data = _fetch_atea_data(http_hook=http_hook)
         if not atea_data:
             logger.error("No data fetched from Atea API.")
             return False
 
-        billto_map = {
-            str(item.get('BillTo')): item.get('SerialNumber')
-            for item in atea_data if item.get('BillTo') and item.get('SerialNumber')
-        }
+        atea_api_df = (
+            pd.DataFrame(atea_data)[['BillTo', 'SerialNumber']]
+            .dropna()
+            .astype(str)
+        )
+
+        atea_file_df = df_atea[['Nummer', 'EAN-nr.']].dropna().astype(str)
+        merged_atea_df = (
+            pd.merge(
+                atea_file_df,
+                atea_api_df,
+                left_on='Nummer',
+                right_on='BillTo',
+                how='inner'
+            )
+            .rename(columns={
+                'SerialNumber': 'serial_number',
+                'EAN-nr.': 'kob_ean_nr'
+            })[['serial_number', 'kob_ean_nr']]
+        )
 
         with Session(asset_engine) as session:
             computers = session.query(Computer).all()
             name_to_computer = {c.unit_name: c for c in computers if c.unit_name}
             serial_to_computer = {str(c.serial_number).lstrip('sS').lower(): c for c in computers if c.serial_number}
             serial_exact_lookup = {str(c.serial_number): c for c in computers if c.serial_number}
+            computer_names = [name.strip() for name in df_device_license['Name'].dropna()]
 
             # DeviceLicense/AD
             updated_device = 0
@@ -536,12 +547,12 @@ def insert_device_license_and_historical_data(
 
             # Atea KøbsEANnr
             updated_atea = 0
-            for _, row in df_atea.iterrows():
-                nummer = str(row['Nummer']).strip()
-                ean_nr = row['EAN-nr.']
-                serial = billto_map.get(nummer)
+            for _, row in merged_atea_df.iterrows():
+                serial = row['serial_number']
+                ean_nr = row['kob_ean_nr']
+
                 computer_obj = serial_exact_lookup.get(serial)
-                if serial and computer_obj:
+                if computer_obj:
                     computer_obj.kob_ean_nr = ean_nr
                     updated_atea += 1
 
