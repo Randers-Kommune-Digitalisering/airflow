@@ -14,7 +14,6 @@ from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
 from airflow.models import Variable
 from utils.utils import df_to_csv_bytes
-
 from utils.token_provider import OAuth2TokenProvider
 
 
@@ -391,48 +390,49 @@ def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
     :return: True if the update succeeded, otherwise False.
     """
-    try:
-        atea_data = _fetch_atea_data(http_hook=http_hook)
-        if not atea_data:
-            logger.error("No data fetched from Atea API.")
-            return False
-
-        # Map serial numbers to Atea info
-        serial_info_map = {
-            str(item.get('SerialNumber')).strip().lower(): {
-                'price': item.get('Price'),
-                'order_date': item.get('OrderDate'),
-                'warranty': item.get('Warranty')
-            }
-            for item in atea_data
-            if item.get('SerialNumber') and item.get('Price') and item.get('OrderDate') and item.get('Warranty')
-        }
-
-        with Session(asset_engine) as session:
-            computers = session.query(Computer).all()
-            updated = 0
-
-            for computer in computers:
-                serial_norm = str(computer.serial_number).strip().lower() if computer.serial_number else None
-                info = serial_info_map.get(serial_norm)
-                if info:
-                    try:
-                        computer.price = float(info['price'])
-                    except Exception:
-                        logger.warning(f"Could not convert price '{info['price']}' for serial '{serial_norm}'")
-                        continue
-                    computer.order_date = info['order_date']
-                    computer.warranty = info['warranty']
-                    updated += 1
-
-            session.commit()
-            logger.info(f"Updated price, order date, and warranty for {updated} computers from Atea API.")
-
-        return True
-
-    except Exception as e:
-        logger.error(f"Error updating asset info from Atea: {e}")
+    atea_data = _fetch_atea_data(http_hook=http_hook)
+    if not atea_data:
+        logger.error("No data fetched from Atea API.")
         return False
+
+    # Map serial numbers to Atea info
+    serial_info_map = {
+        item['SerialNumber']: {
+            'price': item['Price'],
+            'order_date': item['OrderDate'],
+            'warranty': item['Warranty'],
+        }
+        for item in atea_data
+        if all(
+            item.get(key)
+            for key in ('SerialNumber', 'Price', 'OrderDate', 'Warranty')
+        )
+    }
+
+    with Session(asset_engine) as session:
+        computers = session.query(Computer).all()
+        updated = 0
+
+        for computer in computers:
+            if not computer.serial_number:
+                continue
+
+            serial_norm = computer.serial_number
+            info = serial_info_map.get(serial_norm)
+
+            if not info:
+                continue
+
+            computer.price = info['price']
+            computer.order_date = info['order_date']
+            computer.warranty = info['warranty']
+            updated += 1
+
+        session.commit()
+        logger.info(
+            f"Updated price, order date, and warranty for {updated} computers from Atea API.")
+
+    return True
 
 
 def insert_device_license_and_historical_data(
