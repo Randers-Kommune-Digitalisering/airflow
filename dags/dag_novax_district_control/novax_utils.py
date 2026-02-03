@@ -161,7 +161,10 @@ def parse_journal_data(journal_string: str, journal_date: datetime | None = None
             day, month, year = parts
             if len(year) == 2:
                 year = '20' + year
-            termin_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y')
+            try:
+                termin_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y')
+            except ValueError:
+                logger.warning(f"Invalid termin date format in journal: {termin_str}")
 
     # Calculate due date using gestational age and journal date
     dato_str = None
