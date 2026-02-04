@@ -166,18 +166,18 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
     """
     sql_command = """
         SELECT
-            U.NAME AS UnitName,
-            INV.VALUE AS Producent,
-            CSI.VALUE AS Model,
-            DEVICETYPE.HWNAME AS Enhedstype,
-            U.SERIALNUMBER AS Serienummer,
-            DATEADD(HOUR, 1, DATEADD(SECOND, TRY_CAST(U.LASTONLINE AS BIGINT), '1970-01-01')) AS SidsteLoginDato,
-            DATEADD(SECOND, TRY_CAST(INV2.VALUE AS BIGINT), '1970-01-01') AS SidsteRul,
-            REPLACE(REPLACE(LGI.VALUE, '@LAKSEN04', ''), '@RANDERS.DK', '') AS PrimaryUser,
-            BLK.VALUE AS BitlockerKode,
-            BLS.VALUE AS BitlockerStatus,
-            BLE.VALUE AS BitlockerKrypteringProcent,
-            OSINV.VALUE AS OSVersion,
+            U.NAME AS unit_name,
+            INV.VALUE AS producent,
+            CSI.VALUE AS model,
+            DEVICETYPE.HWNAME AS device_type,
+            U.SERIALNUMBER AS serial_number,
+            DATEADD(HOUR, 1, DATEADD(SECOND, TRY_CAST(U.LASTONLINE AS BIGINT), '1970-01-01')) AS last_login_date,
+            DATEADD(SECOND, TRY_CAST(INV2.VALUE AS BIGINT), '1970-01-01') AS last_run,
+            LEFT(LGI.VALUE, CHARINDEX('@', LGI.VALUE + '@') - 1) AS primary_user,
+            BLK.VALUE AS bitlocker_code,
+            BLS.VALUE AS bitlocker_status,
+            BLE.VALUE AS bitlocker_encryption_percentage,
+            OSINV.VALUE AS os_version,
             (
                 SELECT STRING_AGG(MACINV.VALUE, ',')
                 FROM INV MACINV
@@ -198,7 +198,7 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
                             OR IPLAN.VALUE LIKE '10.177.%'
                         )
                   )
-            ) AS MACAdresse,
+            ) AS mac_address,
             (
                 SELECT STRING_AGG(MACINV.VALUE, ',')
                 FROM INV MACINV
@@ -217,7 +217,7 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
                 WHERE MACINV.UNITID = U.UNITID
                   AND MACINV.SECTION = 'Network Adapter'
                   AND MACINV.NAME LIKE 'Device #% MAC Address'
-            ) AS LanMACAdresse
+            ) AS lan_mac_address
         FROM UNIT U
         LEFT JOIN INV ON U.UNITID = INV.UNITID
             AND INV.SECTION = 'System'
@@ -254,88 +254,54 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
 
     logger.debug(f"Executing Computer SQL command: {sql_command}")
 
-    try:
-        with capa_cms_engine.connect() as conn:
-            result = conn.execute(sql_command).fetchall()
+    with capa_cms_engine.connect() as conn:
+        rows = conn.execute(text(sql_command)).mappings().all()
 
-        if not result:
-            logger.error("No computer data found")
-            return False
+    if not rows:
+        raise ValueError("No computer data found in CAPA CMS DB")
 
-        six_months_ago = datetime.now() - relativedelta(months=6)
+    six_months_ago = datetime.now() - relativedelta(months=6)
 
-        with Session(asset_engine) as session:
-            users = {u.primary_user: u for u in session.query(User).all()}
+    with Session(asset_engine) as session:
+        users = {u.primary_user: u for u in session.execute(select(User)).scalars().all()}
 
-            inserted = 0
-            updated = 0
+        inserted = 0
+        updated = 0
 
-            for row in result:
-                (
-                    unit_name, producent, model, device_type, serial_number, last_login_date, last_run, primary_user,
-                    bitlocker_code, bitlocker_status, bitlocker_encryption_percentage, os_version, mac_address, lan_mac_address
-                ) = row
+        for row_map in rows:
+            row = dict(row_map)
 
-                user_obj = users.get(primary_user)
-                user_id = user_obj.user_id if user_obj else None
+            primary_user = row.pop("primary_user", None)
+            user_obj = users.get(primary_user) if primary_user else None
+            row["user_id"] = user_obj.user_id if user_obj else None
 
-                drift_status = False
-                if last_login_date:
-                    try:
-                        last_login = parse(str(last_login_date))
-                        if last_login >= six_months_ago:
-                            drift_status = True
-                    except Exception:
-                        logger.error(f"Could not parse SidsteLoginDato: {last_login_date} for {unit_name}")
-
-                computer = session.query(Computer).filter_by(unit_name=unit_name).first()
-                if computer:
-                    # Update existing
-                    computer.producent = producent
-                    computer.model = model
-                    computer.device_type = device_type
-                    computer.serial_number = serial_number
-                    computer.last_login_date = last_login_date
-                    computer.last_run = last_run
-                    computer.user_id = user_id
-                    computer.bitlocker_code = bitlocker_code
-                    computer.bitlocker_status = bitlocker_status
-                    computer.bitlocker_encryption_percentage = bitlocker_encryption_percentage
-                    computer.os_version = os_version
-                    computer.drift = drift_status
-                    computer.mac_address = mac_address
-                    computer.lan_mac_address = lan_mac_address
-                    updated += 1
-                else:
-                    # Insert new
-                    computer = Computer(
-                        unit_name=unit_name,
-                        producent=producent,
-                        model=model,
-                        device_type=device_type,
-                        serial_number=serial_number,
-                        last_login_date=last_login_date,
-                        last_run=last_run,
-                        user_id=user_id,
-                        bitlocker_code=bitlocker_code,
-                        bitlocker_status=bitlocker_status,
-                        bitlocker_encryption_percentage=bitlocker_encryption_percentage,
-                        os_version=os_version,
-                        drift=drift_status,
-                        mac_address=mac_address,
-                        lan_mac_address=lan_mac_address
+            last_login_date = row.get("last_login_date")
+            drift_status = False
+            if last_login_date:
+                try:
+                    drift_status = parse(str(last_login_date)) >= six_months_ago
+                except Exception:
+                    logger.error(
+                        f"Could not parse last_login_date: {last_login_date} for {row.get('unit_name')}"
                     )
-                    session.add(computer)
-                    inserted += 1
+            row["drift"] = drift_status
 
-            session.commit()
-            logger.info(f"Inserted {inserted}, updated {updated} computers in Computer table.")
+            unit_name = row.get("unit_name")
+            if not unit_name:
+                continue
 
+            computer = session.query(Computer).filter_by(unit_name=unit_name).first()
+            if computer:
+                for k, v in row.items():
+                    setattr(computer, k, v)
+                updated += 1
+            else:
+                session.add(Computer(**row))
+                inserted += 1
+
+        session.commit()
+        logger.info(f"Inserted {inserted}, updated {updated} computers in Computer table.")
         return True
-
-    except Exception as e:
-        logger.error(f"Error inserting computers: {e}")
-        return False
 
 
 def _fetch_atea_data(http_hook: HttpHook) -> list:
@@ -451,120 +417,110 @@ def insert_device_license_and_historical_data(
     comm2ig_historical_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["comm2ig_historical_file_path"]
     ean_atea_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["ean_atea_file_path"]
 
-    try:
-        with sftp_hook.get_conn() as sftp_client:
-            logger.info("Fetching Device License CSV from SFTP...")
-            with sftp_client.open(device_license_file, 'r') as file:
-                df_device_license = pd.read_csv(
-                    file,
-                    usecols=['Name']
-                )
-                df_device_license.columns = df_device_license.columns.str.strip()
-
-            logger.info("Fetching Comm2ig historical CSV from SFTP...")
-            with sftp_client.open(comm2ig_historical_file, 'r') as file:
-                df_comm2ig = pd.read_csv(
-                    file,
-                    usecols=['Serienr.', 'Pris pr.stk. i kr. ekskl. moms', 'Fakturadato', 'EAN-nr.'],
-                )
-                df_comm2ig.columns = df_comm2ig.columns.str.strip()
-
-            logger.info("Fetching EAN Atea file from SFTP...")
-            with sftp_client.open(ean_atea_file, 'rb') as file:
-                df_atea = pd.read_excel(
-                    file,
-                    dtype=str,
-                    usecols=['Nummer', 'EAN-nr.'],
-
-                )
-                df_atea.columns = df_atea.columns.str.strip()
-
-        # Fetch Atea API Data
-        atea_data = _fetch_atea_data(http_hook=http_hook)
-        if not atea_data:
-            logger.error("No data fetched from Atea API.")
-            return False
-
-        atea_api_df = (
-            pd.DataFrame(atea_data)[['BillTo', 'SerialNumber']]
-            .dropna()
-            .astype(str)
-        )
-
-        atea_file_df = df_atea[['Nummer', 'EAN-nr.']].dropna().astype(str)
-        merged_atea_df = (
-            pd.merge(
-                atea_file_df,
-                atea_api_df,
-                left_on='Nummer',
-                right_on='BillTo',
-                how='inner'
+    with sftp_hook.get_conn() as sftp_client:
+        logger.info("Fetching Device License CSV from SFTP...")
+        with sftp_client.open(device_license_file, 'r') as file:
+            df_device_license = pd.read_csv(
+                file,
+                usecols=['Name']
             )
-            .rename(columns={
-                'SerialNumber': 'serial_number',
-                'EAN-nr.': 'kob_ean_nr'
-            })[['serial_number', 'kob_ean_nr']]
+            df_device_license.columns = df_device_license.columns.str.strip()
+
+        logger.info("Fetching Comm2ig historical CSV from SFTP...")
+        with sftp_client.open(comm2ig_historical_file, 'r') as file:
+            df_comm2ig = pd.read_csv(
+                file,
+                usecols=['Serienr.', 'Pris pr.stk. i kr. ekskl. moms', 'Fakturadato', 'EAN-nr.'],
+            )
+            df_comm2ig.columns = df_comm2ig.columns.str.strip()
+
+        logger.info("Fetching EAN Atea file from SFTP...")
+        with sftp_client.open(ean_atea_file, 'rb') as file:
+            df_atea = pd.read_excel(
+                file,
+                dtype=str,
+                usecols=['Nummer', 'EAN-nr.'],
+            )
+            df_atea.columns = df_atea.columns.str.strip()
+
+    # Fetch Atea API Data
+    atea_data = _fetch_atea_data(http_hook=http_hook)
+    if not atea_data:
+        logger.error("No data fetched from Atea API.")
+        return False
+
+    atea_api_df = (
+        pd.DataFrame(atea_data)[['BillTo', 'SerialNumber']]
+        .dropna()
+        .astype(str)
+    )
+
+    atea_file_df = df_atea[['Nummer', 'EAN-nr.']].dropna().astype(str)
+    merged_atea_df = (
+        pd.merge(
+            atea_file_df,
+            atea_api_df,
+            left_on='Nummer',
+            right_on='BillTo',
+            how='inner'
         )
+        .rename(columns={
+            'SerialNumber': 'serial_number',
+            'EAN-nr.': 'kob_ean_nr'
+        })[['serial_number', 'kob_ean_nr']]
+    )
 
-        with Session(asset_engine) as session:
-            computers = session.query(Computer).all()
-            name_to_computer = {c.unit_name: c for c in computers if c.unit_name}
-            serial_to_computer = {str(c.serial_number).lstrip('sS').lower(): c for c in computers if c.serial_number}
-            serial_exact_lookup = {str(c.serial_number): c for c in computers if c.serial_number}
-            computer_names = [name.strip() for name in df_device_license['Name'].dropna()]
+    with Session(asset_engine) as session:
+        computers = session.query(Computer).all()
+        name_to_computer = {c.unit_name: c for c in computers if c.unit_name}
+        serial_to_computer = {str(c.serial_number).lstrip('sS').lower(): c for c in computers if c.serial_number}
+        serial_exact_lookup = {str(c.serial_number): c for c in computers if c.serial_number}
+        computer_names = [name.strip() for name in df_device_license['Name'].dropna()]
 
-            # DeviceLicense/AD
-            updated_device = 0
-            for name in computer_names:
-                computer = name_to_computer.get(name)
-                if computer:
-                    computer.device_license = True
-                    updated_device += 1
+        # DeviceLicense/AD
+        updated_device = 0
+        for name in computer_names:
+            computer = name_to_computer.get(name)
+            if computer:
+                computer.device_license = True
+                updated_device += 1
 
-            # Comm2ig historisk data
-            updated_comm2ig = 0
-            for _, row in df_comm2ig.iterrows():
-                serial = row['Serienr.']
-                serial_norm = str(serial[1:]).lower() if str(serial).startswith('S') else str(serial).lower()
-                price = row['Pris pr.stk. i kr. ekskl. moms']
-                fakturadato = row['Fakturadato']
-                ean_nr = row.get('EAN-nr.', None)
-                if pd.isna(ean_nr) or str(ean_nr).strip().lower() in ['nan', '']:
-                    ean_nr = None
+        # Comm2ig historisk data
+        updated_comm2ig = 0
+        for _, row in df_comm2ig.iterrows():
+            serial = row['Serienr.']
+            serial_norm = str(serial[1:]).lower() if str(serial).startswith('S') else str(serial).lower()
+            price = row['Pris pr.stk. i kr. ekskl. moms']
+            fakturadato = row['Fakturadato']
+            ean_nr = row.get('EAN-nr.', None)
+            if pd.isna(ean_nr) or str(ean_nr).strip().lower() in ['nan', '']:
+                ean_nr = None
 
-                computer_obj = serial_to_computer.get(serial_norm)
-                if computer_obj:
-                    try:
-                        computer_obj.price = float(str(price).replace(',', '.'))
-                    except Exception:
-                        logger.warning(f"Could not convert price '{price}' for serial '{serial_norm}'")
-                        continue
-                    computer_obj.order_date = fakturadato
-                    computer_obj.kob_ean_nr = ean_nr
-                    updated_comm2ig += 1
+            computer_obj = serial_to_computer.get(serial_norm)
+            if computer_obj:
+                computer_obj.price = float(str(price).replace(',', '.'))
+                computer_obj.order_date = fakturadato
+                computer_obj.kob_ean_nr = ean_nr
+                updated_comm2ig += 1
 
-            # Atea KøbsEANnr
-            updated_atea = 0
-            for _, row in merged_atea_df.iterrows():
-                serial = row['serial_number']
-                ean_nr = row['kob_ean_nr']
+        # Atea KøbsEANnr
+        updated_atea = 0
+        for _, row in merged_atea_df.iterrows():
+            serial = row['serial_number']
+            ean_nr = row['kob_ean_nr']
 
-                computer_obj = serial_exact_lookup.get(serial)
-                if computer_obj:
-                    computer_obj.kob_ean_nr = ean_nr
-                    updated_atea += 1
+            computer_obj = serial_exact_lookup.get(serial)
+            if computer_obj:
+                computer_obj.kob_ean_nr = ean_nr
+                updated_atea += 1
 
-            session.commit()
+        session.commit()
 
-            logger.info(f"Device License updated for {updated_device} computers")
-            logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
-            logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
+        logger.info(f"Device License updated for {updated_device} computers")
+        logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
+        logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
 
         return True
-
-    except Exception as e:
-        logger.error(f"Error updating Device License, Comm2ig, or Atea data: {e}")
-        return False
 
 
 def _delta_get_all_adm_units_ean(token_session: ManagedOAuth2Session, base_url: str) -> list[dict]:
@@ -780,61 +736,49 @@ def upload_assets_to_topdesk(asset_engine: Engine, http_hook: HttpHook) -> bool:
             c."drift"
     """
 
-    logger.info(f"Executing all asset data SQL command: {sql_command}")
+    logger.debug(f"Executing all asset data SQL command: {sql_command}")
 
-    try:
-        with asset_engine.connect() as conn:
-            result = conn.execute(sql_command).fetchall()
+    with asset_engine.connect() as conn:
+        result = conn.execute(text(sql_command)).mappings().all()
 
-        if not result:
-            logger.error("No data found in Computer/User/Department tables")
-            return False
+    if not result:
+        logger.error("No data found in Computer/User/Department tables")
+        return False
 
-        columns = [
-            "department", "department_ean", "full_name", "primary_user", "unit_name", "producent", "model",
-            "device_type", "serial_number", "last_login_date", "last_run", "bitlocker_code", "bitlocker_status",
-            "bitlocker_encryption_percentage", "os_version", "mac_address", "lan_mac_address", "device_license",
-            "price", "order_date", "kob_ean_nr", "warranty", "drift"
-        ]
-        df = pd.DataFrame(result, columns=columns)
+    df = pd.DataFrame(result)
 
-        # Transform data to match TopDesk requirements
-        for col in ["last_login_date", "last_run", "order_date", "warranty"]:
-            if col in df.columns:
-                df[col] = df[col].apply(
-                    lambda val: "" if pd.isnull(val) else pd.to_datetime(val).strftime("%Y-%m-%dT%H:%M:%S.00")
-                    if str(val).strip() else str(val)
-                )
-
-        for col in ["drift", "device_license"]:
-            if col in df.columns:
-                df[col] = df[col].apply(
-                    lambda val: "TRUE" if val is True or str(val).lower() == "true" else ""
-                )
-
-        if "price" in df.columns:
-            df["price"] = df["price"].apply(
-                lambda val: "{:.2f}".format(float(val)) if pd.notnull(val) and str(val).strip() else ""
+    # Transform data to match TopDesk requirements
+    for col in ["last_login_date", "last_run", "order_date", "warranty"]:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda val: "" if pd.isnull(val) else pd.to_datetime(val).strftime("%Y-%m-%dT%H:%M:%S.00")
+                if str(val).strip() else str(val)
             )
 
-        logger.info(f"File name: {topdesk_asset_filename}")
+    for col in ["drift", "device_license"]:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda val: "TRUE" if val is True or str(val).lower() == "true" else ""
+            )
 
-        csv_bytes = df_to_csv_bytes(df, sep=';', encoding='UTF-8')
-        upload_path = f"/services/import-to-api-v1/api/sourceFiles?filename={topdesk_asset_filename}"
-
-        logger.info(f"Uploading {topdesk_asset_filename} to TopDesk {upload_path}")
-
-        http_hook.method = "PUT"
-
-        res = http_hook.run(
-            endpoint=upload_path,
-            data=csv_bytes,
+    if "price" in df.columns:
+        df["price"] = df["price"].apply(
+            lambda val: "{:.2f}".format(float(val)) if pd.notnull(val) and str(val).strip() else ""
         )
 
-        logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: Code Status: {res.status_code}.")
+    logger.info(f"File name: {topdesk_asset_filename}")
 
-        return True
+    csv_bytes = df_to_csv_bytes(df, sep=';', encoding='UTF-8')
+    upload_path = f"/services/import-to-api-v1/api/sourceFiles?filename={topdesk_asset_filename}"
 
-    except Exception as e:
-        logger.error(f"Error uploading {topdesk_asset_filename} to TopDesk: {e}")
-        return False
+    logger.info(f"Uploading {topdesk_asset_filename} to TopDesk {upload_path}")
+
+    http_hook.method = "PUT"
+    res = http_hook.run(
+        endpoint=upload_path,
+        data=csv_bytes,
+    )
+
+    logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: Code Status: {res.status_code}.")
+
+    return True
