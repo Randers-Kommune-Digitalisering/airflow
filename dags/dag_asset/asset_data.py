@@ -489,7 +489,7 @@ def insert_device_license_and_historical_data(
         updated_comm2ig = 0
         for _, row in df_comm2ig.iterrows():
             serial = row['Serienr.']
-            serial_norm = str(serial[1:]).lower() if str(serial).startswith('S') else str(serial).lower()
+            serial_norm = str(serial).lstrip('sS').lower()
             price = row['Pris pr.stk. i kr. ekskl. moms']
             fakturadato = row['Fakturadato']
             ean_nr = row.get('EAN-nr.', None)
