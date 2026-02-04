@@ -19,6 +19,18 @@ Koden består af et DAG-job, der udfører følgende trin:
 **Dataflow:**
 - Data fra forskellige kilder → Data gemmes i Postgres DB → Automatisk import til TopDesk
 
+**Airflow workflow:**
+
+t_create_tables
+
+t_departments
+
+Parallel: t_users og t_delta_ean
+
+Efter t_users: t_computers → t_atea → t_device_license
+
+Når både t_delta_ean og t_device_license er færdig køres: t_upload_topdesk
+
 ## Afhængigheder
 
 :key: | **Airflow Connections**
