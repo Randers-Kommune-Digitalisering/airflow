@@ -1,7 +1,5 @@
 import logging
-import io
 import pandas as pd
-import requests
 
 from sqlalchemy.engine import Engine
 from sqlalchemy import text, select
@@ -14,7 +12,7 @@ from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
 from airflow.models import Variable
 from utils.utils import df_to_csv_bytes
-from utils.token_provider import OAuth2TokenProvider
+from rkdigi.syncpkg.token_session import ManagedOAuth2Session
 
 
 logger = logging.getLogger(__name__)
@@ -569,135 +567,109 @@ def insert_device_license_and_historical_data(
         return False
 
 
-def _delta_get_all_adm_units_ean(token_provider: OAuth2TokenProvider, base_url: str) -> list[dict]:
+def _delta_get_all_adm_units_ean(token_session: ManagedOAuth2Session, base_url: str) -> list[dict]:
     """
     Query Delta system for all administrative units EAN numbers.
 
-    :param token_provider: OAuth2TokenProvider used to obtain/refresh Bearer token for Delta.
+    :param token_session: ManagedOAuth2Session that handles OAuth2 token acquisition automatically.
     :param base_url: Base URL for the Delta API.
     :return: List of dicts with keys: 'parent' (parent name), 'name' (child name), 'ean' (EAN number or None).
     """
-    try:
-        offset = 0
-        limit = 1000
-        results = []
+    offset = 0
+    limit = 1000
+    results = []
 
-        while True:
-            graph_query = {
-                "graphQueries": [
-                    {
-                        "computeAvailablePages": True,
-                        "graphQuery": {
-                            "structure": {
-                                "alias": "adm",
-                                "userKey": "APOS-Types-AdministrativeUnit"
-                            },
-                            "criteria": {
-                                "type": "AND",
-                                "criteria": [
-                                    {
-                                        "type": "MATCH",
-                                        "operator": "EQUAL",
-                                        "left": {"source": "DEFINITION", "alias": "adm.$state"},
-                                        "right": {"source": "STATIC", "value": "STATE_ACTIVE"}
-                                    }
-                                ]
-                            },
-                            "projection": {
+    url = f"{base_url.rstrip('/')}/api/object/graph-query"
+
+    while True:
+        graph_query = {
+            "graphQueries": [
+                {
+                    "computeAvailablePages": True,
+                    "graphQuery": {
+                        "structure": {"alias": "adm", "userKey": "APOS-Types-AdministrativeUnit"},
+                        "criteria": {
+                            "type": "AND",
+                            "criteria": [
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {"source": "DEFINITION", "alias": "adm.$state"},
+                                    "right": {"source": "STATIC", "value": "STATE_ACTIVE"},
+                                }
+                            ],
+                        },
+                        "projection": {
+                            "identity": True,
+                            "attributes": ["APOS-Types-AdministrativeUnit-Attribute-EANnr"],
+                            "children": {
                                 "identity": True,
                                 "attributes": ["APOS-Types-AdministrativeUnit-Attribute-EANnr"],
-                                "children": {
-                                    "identity": True,
-                                    "attributes": ["APOS-Types-AdministrativeUnit-Attribute-EANnr"]
-                                }
-                            }
+                            },
                         },
-                        "validDate": "NOW",
-                        "offset": offset,
-                        "limit": limit
-                    }
-                ]
-            }
+                    },
+                    "validDate": "NOW",
+                    "offset": offset,
+                    "limit": limit,
+                }
+            ]
+        }
 
-            # Get token
-            token = token_provider.get_token()
-            headers = {"Authorization": f"Bearer {token}"}
+        logger.debug(f"POST URL: {url}")
 
-            logger.debug(f"POST URL: {base_url}/api/object/graph-query")
+        res = token_session.post(url=url, json=graph_query, timeout=30)
+        res.raise_for_status()
 
-            res = requests.post(
-                url=f"{base_url}/api/object/graph-query",
-                headers=headers,
-                json=graph_query,
-                timeout=30
+        payload = res.json()
+        graph_result = payload["graphQueryResult"][0]
+        available_pages = graph_result.get("availablePages", 0)
+        instances = graph_result.get("instances", [])
+
+        for inst in instances:
+            parent_name = inst.get("identity", {}).get("name")
+            parent_ean = next(
+                (
+                    att["value"]
+                    for att in inst.get("attributes", [])
+                    if att.get("userKey") == "APOS-Types-AdministrativeUnit-Attribute-EANnr"
+                ),
+                None,
             )
 
-            # If token has expired, refresh and try again
-            if res.status_code == 401:
-                logger.warning("Token expired, refreshing and retrying...")
-                token = token_provider.refresh()
-                headers["Authorization"] = f"Bearer {token}"
-                res = requests.post(
-                    url=f"{base_url}/api/object/graph-query",
-                    headers=headers,
-                    json=graph_query,
-                    timeout=30
+            children = inst.get("childrenObjects", [])
+            for child in children:
+                name = child.get("identity", {}).get("name", "")
+                ean = next(
+                    (
+                        att["value"]
+                        for att in child.get("attributes", [])
+                        if att.get("userKey") == "APOS-Types-AdministrativeUnit-Attribute-EANnr"
+                    ),
+                    None,
                 )
+                if not ean and parent_ean:
+                    ean = parent_ean
 
-            res.raise_for_status()
-            payload = res.json()
-            graph_result = payload["graphQueryResult"][0]
-            available_pages = graph_result.get("availablePages", 0)
-            instances = graph_result.get("instances", [])
+                results.append({"parent": parent_name, "name": name, "ean": ean})
 
-            for inst in instances:
-                parent_name = inst.get("identity", {}).get("name")
-                parent_ean = next(
-                    (att["value"] for att in inst.get("attributes", [])
-                     if att.get("userKey") == "APOS-Types-AdministrativeUnit-Attribute-EANnr"),
-                    None
-                )
-                logger.debug(f"Parent: {parent_name}, EAN: {parent_ean}")
-                children = inst.get('childrenObjects', [])
-                for child in children:
-                    name = child.get('identity', {}).get('name', '')
-                    ean = next(
-                        (att['value'] for att in child.get('attributes', []) if att['userKey'] == 'APOS-Types-AdministrativeUnit-Attribute-EANnr'),
-                        None
-                    )
-                    if not ean and parent_ean:
-                        ean = parent_ean
-                        logger.debug(f"Child: {name} inherits parent EAN: {ean} from parent: {parent_name}")
-                    else:
-                        logger.debug(f"Child: {name}, EAN: {ean}")
-                    results.append({
-                        'parent': parent_name,
-                        'name': name,
-                        'ean': ean
-                    })
+        total_instances = available_pages * limit
+        if offset + limit >= total_instances or len(instances) < limit:
+            break
 
-            total_instances = available_pages * limit
-            if offset + limit >= total_instances or len(instances) < limit:
-                break
+        offset += limit
 
-            offset += limit
-
-        return results
-
-    except Exception as e:
-        logger.exception(f"Error while fetching departments administrative units EAN numbers from Delta: {e}")
-        raise
+    return results
 
 
 def insert_department_ean_from_delta(
-    token_provider: OAuth2TokenProvider,
+    token_session: ManagedOAuth2Session,
     asset_engine: Engine,
     delta_base_url: str,
 ) -> bool:
     """
     Update Department EAN in the asset database using data from Delta.
 
-    :param token_provider: OAuth2TokenProvider used to obtain/refresh Bearer token for Delta.
+    :param token_session: ManagedOAuth2Session used to call Delta API (handles OAuth2 tokens automatically).
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
     :param delta_base_url: Base URL for the Delta API
     :return: True if the update succeeded, otherwise False.
@@ -705,7 +677,7 @@ def insert_department_ean_from_delta(
     try:
         logger.info("Fetching department EAN numbers from Delta...")
         delta_data = _delta_get_all_adm_units_ean(
-            token_provider=token_provider,
+            token_session=token_session,
             base_url=delta_base_url,
         )
 
