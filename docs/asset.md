@@ -11,7 +11,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 - Henter største delen af Asset data fra CAPA CMS DB (`insert_departments_data`, `insert_users_data`, `insert_computers_data`)
 - Historisk data fra tidligere leverandør hentes på en SFTP fra Comm2ig og Atea samt hentes Device License (`insert_device_license_and_historical_data`)
-- Henter Købspris, Købsdato og Garrantiudløb fra Atea API (`insert_atea_data`)
+- Henter Købspris, Købsdato og Garantiudløb fra Atea API (`insert_atea_data`)
 - Henter Afdelings EAN fra Delta API (`insert_department_ean_from_delta`)
 - Dataen gemmes i en Postgres Database
 - Til sidst bliver relavant Asset data automatisk importeret til TopDesk(`upload_assets_to_topdesk`)
