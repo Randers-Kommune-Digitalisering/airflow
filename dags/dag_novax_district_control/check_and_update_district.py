@@ -114,7 +114,7 @@ def check_and_update_district() -> None:
         # Check new phone number from journal data
         new_tlf_nr = entry.parsed_journal.get('phone', None)
         if new_tlf_nr and new_tlf_nr != entry.current_tlf_nr:
-            if len(new_tlf_nr) != 8 and all(char.isdigit() for char in new_tlf_nr):  # Basic sanity check for phone number length and format
+            if not len(new_tlf_nr) == 8 and new_tlf_nr.isdigit():  # Basic sanity check for phone number length and format
                 logger.warning(f"Unusual phone number '{new_tlf_nr}' for navnid {entry.navnid}, skipping phone update.")
             else:
                 entry.new_tlf_nr = new_tlf_nr
