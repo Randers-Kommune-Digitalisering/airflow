@@ -68,7 +68,10 @@ def check_and_update_district() -> None:
         if cpr_info and cpr_info.get('aktuelAdresse'):
             # Try CPR address first
             cpr_address_str = f"{cpr_info['aktuelAdresse'].get('standardadresse', '')}, {cpr_info['aktuelAdresse'].get('postnummer', '')}"
-            parsed_new_address = parse_address(cpr_address_str)
+            try:
+                parsed_new_address = parse_address(cpr_address_str)
+            except Exception as e:
+                logger.warning(f"Error parsing CPR address for navnid {entry.navnid}: {e}")
 
             # Fallback to journal address if CPR address is present but unparsable
             if parsed_new_address is None:
@@ -78,7 +81,10 @@ def check_and_update_district() -> None:
 
         # Fallback to journal address if no CPR address is found
         if parsed_new_address is None and entry.parsed_journal.get('address', None):
-            parsed_new_address = parse_address(entry.parsed_journal.get('address'))
+            try:
+                parsed_new_address = parse_address(entry.parsed_journal.get('address'))
+            except Exception as e:
+                logger.warning(f"Error parsing journal address for navnid {entry.navnid}: {e}")
 
         # Check if address has changed
         if parsed_new_address:
@@ -108,7 +114,10 @@ def check_and_update_district() -> None:
         # Check new phone number from journal data
         new_tlf_nr = entry.parsed_journal.get('phone', None)
         if new_tlf_nr and new_tlf_nr != entry.current_tlf_nr:
-            entry.new_tlf_nr = new_tlf_nr
+            if len(new_tlf_nr) != 8 and all(char.isdigit() for char in new_tlf_nr):  # Basic sanity check for phone number length and format
+                logger.warning(f"Unusual phone number '{new_tlf_nr}' for navnid {entry.navnid}, skipping phone update.")
+            else:
+                entry.new_tlf_nr = new_tlf_nr
 
         # Get due date from journal data
         entry.new_due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
