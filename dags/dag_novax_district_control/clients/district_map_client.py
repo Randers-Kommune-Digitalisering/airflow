@@ -1,4 +1,5 @@
 from airflow.hooks.base import BaseHook
+from flask import logging
 import requests
 import time
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from shapely.geometry import Point, multipolygon
 
 
 Base = declarative_base()
+logger = logging.getLogger(__name__)
 
 
 class DataforsyningClient:
@@ -50,8 +52,19 @@ class DataforsyningClient:
             'kommunekode': 730
         }
         url = f"{self.base_url}{endpoint}"
-        response = self._get_with_retry(url, params=params)
-        results = response.json()
+        try:
+            response = self._get_with_retry(url, params=params)
+        except requests.RequestException as e:
+            logger.warning(f"Error while looking up address '{query}': {e}")
+            return None
+        if response.status_code != 200:
+            logger.warning(f"Failed to lookup address '{query}': HTTP {response.status_code}")
+            return None
+        try:
+            results = response.json()
+        except ValueError as e:
+            logger.warning(f"Invalid JSON response while looking up address '{query}': {e}")
+            return None
         return results[0] if results and len(results) > 0 else None
 
     def get_address_info(self, address_id) -> dict:
@@ -66,8 +79,19 @@ class DataforsyningClient:
             'struktur': 'nestet'
         }
         url = f"{self.base_url}{endpoint}"
-        response = self._get_with_retry(url, params=params)
-        return response.json()
+        try:
+            response = self._get_with_retry(url, params=params)
+        except requests.RequestException as e:
+            logger.warning(f"Error while getting address info for ID '{address_id}': {e}")
+            return None
+        if response.status_code != 200:
+            logger.warning(f"Failed to get address info for ID '{address_id}': HTTP {response.status_code}")
+            return None
+        try:
+            return response.json()
+        except ValueError as e:
+            logger.warning(f"Invalid JSON response while getting address info for ID '{address_id}': {e}")
+            return None
 
 
 class District(Base):
