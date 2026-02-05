@@ -53,7 +53,12 @@ def check_and_update_district() -> None:
             continue
 
         # Parse journal note to dict
-        entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
+        try:
+            entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
+        except Exception as e:
+            logger.error(f"Error parsing journal data for navnid {entry.navnid}: {e}")
+            skipped_navnids.add(entry.navnid)
+            continue
         entry.journal = None  # Clear raw journal text to save space/logging
 
         # Look up current address from CPR
