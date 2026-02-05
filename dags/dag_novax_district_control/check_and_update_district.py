@@ -9,6 +9,9 @@ from dag_novax_district_control.clients.cpr_client import CPRClient
 logger = logging.getLogger(__name__)
 
 
+DRY_RUN = True  # Set to True to log intended updates without making changes, False to perform updates
+
+
 def check_and_update_district() -> None:
     """
     Retrieves and updates user, address and district information
@@ -121,7 +124,7 @@ def check_and_update_district() -> None:
             else:
                 entry.new_tlf_nr = new_tlf_nr
 
-        # Get due date from journal data
+        # Get due date from journal data - will override existing due date if present
         entry.new_due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
 
     # Get districts for all address coordinates in batch
@@ -172,8 +175,14 @@ def check_and_update_district() -> None:
         # Add to update requests
         update_requests_by_navnid[entry.navnid] = update_payload
 
+    # Return if DRY_RUN is enabled - log what would be updated without making changes
+    if DRY_RUN:
+        attempted_updates = len(update_requests_by_navnid)
+        no_change_count = sum(1 for entry in entries if entry.navnid not in skipped_navnids and entry.navnid not in update_requests_by_navnid)
+        logger.info(f"DRY_RUN enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped={len(skipped_navnids)},no_changes={no_change_count}) for {start_date} to {end_date}.")
+        return
+
     # Perform single Novax batch update
-    return  # TODO: Remove return statement; we don't want to update DB while testing
     if update_requests_by_navnid:
         update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
     else:
