@@ -1,5 +1,5 @@
 from airflow.hooks.base import BaseHook
-from flask import logging
+import logging
 import requests
 import time
 from sqlalchemy.orm import Session
