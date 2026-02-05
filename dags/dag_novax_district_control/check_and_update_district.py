@@ -101,7 +101,7 @@ def check_and_update_district() -> None:
 
         if address_to_lookup:
             address_info = dataforsyning_client.lookup_address(address_to_lookup.full_address)
-            if address_info and address_info.get('adgangsadresse', {}).get('x') and address_info.get('adgangsadresse', {}).get('y'):
+            if address_info and address_info.get('adgangsadresse', {}).get('x') is not None and address_info.get('adgangsadresse', {}).get('y') is not None:
                 x = address_info['adgangsadresse']['x']
                 y = address_info['adgangsadresse']['y']
                 points_by_navnid[entry.navnid] = (x, y)
