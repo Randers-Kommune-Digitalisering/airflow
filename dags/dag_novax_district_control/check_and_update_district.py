@@ -35,18 +35,18 @@ def check_and_update_district() -> None:
         return
 
     # Filter out dublicates based on (navnid, timestamp) - keep latest entry per navnid
-    unique_entries: dict[str, any] = {}
+    _unique_entries: dict[str, any] = {}
     for entry in res:
-        existing = unique_entries.get(entry.navnid)
+        existing = _unique_entries.get(entry.navnid)
         if existing is None or entry.timestamp > existing.timestamp:
-            unique_entries[entry.navnid] = entry
-    res = list(unique_entries.values())
+            _unique_entries[entry.navnid] = entry
+    entries = list(_unique_entries.values())
 
     # Process each UserData entry
     skipped_navnids: set[str] = set()
     points_by_navnid: dict[str, tuple[float, float]] = {}
     address_by_navnid: dict[str, str] = {}
-    for entry in res:
+    for entry in entries:
         if entry.journal is None:
             logger.warning(f"No journal data for navnid: {entry.navnid}, skipping entry.")
             skipped_navnids.add(entry.navnid)
@@ -128,7 +128,7 @@ def check_and_update_district() -> None:
 
     # Build update request for each entry
     update_requests_by_navnid: dict[str, dict] = {}
-    for entry in res:
+    for entry in entries:
         if entry.navnid in skipped_navnids:
             continue
         detected_changes: list[str] = []
@@ -180,7 +180,7 @@ def check_and_update_district() -> None:
     # Log update results per entry
     updated_navnids = set(update_requests_by_navnid.keys())
     entry_status = []
-    for entry in res:
+    for entry in entries:
         if entry.navnid in skipped_navnids:
             logger.warning(f"Missing journal data for navnid {entry.navnid} (no update attempted).")
             continue
