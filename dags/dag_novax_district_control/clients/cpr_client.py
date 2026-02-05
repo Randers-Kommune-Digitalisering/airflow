@@ -23,7 +23,12 @@ class CPRClient():
 
     def lookup_address(self, cpr_number: str) -> dict | None:
         endpoint = f'/PersonBaseDataExtendedService/lookup/address/{cpr_number}'
-        res = self.session.get(f"{self.base_url}{endpoint}")
+        try:
+            res = self.session.get(f"{self.base_url}{endpoint}")
+        except requests.RequestException as e:
+            logger.warning(f"Network error while looking up address for CPR {cpr_number[:6]}-XXXX: {e}")
+            return None
+
         if res.status_code != 200:
             logger.warning(f"Failed to lookup address for CPR {cpr_number[:6]}-XXXX: HTTP {res.status_code}")
             return None
