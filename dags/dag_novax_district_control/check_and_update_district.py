@@ -29,18 +29,18 @@ def check_and_update_district() -> None:
 
     # Get data from Novax and parse to UserData (+Address) objects
     logger.info(f"Starting check_and_update_district from {start_date} to {end_date}")
-    res = get_pregnancy_journals(from_date=start_date, to_date=end_date)
-    if not res:
+    raw_entries = get_pregnancy_journals(from_date=start_date, to_date=end_date)
+    if not raw_entries:
         logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
         return
 
     # Filter out dublicates based on (navnid, timestamp) - keep latest entry per navnid
-    _unique_entries: dict[str, any] = {}
-    for entry in res:
-        existing = _unique_entries.get(entry.navnid)
+    latest_entries_by_navnid: dict[str, any] = {}
+    for entry in raw_entries:
+        existing = latest_entries_by_navnid.get(entry.navnid)
         if existing is None or entry.timestamp > existing.timestamp:
-            _unique_entries[entry.navnid] = entry
-    entries = list(_unique_entries.values())
+            latest_entries_by_navnid[entry.navnid] = entry
+    entries = list(latest_entries_by_navnid.values())
 
     # Process each UserData entry
     skipped_navnids: set[str] = set()
@@ -125,8 +125,8 @@ def check_and_update_district() -> None:
         entry.new_due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
 
     # Get districts for all address coordinates in batch
-    keyed_points = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
-    districts_by_navnid = district_db_client.get_district_names_by_key(keyed_points)
+    points_for_district_lookup = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
+    districts_by_navnid = district_db_client.get_district_names_by_key(points_for_district_lookup)
 
     # Build update request for each entry
     update_requests_by_navnid: dict[str, dict] = {}
