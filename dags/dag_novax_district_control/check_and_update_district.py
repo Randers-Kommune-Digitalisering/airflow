@@ -67,7 +67,9 @@ def check_and_update_district() -> None:
         parsed_new_address = None
         if cpr_info and cpr_info.get('aktuelAdresse'):
             # Try CPR address first
-            cpr_address_str = f"{cpr_info['aktuelAdresse'].get('standardadresse', '')}, {cpr_info['aktuelAdresse'].get('postnummer', '')}"
+            std_addr = cpr_info['aktuelAdresse'].get('standardadresse', '')
+            postnummer = cpr_info['aktuelAdresse'].get('postnummer', '')
+            cpr_address_str = ", ".join([str(p).strip() for p in (std_addr, postnummer) if str(p).strip()])
             try:
                 parsed_new_address = parse_address(cpr_address_str)
             except Exception as e:
@@ -114,7 +116,7 @@ def check_and_update_district() -> None:
         # Check new phone number from journal data
         new_tlf_nr = entry.parsed_journal.get('phone', None)
         if new_tlf_nr and new_tlf_nr != entry.current_tlf_nr:
-            if not len(new_tlf_nr) == 8 and new_tlf_nr.isdigit():  # Basic sanity check for phone number length and format
+            if not (new_tlf_nr.isdigit() and len(new_tlf_nr) == 8):
                 logger.warning(f"Unusual phone number '{new_tlf_nr}' for navnid {entry.navnid}, skipping phone update.")
             else:
                 entry.new_tlf_nr = new_tlf_nr
