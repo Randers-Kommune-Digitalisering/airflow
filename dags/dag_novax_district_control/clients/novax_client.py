@@ -214,7 +214,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
     return results
 
 
-def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserData]:
+def get_pregnancy_journals(from_date: datetime.date, to_date: datetime.date) -> list[UserData]:
     """
     Retrieves pregnancy journal records from Novax database within the specified date range.
 
@@ -249,7 +249,7 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
         LEFT JOIN
             navn ON Godkommu.NAVNID = navn.ID
         WHERE
-            (EMNEBREV LIKE N'%gravid%')
+            (EMNEBREV LIKE N'%Orientering - Gravid%')
             AND Godkommu.JOURNALDATO >= :from_date
             AND Godkommu.JOURNALDATO < :to_date
     """
@@ -277,34 +277,3 @@ def get_pregnancy_journals(from_date: datetime, to_date: datetime) -> list[UserD
         )
         userdata_list.append(data_obj)
     return userdata_list
-
-
-def update_novax_userdata(navnid: str, due_date: datetime = None, new_district: str = None, new_address: str = None, new_tlf_nr: str = None) -> bool:
-    """
-    Updates the provided fields for a given NAVNID in the Novax database.
-
-    :param navnid: The NAVNID of the record to update (required).
-    :param due_date: The new due date to set (optional).
-    :param new_district: The new district value to set (optional).
-    :param new_address: The new address to set (optional).
-    :param new_tlf_nr: The new telephone number to set (optional).
-    """
-    if due_date is None and new_district is None and new_address is None and new_tlf_nr is None:
-        return True  # Nothing to update
-
-    if navnid is None:
-        logger.error("NAVNID is required to update Novax userdata.")
-        return False
-
-    results = update_novax_userdatas_batch(
-        [
-            {
-                "navnid": navnid,
-                "due_date": due_date,
-                "new_district": new_district,
-                "new_address": new_address,
-                "new_tlf_nr": new_tlf_nr,
-            }
-        ]
-    )
-    return bool(results.get(navnid))
