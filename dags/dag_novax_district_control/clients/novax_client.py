@@ -1,7 +1,7 @@
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import date
 import logging
 
 from dag_novax_district_control.novax_utils import parse_address
@@ -214,7 +214,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
     return results
 
 
-def get_pregnancy_journals(from_date: datetime.date, to_date: datetime.date) -> list[UserData]:
+def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
     """
     Retrieves pregnancy journal records from Novax database within the specified date range.
 
