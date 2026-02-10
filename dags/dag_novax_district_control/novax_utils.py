@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class Address:
-    def __init__(self, street: str | None = None, number: str | None = None, postal_code: str | None = None, city: str | None = None, full_address: str | None = None):
+    def __init__(self, street: str | None = None, number: str | None = None, door_extension: str | None = None, postal_code: str | None = None, city: str | None = None, full_address: str | None = None):
         """
         Initialize Address either from components or from full address string.
         Either provide all components (street, number, postal_code, city (optional)) or full_address.
@@ -17,16 +17,27 @@ class Address:
         if street and number and postal_code:
             self.street: str = street
             self.number: str = number
+            self.door_extension: str | None = door_extension  # optional
             self.postal_code: str = postal_code
             self.city: str | None = city  # optional
-            self.full_address: str = f"{street} {number}, {postal_code} {city}" if city else f"{street} {number}, {postal_code}"
+
+            # Construct full address from components
+            self.full_address: str = f"{street} {number}"
+            if door_extension:  # Append door extension if provided
+                self.full_address += f", {door_extension}"
+            self.full_address += f", {postal_code}"
+            if city:  # Append city if provided
+                self.full_address += f" {city}"
+
+            # Also construct a version of the full address without the door extension and city name for Dataforsyning lookup
+            self.address_dataforsyningen_lookup: str = f"{street} {number}, {postal_code}"
 
         # Initialize from full_address, parsing it into components
         elif full_address:
             parsed = parse_address(full_address)  # Parse address into components
             if parsed:
                 # Copy attributes from the parsed object onto this instance
-                for attr in ("street", "number", "postal_code", "city", "full_address", "x", "y"):
+                for attr in ("street", "number", "door_extension", "postal_code", "city", "full_address", "address_dataforsyningen_lookup", "x", "y"):
                     if hasattr(parsed, attr):
                         setattr(self, attr, getattr(parsed, attr))
             else:
@@ -34,7 +45,7 @@ class Address:
                 raise ValueError("Invalid full_address format.")
 
         else:
-            raise ValueError("Either full_address or all address components must be provided.")
+            raise ValueError("Either full_address or all address components must be provided (street, number, postal_code).")
 
 
 class UserData:
@@ -68,7 +79,7 @@ def parse_address(address: str) -> Address | None:
         r'^(?P<street_name>[^\d,]+?)\s+'  # street name
         r'(?P<house_number>\d+\s?[A-Za-z]?)'  # house number with optional letter
         r'(?:\s*,?\s*\d+\s*[a-zA-ZæøåÆØÅ]{1,3})?'  # optional door info, "A" in "3A", etc.
-        r'(?:\s*,?\s*(?:st\.?\s*(?:tv|th|mf)?|[0-9]+\.\s*(?:tv|th|mf)?))?'  # optional floor and door info, "st. tv", "1. th", etc.
+        r'(?:\s*,?\s*(?P<door_extension>(?:st\.?\s*(?:tv|th|mf)?|[0-9]+\.\s*(?:tv|th|mf)?)))?'  # optional floor and door info, "st. tv", "1. th", etc.
         r'\s*,?\s*(?P<city_part>[^\d,]+)?\s*'  # optional city part
         r'(?P<postal_code>\d{4})\s*'  # postal code (whitespace optional)
         r'(?:\s*(?P<city_name>.+))?$',  # optional city name
@@ -80,6 +91,7 @@ def parse_address(address: str) -> Address | None:
 
     street_name = match.group('street_name').strip()
     house_number = match.group('house_number').replace(' ', '')
+    door_extension = match.group('door_extension').strip() if match.group('door_extension') else None
     postal_code = match.group('postal_code')
     city_name = match.group('city_name').strip() if match.group('city_name') else ''
     city_part = match.group('city_part')
@@ -94,9 +106,13 @@ def parse_address(address: str) -> Address | None:
     return Address(
         street=street_name,
         number=house_number,
+        door_extension=door_extension,
         postal_code=postal_code,
         city=city_name if city_name else None
     )
+
+# Test
+# print(vars(parse_address("Regimentvej 16F, 3. tv, 8920 Randers NV")))
 
 
 def calculate_due(gestations_weeks: int, gestations_days: int, dato_str: str | None = None, dato_obj: datetime | None = None) -> datetime:

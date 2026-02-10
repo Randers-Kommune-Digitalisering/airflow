@@ -105,14 +105,14 @@ def check_and_update_district() -> None:
         address_to_lookup = entry.new_address if entry.new_address is not None else entry.current_address
 
         if address_to_lookup:
-            address_info = dataforsyning_client.lookup_address(address_to_lookup.full_address)
+            address_info = dataforsyning_client.lookup_address(address_to_lookup.address_dataforsyningen_lookup)
             if address_info and address_info.get('adgangsadresse', {}).get('x') is not None and address_info.get('adgangsadresse', {}).get('y') is not None:
                 x = address_info['adgangsadresse']['x']
                 y = address_info['adgangsadresse']['y']
                 points_by_navnid[entry.navnid] = (x, y)
                 address_by_navnid[entry.navnid] = address_to_lookup.full_address
             else:
-                logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.full_address}")
+                logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.address_dataforsyningen_lookup}")
         else:
             logger.warning(f"No valid address to look up district for navnid: {entry.navnid}")
 
@@ -144,7 +144,7 @@ def check_and_update_district() -> None:
             if new_district and new_district != entry.current_district:
                 entry.new_district = new_district
             elif new_district is None:
-                address = address_by_navnid.get(entry.navnid, "<unknown>")
+                address = address_by_navnid.get(entry.navnid, "<unknown>")  # For logging purposes
                 logger.warning(f"District not found for navnid: {entry.navnid} at address: {address}")
 
         # Log detected changes
@@ -164,7 +164,7 @@ def check_and_update_district() -> None:
             "navnid": entry.navnid,
             "due_date": entry.new_due_date,
             "new_district": entry.new_district,
-            "new_address": entry.new_address.full_address if entry.new_address else None,
+            "new_address": entry.new_address,
             "new_tlf_nr": entry.new_tlf_nr
         }
 

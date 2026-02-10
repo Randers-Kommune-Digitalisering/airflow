@@ -40,7 +40,7 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
         return []
 
 
-def update_novax_userdatas_batch(updates: list[dict]) -> dict:
+def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, bool]:
     """Batch-update many NAVNID records using a single SQLAlchemy Session.
 
     This keeps 1 connection open for the whole batch and performs a single outer
@@ -48,16 +48,16 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
     so failures don't automatically abort the full batch.
 
     Expected update dict keys:
-      - navnid (required)
-      - due_date (optional)
-      - new_district (optional)
-      - new_address (optional)
-      - new_tlf_nr (optional)
+      - navnid: string (required)
+      - due_date: date (optional)
+      - new_district: string (optional)
+      - new_address: Address (optional)
+      - new_tlf_nr: string (optional)
 
     Returns: mapping {navnid: bool}
     """
     engine = _get_sqlalchemy_engine()
-    results: dict = {}
+    results: dict[str, bool] = {}
 
     def _exec(session: Session, query: str, params: dict | None = None) -> None:
         session.execute(text(query), params or {})
@@ -96,6 +96,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                                 )
 
                             if new_district is not None:
+                                # Update active district in navn table
                                 _exec(
                                     session,
                                     """
@@ -141,6 +142,7 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                                 )
 
                             if new_address is not None:
+                                # Update active address in navn table
                                 _exec(
                                     session,
                                     """
@@ -148,8 +150,44 @@ def update_novax_userdatas_batch(updates: list[dict]) -> dict:
                                     SET ADRESSE = :new_address
                                     WHERE ID = :navnid
                                     """,
-                                    {"new_address": new_address, "navnid": navnid},
+                                    {"new_address": new_address.full_address, "navnid": navnid},
                                 )
+
+                                # Close any existing address records in adrs table
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE adrs
+                                    SET DATO_TIL = CAST(GETDATE() AS date)
+                                    WHERE NAVNID = :navnid
+                                      AND DATO_FRA <= CAST(GETDATE() AS date)
+                                      AND (DATO_TIL > CAST(GETDATE() AS date) OR DATO_TIL = '1753-01-01 00:00:00.000')
+                                    """,
+                                    {"navnid": navnid},
+                                )
+
+                                # TODO: Get vejkode for the new address, if possible
+                                vejkode = None
+
+                                # TODO: Insert new address record if not already present
+                                # _exec(
+                                #     session,
+                                #     """
+                                #     IF NOT EXISTS (
+                                #         SELECT 1
+                                #         FROM adrs
+                                #         WHERE NAVNID = :navnid
+                                #           AND ADRESSE = :new_address
+                                #           AND DATO_FRA <= CAST(GETDATE() AS date)
+                                #           AND (DATO_TIL IS NULL OR DATO_TIL >= CAST(GETDATE() AS date) OR DATO_TIL = '1753-01-01 00:00:00.000')
+                                #     )
+                                #     BEGIN
+                                #         INSERT INTO adrs (NAVNID, VEJKODE, POSTNR, NR_LT_ETAGE, KOMMUNEKODE, DATO_FRA, DATO_TIL)
+                                #         VALUES (:navnid, :vejkode, :postnr, :nr_lt_etage, :kommunekode, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
+                                #     END
+                                #     """,
+                                #     {"navnid": navnid, "vejkode": vejkode, "postnr": None, "nr_lt_etage": new_address., "kommunekode": None},
+                                # )
 
                             if new_tlf_nr is not None:
                                 # Make the provided number primary and demote all others
