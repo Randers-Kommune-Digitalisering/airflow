@@ -34,7 +34,7 @@ class Address:
             self.door_extension: str | None = door_extension  # optional
             self.postal_code: str = postal_code
             self.city: str | None = city  # optional
-            self.street_code: str | None = None # populated by Dataforsyning lookup
+            self.street_code: str | None = None  # populated by Dataforsyning lookup
 
             # Construct full address from components
             self.full_address: str = f"{street} {number}"
@@ -80,7 +80,6 @@ class UserData:
         self.new_tlf_nr: str | None = None
         self.new_due_date: datetime | None = None
         self.parsed_journal: dict | None = None
-
 
 
 def parse_address(address: str) -> Address | None:
