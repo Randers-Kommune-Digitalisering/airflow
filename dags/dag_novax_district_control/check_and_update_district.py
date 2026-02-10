@@ -1,7 +1,7 @@
 
 import logging
 from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdatas_batch
-from dag_novax_district_control.novax_utils import parse_address, parse_journal_data
+from dag_novax_district_control.novax_utils import Address, parse_address, parse_journal_data, to_int_or_none
 from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 DRY_RUN = True  # Set to True to log intended updates without making changes, False to perform updates
+DEFAULT_MUNICIPALITY_CODE = 730  # Default municipality code to use if not found in Dataforsyning - corresponds to Randers municipality
 
 
 def check_and_update_district() -> None:
@@ -48,7 +49,7 @@ def check_and_update_district() -> None:
     # Process each UserData entry
     skipped_navnids: set[str] = set()
     points_by_navnid: dict[str, tuple[float, float]] = {}
-    address_by_navnid: dict[str, str] = {}
+    address_by_navnid: dict[str, Address] = {}
     for entry in entries:
         if entry.journal is None:
             logger.warning(f"No journal data for navnid: {entry.navnid}, skipping entry.")
@@ -101,16 +102,26 @@ def check_and_update_district() -> None:
             ):
                 entry.new_address = parsed_new_address
 
-        # Look up address details for district info in Dataforsyning
+        # Look up address details for district info + vejkode in Dataforsyning
         address_to_lookup = entry.new_address if entry.new_address is not None else entry.current_address
 
         if address_to_lookup:
             address_info = dataforsyning_client.lookup_address(address_to_lookup.address_dataforsyningen_lookup)
             if address_info and address_info.get('adgangsadresse', {}).get('x') is not None and address_info.get('adgangsadresse', {}).get('y') is not None:
+                # Store coordinates for district lookup later
                 x = address_info['adgangsadresse']['x']
                 y = address_info['adgangsadresse']['y']
                 points_by_navnid[entry.navnid] = (x, y)
-                address_by_navnid[entry.navnid] = address_to_lookup.full_address
+
+                # Store address details for potential update and logging
+                address_to_lookup.street_code = address_info['adgangsadresse'].get('vejkode')
+                address_by_navnid[entry.navnid] = address_to_lookup
+
+                # Also check if municipality code has changed based on Dataforsyning info
+                looked_up_code = address_info['adgangsadresse'].get('kommunekode')
+                looked_up_code_int = to_int_or_none(looked_up_code)
+                if looked_up_code_int is not None and entry.current_municipality_code != looked_up_code_int:
+                    entry.new_municipality_code = looked_up_code_int
             else:
                 logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.address_dataforsyningen_lookup}")
         else:
@@ -147,6 +158,10 @@ def check_and_update_district() -> None:
                 address = address_by_navnid.get(entry.navnid, "<unknown>")  # For logging purposes
                 logger.warning(f"District not found for navnid: {entry.navnid} at address: {address}")
 
+        # Check if new municipality has been set - if not, set to default if current municipality is different from default
+        if entry.new_municipality_code is None and entry.current_municipality_code != DEFAULT_MUNICIPALITY_CODE:
+            entry.new_municipality_code = DEFAULT_MUNICIPALITY_CODE
+
         # Log detected changes
         if entry.new_address is not None:
             detected_changes.append("address")
@@ -156,6 +171,8 @@ def check_and_update_district() -> None:
             detected_changes.append("phone")
         if entry.new_due_date is not None:
             detected_changes.append("due date")
+        if entry.new_municipality_code is not None:
+            detected_changes.append("municipality code")
         if detected_changes:
             logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
 
@@ -165,7 +182,8 @@ def check_and_update_district() -> None:
             "due_date": entry.new_due_date,
             "new_district": entry.new_district,
             "new_address": entry.new_address,
-            "new_tlf_nr": entry.new_tlf_nr
+            "new_tlf_nr": entry.new_tlf_nr,
+            "new_municipality_code": entry.new_municipality_code
         }
 
         # Skip update if there are no changes (i.e., all update fields are None)

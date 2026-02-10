@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import date
 import logging
 
-from dag_novax_district_control.novax_utils import parse_address
+from dag_novax_district_control.novax_utils import parse_address, to_int_or_none
 from dag_novax_district_control.novax_utils import UserData
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
             return [dict(row) for row in result.mappings().all()]
     except Exception as e:
         logger.error(f"Error executing query: {e}")
-        return []
+        raise e
 
 
 def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, bool]:
@@ -53,6 +53,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
       - new_district: string (optional)
       - new_address: Address (optional)
       - new_tlf_nr: string (optional)
+      - new_municipality_code: int (optional)
 
     Returns: mapping {navnid: bool}
     """
@@ -83,6 +84,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                             new_district = upd.get("new_district")
                             new_address = upd.get("new_address")
                             new_tlf_nr = upd.get("new_tlf_nr")
+                            new_municipality_code = upd.get("new_municipality_code")
 
                             if due_date is not None:
                                 _exec(
@@ -166,28 +168,25 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     {"navnid": navnid},
                                 )
 
-                                # TODO: Get vejkode for the new address, if possible
-                                vejkode = None
-
-                                # TODO: Insert new address record if not already present
-                                # _exec(
-                                #     session,
-                                #     """
-                                #     IF NOT EXISTS (
-                                #         SELECT 1
-                                #         FROM adrs
-                                #         WHERE NAVNID = :navnid
-                                #           AND ADRESSE = :new_address
-                                #           AND DATO_FRA <= CAST(GETDATE() AS date)
-                                #           AND (DATO_TIL IS NULL OR DATO_TIL >= CAST(GETDATE() AS date) OR DATO_TIL = '1753-01-01 00:00:00.000')
-                                #     )
-                                #     BEGIN
-                                #         INSERT INTO adrs (NAVNID, VEJKODE, POSTNR, NR_LT_ETAGE, KOMMUNEKODE, DATO_FRA, DATO_TIL)
-                                #         VALUES (:navnid, :vejkode, :postnr, :nr_lt_etage, :kommunekode, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
-                                #     END
-                                #     """,
-                                #     {"navnid": navnid, "vejkode": vejkode, "postnr": None, "nr_lt_etage": new_address., "kommunekode": None},
-                                # )
+                                # Insert new address record if not already present
+                                _exec(
+                                    session,
+                                    """
+                                    IF NOT EXISTS (
+                                        SELECT 1
+                                        FROM adrs
+                                        WHERE NAVNID = :navnid
+                                          AND ADRESSE = :new_address
+                                          AND DATO_FRA <= CAST(GETDATE() AS date)
+                                          AND (DATO_TIL IS NULL OR DATO_TIL >= CAST(GETDATE() AS date) OR DATO_TIL = '1753-01-01 00:00:00.000')
+                                    )
+                                    BEGIN
+                                        INSERT INTO adrs (NAVNID, VEJKODE, POSTNR, NR_LT_ETAGE, KOMMUNEKODE, DATO_FRA, DATO_TIL)
+                                        VALUES (:navnid, :vejkode, :postnr, :nr_lt_etage, :kommunekode, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
+                                    END
+                                    """,
+                                    {"navnid": navnid, "vejkode": new_address.street_code, "postnr": new_address.postal_code, "nr_lt_etage": str(new_address.number + " " + new_address.door_extension).strip(), "kommunekode": new_municipality_code},
+                                )
 
                             if new_tlf_nr is not None:
                                 # Make the provided number primary and demote all others
@@ -224,17 +223,18 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                         {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
                                     )
 
-                            # Always update area code to 730
-                            _exec(
-                                session,
-                                """
-                                UPDATE NAVNDETALJER
-                                SET TS_KOMID = 730,
-                                    KOMMUNE_OPR = 730
-                                WHERE NAVNID = :navnid
-                                """,
-                                {"navnid": navnid},
-                            )
+                            # Update municipality code
+                            if new_municipality_code is not None:
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE NAVNDETALJER
+                                    SET TS_KOMID = :new_municipality_code,
+                                        KOMMUNE_OPR = :new_municipality_code
+                                    WHERE NAVNID = :navnid
+                                    """,
+                                    {"navnid": navnid, "new_municipality_code": new_municipality_code},
+                                )
 
                         results[navnid] = True
                     except Exception as e:
@@ -268,6 +268,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             navn.CPR,
             navn.ADRESSE,
             navn.DISTRIKT,
+            NAVNDETALJER.KOMMUNE_OPR,
             (
                 SELECT TOP 1 TELEFONNUMMER
                 FROM TELEFON
@@ -286,6 +287,8 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             Godkommu
         LEFT JOIN
             navn ON Godkommu.NAVNID = navn.ID
+        LEFT JOIN
+            NAVNDETALJER ON Godkommu.NAVNID = NAVNDETALJER.NAVNID
         WHERE
             (EMNEBREV LIKE N'%Orientering - Gravid%')
             AND Godkommu.JOURNALDATO >= :from_date
@@ -309,6 +312,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             navnid=entry['NAVNID'],
             address=entry['parsed_address'],
             district=entry['DISTRIKT'],
+            municipality_code=to_int_or_none(entry.get('KOMMUNE_OPR')),
             tlf_nr=entry['TELEFONNUMMER'],
             timestamp=entry['JOURNALDATO'],
             journal=entry['NOTE']

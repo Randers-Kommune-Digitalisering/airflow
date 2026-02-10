@@ -7,6 +7,20 @@ import re
 logger = logging.getLogger(__name__)
 
 
+def to_int_or_none(value: object | None) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
 class Address:
     def __init__(self, street: str | None = None, number: str | None = None, door_extension: str | None = None, postal_code: str | None = None, city: str | None = None, full_address: str | None = None):
         """
@@ -20,6 +34,7 @@ class Address:
             self.door_extension: str | None = door_extension  # optional
             self.postal_code: str = postal_code
             self.city: str | None = city  # optional
+            self.street_code: str | None = None # populated by Dataforsyning lookup
 
             # Construct full address from components
             self.full_address: str = f"{street} {number}"
@@ -37,7 +52,7 @@ class Address:
             parsed = parse_address(full_address)  # Parse address into components
             if parsed:
                 # Copy attributes from the parsed object onto this instance
-                for attr in ("street", "number", "door_extension", "postal_code", "city", "full_address", "address_dataforsyningen_lookup", "x", "y"):
+                for attr in ("street", "number", "door_extension", "postal_code", "city", "full_address", "address_dataforsyningen_lookup", "x", "y", "street_code", "municipality_code"):
                     if hasattr(parsed, attr):
                         setattr(self, attr, getattr(parsed, attr))
             else:
@@ -49,20 +64,23 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, tlf_nr: str | None, timestamp: datetime, journal: str | None = None):
+    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, municipality_code: int | None, tlf_nr: str | None, timestamp: datetime, journal: str | None = None):
         self.cpr: str = cpr
         self.navnid: str = navnid
         self.current_address: Address | None = address
         self.current_district: str = district
+        self.current_municipality_code: int | None = municipality_code
         self.current_tlf_nr: str | None = tlf_nr
         self.timestamp: datetime = timestamp
         self.journal: str | None = journal
 
         self.new_address: Address | None = None
         self.new_district: str | None = None
+        self.new_municipality_code: int | None = None  # populated by Dataforsyning lookup
         self.new_tlf_nr: str | None = None
         self.new_due_date: datetime | None = None
         self.parsed_journal: dict | None = None
+
 
 
 def parse_address(address: str) -> Address | None:
