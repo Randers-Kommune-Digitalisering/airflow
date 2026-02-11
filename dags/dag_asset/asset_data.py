@@ -1,5 +1,6 @@
 import logging
 import pandas as pd
+import io
 
 from sqlalchemy.engine import Engine
 from sqlalchemy import text, select
@@ -673,12 +674,12 @@ def insert_department_ean_from_delta(
         return False
 
 
-def export_assets_from_db(asset_engine: Engine) -> bytes:
+def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
     Export asset data from the Asset DB as a CSV payload (bytes).
 
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
-    :return: CSV content as bytes
+    :return: CSV content as an io.BytesIO buffer
     """
 
     sql_command = """
@@ -763,18 +764,18 @@ def export_assets_from_db(asset_engine: Engine) -> bytes:
             lambda val: "{:.2f}".format(float(val)) if pd.notnull(val) and str(val).strip() else ""
         )
 
-    return df_to_csv_bytes(df, sep=';', encoding='UTF-8').getvalue()
+    return df_to_csv_bytes(df, sep=';', encoding='UTF-8')
 
 
 def upload_assets_to_topdesk(
     http_hook: HttpHook,
-    csv_bytes: bytes,
+    csv_bytes: io.BytesIO,
 ) -> bool:
     """
     Upload a CSV payload to Topdesk as a source file.
 
     :param http_hook: Airflow HttpHook configured for the Topdesk API.
-    :param csv_bytes: CSV content as bytes to be uploaded.
+    :param csv_bytes: CSV content as an io.BytesIO buffer to be uploaded.
     :return: True if upload succeeded, otherwise False.
     """
 
@@ -788,7 +789,7 @@ def upload_assets_to_topdesk(
     http_hook.method = "PUT"
     res = http_hook.run(
         endpoint=upload_path,
-        data=csv_bytes,
+        data=csv_bytes.getvalue(),
     )
 
     logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: {http_hook.http_conn_id} Code Status: {res.status_code}.")
