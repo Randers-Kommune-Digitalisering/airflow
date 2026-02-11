@@ -283,12 +283,25 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     UPDATE NAVNDETALJER
                                     SET TS_KOMID = :new_municipality_code,
                                         KOMMUNE_OPR = :new_municipality_code,
-                                        TS_UPDD = CAST(GETDATE() AS date)
+                                        TS_UPDD = CAST(GETDATE() AS date),
                                         TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                     """,
                                     {"navnid": navnid, "new_municipality_code": new_municipality_code},
                                 )
+
+                            # Always allocate new pregnancy to 'Gravid til fordeling' (id: 'FIKTIV')
+                            _exec(
+                                session,
+                                """
+                                UPDATE navn
+                                SET AnsvarsShpl = 'FIKTIV',
+                                    TS_UPDD = CAST(GETDATE() AS date),
+                                    TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
+                                WHERE ID = :navnid
+                                """,
+                                {"navnid": navnid},
+                            )
 
                         results[navnid] = True
                     except Exception as e:

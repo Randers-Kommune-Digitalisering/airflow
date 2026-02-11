@@ -124,6 +124,7 @@ def check_and_update_district() -> None:
                     entry.new_municipality_code = looked_up_code_int
             else:
                 logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.address_dataforsyningen_lookup}")
+                entry.new_address = None  # Clear new address to avoid updating to an unknown address - will still update other fields if applicable
         else:
             logger.warning(f"No valid address to look up district for navnid: {entry.navnid}")
 
@@ -177,6 +178,8 @@ def check_and_update_district() -> None:
             logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
 
         # Prepare update payload
+        # None values in the payload will be ignored by the update function
+        # Besides new values, new pregnancies will always get allocated to 'Gravid til fordeling' (id: 'FIKTIV')
         update_payload = {
             "navnid": entry.navnid,
             "due_date": entry.new_due_date,
@@ -185,10 +188,6 @@ def check_and_update_district() -> None:
             "new_tlf_nr": entry.new_tlf_nr,
             "new_municipality_code": entry.new_municipality_code
         }
-
-        # Skip update if there are no changes (i.e., all update fields are None)
-        if all(value is None for key, value in update_payload.items() if key != "navnid"):
-            continue
 
         # Add to update requests
         update_requests_by_navnid[entry.navnid] = update_payload
