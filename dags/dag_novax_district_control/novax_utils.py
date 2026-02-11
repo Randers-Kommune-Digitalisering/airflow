@@ -65,13 +65,14 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, municipality_code: int | None, tlf_nr: str | None, timestamp: datetime, journal: str | None = None):
+    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, municipality_code: int | None, tlf_nr: str | None, due_date: datetime | None, timestamp: datetime, journal: str | None = None):
         self.cpr: str = cpr
         self.navnid: str = navnid
         self.current_address: Address | None = address
         self.current_district: str = district
         self.current_municipality_code: int | None = municipality_code
         self.current_tlf_nr: str | None = tlf_nr
+        self.current_due_date: datetime | None = due_date
         self.timestamp: datetime = timestamp
         self.journal: str | None = journal
 

@@ -368,6 +368,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             navn.DISTRIKT,
             NAVNDETALJER.KOMMUNE_OPR,
             NAVNDETALJER.BESKYTTETADRESSE,
+            NAVNDETALJER.TERMIN,
             (
                 SELECT TOP 1 TELEFONNUMMER
                 FROM TELEFON
@@ -406,7 +407,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
 
         parsed_address = parse_address(entry.get('ADRESSE') or "")
         if parsed_address is not None:
-            parsed_address.is_protected = to_int_or_none(entry.get('BESKYTTETADRESSE')) == 1
+            parsed_address.is_protected = entry.get('BESKYTTETADRESSE') == 1
         entry['parsed_address'] = parsed_address
         entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
 
@@ -417,6 +418,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             district=entry['DISTRIKT'],
             municipality_code=to_int_or_none(entry.get('KOMMUNE_OPR')),
             tlf_nr=entry['TELEFONNUMMER'],
+            due_date=entry['TERMIN'],
             timestamp=entry['JOURNALDATO'],
             journal=entry['NOTE']
         )

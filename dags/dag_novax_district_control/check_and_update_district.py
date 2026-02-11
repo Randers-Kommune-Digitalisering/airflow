@@ -76,7 +76,7 @@ def check_and_update_district() -> None:
             cpr_address_str = ", ".join([str(p).strip() for p in (std_addr, postnummer) if str(p).strip()])
             try:
                 parsed_new_address = parse_address(cpr_address_str)
-                parsed_new_address.is_protected = cpr_info['adressebeskyttelse'].get('beskyttet', False)  # Check if address is protected
+                parsed_new_address.is_protected = cpr_info['adressebeskyttelse'].get('beskyttet', False) is True  # Check if address is protected
             except Exception as e:
                 logger.warning(f"Error parsing CPR address for navnid {entry.navnid}: {e}")
 
@@ -139,7 +139,9 @@ def check_and_update_district() -> None:
                 entry.new_tlf_nr = new_tlf_nr
 
         # Get due date from journal data - will override existing due date if present
-        entry.new_due_date = entry.parsed_journal.get('due_date', None) or entry.parsed_journal.get('calculated_due_date', None)
+        entry.journal_due_date = entry.parsed_journal.get('due_date', None) or entry.parsed_journal.get('calculated_due_date', None)
+        if entry.journal_due_date and entry.journal_due_date != entry.current_due_date:
+            entry.new_due_date = entry.journal_due_date
 
     # Get districts for all address coordinates in batch
     points_for_district_lookup = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
@@ -176,6 +178,8 @@ def check_and_update_district() -> None:
             detected_changes.append("due date")
         if entry.new_municipality_code is not None:
             detected_changes.append("municipality code")
+        if detected_changes == []:
+            detected_changes.append("none")
         if detected_changes:
             logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
 
@@ -197,8 +201,7 @@ def check_and_update_district() -> None:
     # Return if DRY_RUN is enabled - log what would be updated without making changes
     if DRY_RUN:
         attempted_updates = len(update_requests_by_navnid)
-        no_change_count = sum(1 for entry in entries if entry.navnid not in skipped_navnids and entry.navnid not in update_requests_by_navnid)
-        logger.info(f"DRY_RUN enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped={len(skipped_navnids)},no_changes={no_change_count}) for {start_date} to {end_date}.")
+        logger.info(f"DRY_RUN enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped={len(skipped_navnids)} due to missing journal) for {start_date} to {end_date}.")
         return
 
     # Perform single Novax batch update
@@ -208,14 +211,10 @@ def check_and_update_district() -> None:
         update_results = {}
 
     # Log update results per entry
-    updated_navnids = set(update_requests_by_navnid.keys())
     entry_status = []
     for entry in entries:
         if entry.navnid in skipped_navnids:
             logger.warning(f"Missing journal data for navnid {entry.navnid} (no update attempted).")
-            continue
-        if entry.navnid not in updated_navnids:
-            logger.info(f"No changes detected for navnid {entry.navnid} (no update attempted).")
             continue
 
         update_success = bool(update_results.get(entry.navnid))
