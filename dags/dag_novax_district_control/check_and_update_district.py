@@ -136,7 +136,7 @@ def check_and_update_district() -> None:
                 entry.new_tlf_nr = new_tlf_nr
 
         # Get due date from journal data - will override existing due date if present
-        entry.new_due_date = entry.parsed_journal.get('due_date', entry.parsed_journal.get('calculated_due_date', None))
+        entry.new_due_date = entry.parsed_journal.get('due_date', None) or entry.parsed_journal.get('calculated_due_date', None)
 
     # Get districts for all address coordinates in batch
     points_for_district_lookup = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]

@@ -91,7 +91,9 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     session,
                                     """
                                     UPDATE NAVNDETALJER
-                                    SET TERMIN = :due_date
+                                    SET TERMIN = :due_date,
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                     """,
                                     {"due_date": due_date, "navnid": navnid},
@@ -103,7 +105,9 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     session,
                                     """
                                     UPDATE navn
-                                    SET DISTRIKT = :new_district
+                                    SET DISTRIKT = :new_district,
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE ID = :navnid
                                     """,
                                     {"new_district": new_district, "navnid": navnid},
@@ -114,7 +118,9 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     session,
                                     """
                                     UPDATE PERSONDISTRICT
-                                    SET DATETO = CAST(GETDATE() AS date)
+                                    SET DATETO = CAST(GETDATE() AS date),
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                       AND DATEFROM <= CAST(GETDATE() AS date)
                                       AND (DATETO > CAST(GETDATE() AS date) OR DATETO = '1753-01-01 00:00:00.000')
@@ -136,8 +142,16 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                           AND (DATETO IS NULL OR DATETO >= CAST(GETDATE() AS date) OR DATETO = '1753-01-01 00:00:00.000')
                                     )
                                     BEGIN
-                                        INSERT INTO PERSONDISTRICT (NAVNID, DISTRICT, DATEFROM, DATETO)
-                                        VALUES (:navnid, :new_district, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
+                                        INSERT INTO PERSONDISTRICT (NAVNID, DISTRICT, DATEFROM, DATETO, TS_DATE, TS_TIME, TS_UPDD, TS_UPDT)
+                                        VALUES (:navnid,
+                                                :new_district,
+                                                CAST(GETDATE() AS date),
+                                                '1753-01-01 00:00:00.000',
+                                                CAST(GETDATE() AS date),
+                                                CONVERT(varchar(5),GETDATE(), 108),
+                                                CAST(GETDATE() AS date),
+                                                CONVERT(varchar(5),GETDATE(), 108)
+                                            )
                                     END
                                     """,
                                     {"new_district": new_district, "navnid": navnid},
@@ -149,7 +163,9 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     session,
                                     """
                                     UPDATE navn
-                                    SET ADRESSE = :new_address
+                                    SET ADRESSE = :new_address,
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE ID = :navnid
                                     """,
                                     {"new_address": new_address.full_address, "navnid": navnid},
@@ -160,7 +176,9 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     session,
                                     """
                                     UPDATE adrs
-                                    SET DATO_TIL = CAST(GETDATE() AS date)
+                                    SET DATO_TIL = CAST(GETDATE() AS date),
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                       AND DATO_FRA <= CAST(GETDATE() AS date)
                                       AND (DATO_TIL > CAST(GETDATE() AS date) OR DATO_TIL = '1753-01-01 00:00:00.000')
@@ -169,6 +187,8 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                 )
 
                                 # Insert new address record if not already present
+                                if new_municipality_code is None:
+                                    from dag_novax_district_control.check_and_update_district import DEFAULT_MUNICIPALITY_CODE
                                 _exec(
                                     session,
                                     """
@@ -176,16 +196,37 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                         SELECT 1
                                         FROM adrs
                                         WHERE NAVNID = :navnid
-                                          AND ADRESSE = :new_address
+                                          AND VEJKODE = :vejkode
+                                          AND POSTNR = :postnr
+                                          AND NR_LT_ETAGE = :nr_lt_etage
                                           AND DATO_FRA <= CAST(GETDATE() AS date)
                                           AND (DATO_TIL IS NULL OR DATO_TIL >= CAST(GETDATE() AS date) OR DATO_TIL = '1753-01-01 00:00:00.000')
                                     )
                                     BEGIN
-                                        INSERT INTO adrs (NAVNID, VEJKODE, POSTNR, NR_LT_ETAGE, KOMMUNEKODE, DATO_FRA, DATO_TIL)
-                                        VALUES (:navnid, :vejkode, :postnr, :nr_lt_etage, :kommunekode, CAST(GETDATE() AS date), '1753-01-01 00:00:00.000')
+                                        INSERT INTO adrs (NAVNID, VEJKODE, POSTNR, NR_LT_ETAGE, KOMMUNEKODE, DATO_FRA, DATO_TIL, TS_DATE, TS_TIME, TS_UPDD, TS_UPDT)
+                                        VALUES (:navnid,
+                                                :vejkode,
+                                                :postnr,
+                                                :nr_lt_etage,
+                                                :kommunekode,
+                                                CAST(GETDATE() AS date),
+                                                '1753-01-01 00:00:00.000',
+                                                CAST(GETDATE() AS date),
+                                                CONVERT(varchar(5),GETDATE(), 108),
+                                                CAST(GETDATE() AS date),
+                                                CONVERT(varchar(5),GETDATE(), 108)
+                                            )
                                     END
                                     """,
-                                    {"navnid": navnid, "vejkode": new_address.street_code, "postnr": new_address.postal_code, "nr_lt_etage": str(new_address.number + " " + new_address.door_extension).strip(), "kommunekode": new_municipality_code},
+                                    {
+                                        "navnid": navnid,
+                                        "vejkode": new_address.street_code,
+                                        "postnr": new_address.postal_code,
+                                        "nr_lt_etage": (
+                                            str((new_address.number or "") + " " + (new_address.door_extension or "")).strip()
+                                        ),
+                                        "kommunekode": new_municipality_code or DEFAULT_MUNICIPALITY_CODE,
+                                    },
                                 )
 
                             if new_tlf_nr is not None:
@@ -194,7 +235,9 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     session,
                                     """
                                     UPDATE TELEFON
-                                    SET PRIMAER = 0
+                                    SET PRIMAER = 0,
+                                        TS_UPDD = GETDATE(),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                       AND TELEFONNUMMER <> :new_tlf_nr
                                     """,
@@ -206,7 +249,8 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     """
                                     UPDATE TELEFON
                                     SET PRIMAER = 1,
-                                        TS_UPDD = GETDATE()
+                                        TS_UPDD = GETDATE(),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                       AND TELEFONNUMMER = :new_tlf_nr
                                     """,
@@ -217,20 +261,30 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     _exec(
                                         session,
                                         """
-                                        INSERT INTO TELEFON (NAVNID, TELEFONNUMMER, PRIMAER, TS_UPDD)
-                                        VALUES (:navnid, :new_tlf_nr, 1, GETDATE())
+                                        INSERT INTO TELEFON (NAVNID, TELEFONNUMMER, PRIMAER, TS_DATE, TS_TIME, TS_UPDD, TS_UPDT)
+                                        VALUES (:navnid,
+                                                :new_tlf_nr,
+                                                1,
+                                                CAST(GETDATE() AS date),
+                                                CONVERT(varchar(5),GETDATE(), 108),
+                                                CAST(GETDATE() AS date),
+                                                CONVERT(varchar(5),GETDATE(), 108)
+                                            )
                                         """,
                                         {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
                                     )
 
                             # Update municipality code
+                            # TODO: And set BESKYTTETADRESSE if CPR lookup indicates protected address
                             if new_municipality_code is not None:
                                 _exec(
                                     session,
                                     """
                                     UPDATE NAVNDETALJER
                                     SET TS_KOMID = :new_municipality_code,
-                                        KOMMUNE_OPR = :new_municipality_code
+                                        KOMMUNE_OPR = :new_municipality_code,
+                                        TS_UPDD = CAST(GETDATE() AS date)
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                     """,
                                     {"navnid": navnid, "new_municipality_code": new_municipality_code},
