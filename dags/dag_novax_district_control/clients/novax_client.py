@@ -229,6 +229,20 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     },
                                 )
 
+                                # Set BESKYTTETADRESSE if CPR lookup indicates protected address
+                                if new_address.is_protected:
+                                    _exec(
+                                        session,
+                                        """
+                                        UPDATE NAVNDETALJER
+                                        SET BESKYTTETADRESSE = 1,
+                                            TS_UPDD = CAST(GETDATE() AS date),
+                                            TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
+                                        WHERE NAVNID = :navnid
+                                        """,
+                                        {"navnid": navnid},
+                                    )
+
                             if new_tlf_nr is not None:
                                 # Make the provided number primary and demote all others
                                 _exec(
@@ -275,7 +289,6 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     )
 
                             # Update municipality code
-                            # TODO: And set BESKYTTETADRESSE if CPR lookup indicates protected address
                             if new_municipality_code is not None:
                                 _exec(
                                     session,
@@ -303,6 +316,25 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                 {"navnid": navnid},
                             )
 
+                            # Always set mother of pregnant person to active
+                            # To do so, first get ID of mother from NAVNDETALJER, then set AKTIV = 1 in navn for that ID
+                            _exec(
+                                session,
+                                """
+                                UPDATE navn
+                                SET AKTIV = 1,
+                                    TS_UPDD = CAST(GETDATE() AS date),
+                                    TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
+                                WHERE ID = (
+                                    SELECT TOP 1 BIOMOR
+                                    FROM FAMILIE
+                                    WHERE NAVNID = :navnid
+                                    ORDER BY TS_UPDD DESC
+                                )
+                                """,
+                                {"navnid": navnid},
+                            )
+
                         results[navnid] = True
                     except Exception as e:
                         logger.error(f"Batch update failed for NAVNID {navnid!r}: {e}")
@@ -322,8 +354,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
 def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
     """
     Retrieves pregnancy journal records from Novax database within the specified date range.
-
-    Ensures only the latest TELEFONNUMMER per CPR is returned.
+    Ensures only the latest TELEFONNUMMER and relevant NOTE per CPR is returned.
 
     :param from_date: The start date to filter records from (inclusive).
     :param to_date: The end date to filter records to (exclusive).
@@ -336,6 +367,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             navn.ADRESSE,
             navn.DISTRIKT,
             NAVNDETALJER.KOMMUNE_OPR,
+            NAVNDETALJER.BESKYTTETADRESSE,
             (
                 SELECT TOP 1 TELEFONNUMMER
                 FROM TELEFON
@@ -371,7 +403,11 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
         for k, v in entry.items():
             if isinstance(v, str):
                 entry[k] = v.strip()
-        entry['parsed_address'] = parse_address(entry['ADRESSE'])
+
+        parsed_address = parse_address(entry.get('ADRESSE') or "")
+        if parsed_address is not None:
+            parsed_address.is_protected = to_int_or_none(entry.get('BESKYTTETADRESSE')) == 1
+        entry['parsed_address'] = parsed_address
         entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
 
         data_obj = UserData(

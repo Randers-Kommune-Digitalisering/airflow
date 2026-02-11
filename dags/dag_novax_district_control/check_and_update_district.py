@@ -76,6 +76,7 @@ def check_and_update_district() -> None:
             cpr_address_str = ", ".join([str(p).strip() for p in (std_addr, postnummer) if str(p).strip()])
             try:
                 parsed_new_address = parse_address(cpr_address_str)
+                parsed_new_address.is_protected = cpr_info['adressebeskyttelse'].get('beskyttet', False)  # Check if address is protected
             except Exception as e:
                 logger.warning(f"Error parsing CPR address for navnid {entry.navnid}: {e}")
 
@@ -98,7 +99,8 @@ def check_and_update_district() -> None:
                 not entry.current_address or
                 entry.current_address.street != parsed_new_address.street or
                 entry.current_address.number != parsed_new_address.number or
-                entry.current_address.postal_code != parsed_new_address.postal_code
+                entry.current_address.postal_code != parsed_new_address.postal_code or
+                entry.current_address.is_protected != parsed_new_address.is_protected
             ):
                 entry.new_address = parsed_new_address
 
@@ -165,7 +167,7 @@ def check_and_update_district() -> None:
 
         # Log detected changes
         if entry.new_address is not None:
-            detected_changes.append("address")
+            detected_changes.append("address" + (" (protected)" if entry.new_address.is_protected else ""))
         if entry.new_district is not None and entry.new_district != entry.current_district:
             detected_changes.append("district")
         if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:

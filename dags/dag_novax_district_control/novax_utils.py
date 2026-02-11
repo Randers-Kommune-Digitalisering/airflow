@@ -35,6 +35,7 @@ class Address:
             self.postal_code: str = postal_code
             self.city: str | None = city  # optional
             self.street_code: str | None = None  # populated by Dataforsyning lookup
+            self.is_protected: bool = False  # populated by Novax / CPR lookup
 
             # Construct full address from components
             self.full_address: str = f"{street} {number}"
@@ -52,7 +53,7 @@ class Address:
             parsed = parse_address(full_address)  # Parse address into components
             if parsed:
                 # Copy attributes from the parsed object onto this instance
-                for attr in ("street", "number", "door_extension", "postal_code", "city", "full_address", "address_dataforsyningen_lookup", "x", "y", "street_code", "municipality_code"):
+                for attr in ("street", "number", "door_extension", "postal_code", "city", "full_address", "address_dataforsyningen_lookup", "x", "y", "street_code", "municipality_code", "is_protected"):
                     if hasattr(parsed, attr):
                         setattr(self, attr, getattr(parsed, attr))
             else:
