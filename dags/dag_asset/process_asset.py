@@ -108,5 +108,5 @@ def task_upload_assets_to_topdesk() -> None:
             csv_bytes=csv_bytes,
         ):
             raise AirflowFailException(
-                f"Failed to upload to TopdDesk using connection {hook.http_conn_id}"
+                f"Failed to upload to Topdesk using connection {hook.http_conn_id}"
             )
