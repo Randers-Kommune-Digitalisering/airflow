@@ -56,8 +56,8 @@ def check_and_update_district() -> None:
         # Parse journal note to dict
         try:
             entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
-        except Exception as e:
-            logger.error(f"Error parsing journal data for navnid {entry.navnid}: {e}")
+        except Exception:
+            logger.exception(f"Error parsing journal data for navnid {entry.navnid}")
             skipped_navnids.add(entry.navnid)
             continue
         entry.journal = None  # Clear raw journal text to save space/logging

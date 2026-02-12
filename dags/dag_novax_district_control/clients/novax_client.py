@@ -37,8 +37,8 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
         with engine.connect() as conn:
             result = conn.execute(text(query), params or {})
             return [dict(row) for row in result.mappings().all()]
-    except Exception as e:
-        logger.error(f"Error executing query: {e}")
+    except Exception:
+        logger.exception(f"Error executing query")
         raise
 
 
@@ -328,12 +328,12 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
                             )
 
                         results[navnid] = True
-                    except Exception as e:
-                        logger.error(f"Batch update failed for NAVNID {navnid!r}: {e}")
+                    except Exception:
+                        logger.exception(f"Batch update failed for NAVNID {navnid!r}")
                         results[navnid] = False
 
-        except Exception as e:
-            logger.error(f"Batch commit failed; rolling back whole batch: {e}")
+        except Exception:
+            logger.exception(f"Batch commit failed; rolling back whole batch")
             try:
                 session.rollback()
             except Exception:
