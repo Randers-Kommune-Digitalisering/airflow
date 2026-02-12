@@ -1,50 +1,14 @@
 import datetime
-from airflow.operators.python import get_current_context
+import logging
+
 from airflow.models import DagRun
+from airflow.operators.python import get_current_context
 from airflow.utils import timezone
 from airflow.utils.session import create_session
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunType
-import pendulum
-from sqlalchemy import desc
-import logging
 
 logger = logging.getLogger(__name__)
-FINISHED_STATES = {DagRunState.SUCCESS, DagRunState.FAILED}
-
-
-def _as_local_date(value: datetime.date | datetime.datetime | pendulum.DateTime | None, tz: str) -> datetime.date | None:
-    """
-    Convert a datetime-like value to a timezone-aware date in the given timezone.
-    """
-    if value is None:
-        return None
-    if isinstance(value, datetime.date) and not isinstance(value, datetime.datetime):
-        return value
-    coerced = timezone.coerce_datetime(value)
-    return coerced.in_timezone(tz).date()
-
-
-def _as_local_dt(value: datetime.date | datetime.datetime | pendulum.DateTime | None, tz: str) -> datetime.datetime | None:
-    """
-    Convert a datetime-like value to a timezone-aware datetime in the given timezone.
-    """
-    if value is None:
-        return None
-    coerced = timezone.coerce_datetime(value)
-    return coerced.in_timezone(tz)
-
-
-def _infer_daily_interval_end(logical_date: datetime.date | datetime.datetime | pendulum.DateTime | None, tz: str) -> datetime.datetime | None:
-    """
-    Infer the end of a daily data interval based on the logical date and timezone.
-    """
-    if logical_date is None:
-        return None
-    local = _as_local_dt(logical_date, tz)
-    if local is None:
-        return None
-    return local + datetime.timedelta(days=1)
 
 
 def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
@@ -53,77 +17,42 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
     :return: A tuple of (start_date, end_date) where start is inclusive and end is exclusive.
              Returns None when there is no new interval to process (e.g. start_date >= end_date).
     """
-    # Determine the date range from the current Airflow run.
-    # The processing window is based on full calendar days in the DAG's timezone
-    start_date: datetime.date | None = None
-    end_date: datetime.date | None = None
     ctx = get_current_context()
     dag = ctx["dag"]
     dag_id = dag.dag_id
     dag_tz = getattr(dag, "timezone", None) or timezone.UTC
 
     dag_run = ctx.get("dag_run")
-    current_run_id = dag_run.run_id if dag_run else None
-    current_logical_date = ctx.get("logical_date") or getattr(dag_run, "logical_date", None) or ctx.get("data_interval_start")
-    current_data_interval_end = ctx.get("data_interval_end") or getattr(dag_run, "data_interval_end", None)
+    data_interval_end = ctx.get("data_interval_end") or getattr(dag_run, "data_interval_end", None)
+    if data_interval_end is None:
+        data_interval_end = timezone.now().in_timezone(dag_tz)
+    end_date = timezone.coerce_datetime(data_interval_end).in_timezone(dag_tz).date()
 
-    if current_data_interval_end is None:
-        # Infer for scheduled daily DAGs, otherwise fall back to "now".
-        current_data_interval_end = _infer_daily_interval_end(current_logical_date, dag_tz)
-    if current_data_interval_end is None:
-        current_data_interval_end = timezone.now().in_timezone(dag_tz)
-
-    end_date = _as_local_date(current_data_interval_end, dag_tz)
-
-    # Use the last successful run as the base for start_date.
-    # Note: in some Airflow versions, DagRun.logical_date is a Python-level property,
-    # while execution_date is the actual SQLAlchemy column used for querying.
     with create_session() as session:
-        query = session.query(DagRun).filter(
-            DagRun.dag_id == dag_id,
-            DagRun.state == DagRunState.SUCCESS,
-            DagRun.execution_date.isnot(None),
-            DagRun.run_type == DagRunType.SCHEDULED,
+        prev_success = (
+            session.query(DagRun)
+            .filter(
+                DagRun.dag_id == dag_id,
+                DagRun.state == DagRunState.SUCCESS,
+                DagRun.run_type == DagRunType.SCHEDULED,
+            )
+            .order_by(DagRun.execution_date.desc())
+            .first()
         )
-        if current_run_id is not None:
-            query = query.filter(DagRun.run_id != current_run_id)
-        if current_logical_date is not None:
-            query = query.filter(DagRun.execution_date < timezone.coerce_datetime(current_logical_date))
-        prev_success = query.order_by(desc(DagRun.execution_date)).first()
 
     if prev_success is None:
-        # No previous successful runs; start from DAG start_date
         dag_start = getattr(dag, "start_date", None)
-        start_date = _as_local_date(dag_start, dag_tz)
-        logger.info(
-            "No previous successful runs found for this DAG; starting from DAG start_date %s (DAG tz %s).",
-            start_date,
-            getattr(dag_tz, "name", str(dag_tz)),
-        )
+        if dag_start is None:
+            raise ValueError("DAG has no start_date and no successful run history.")
+        start_date = timezone.coerce_datetime(dag_start).in_timezone(dag_tz).date()
     else:
-        # Use the end of the last successful run as the start date
-        prev_end_dt = getattr(prev_success, "data_interval_end", None) or _infer_daily_interval_end(
-            getattr(prev_success, "execution_date", None),
-            dag_tz,
-        )
-        prev_success_end = _as_local_date(prev_end_dt, dag_tz)
-        logger.info(
-            "Previous successful run %s ended at %s (DAG tz %s).",
-            prev_success.run_id,
-            prev_success_end,
-            getattr(dag_tz, "name", str(dag_tz)),
-        )
-        start_date = prev_success_end
+        prev_end = getattr(prev_success, "data_interval_end", None)
+        if prev_end is None:
+            prev_end = timezone.coerce_datetime(prev_success.execution_date) + datetime.timedelta(days=1)
+        start_date = timezone.coerce_datetime(prev_end).in_timezone(dag_tz).date()
 
-    # Validate date range
-    logger.info(f"Determined date range for processing: start_date={start_date}, end_date={end_date}")
-    if not start_date or not end_date:
-        raise ValueError("Error inferring start_date and end_date from previous runs.")
+    logger.info("Determined date range for processing: start_date=%s, end_date=%s", start_date, end_date)
     if start_date >= end_date:
-        logger.info(
-            "No new data to process: start_date %s is not before end_date %s.",
-            start_date,
-            end_date,
-        )
+        logger.info("No new data to process: start_date %s is not before end_date %s.", start_date, end_date)
         return None
     return start_date, end_date
