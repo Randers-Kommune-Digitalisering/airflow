@@ -13,7 +13,7 @@ def test_parse_journal_data_due_dates_are_dates():
     journal = """ADRESSE: Testvej 1, 8000 Aarhus C
 Tlf.nr.: 12345678
 Gestationsalder
-Uge: 17, Dag: 1 
+Uge: 17, Dag: 1
 Termin: 26.11.2025
 Afsendt: 01-02-2026
 """
