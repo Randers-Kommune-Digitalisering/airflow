@@ -5,11 +5,12 @@ from dag_novax_district_control.novax_utils import Address, parse_address, parse
 from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
+from airflow.models import Variable
 
 logger = logging.getLogger(__name__)
 
 
-DRY_RUN = True  # Set to True to log intended updates without making changes, False to perform updates
+DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"  # Set to True to log intended updates without making changes, False to perform updates
 DEFAULT_MUNICIPALITY_CODE = 730  # Default municipality code to use if not found in Dataforsyning - corresponds to Randers municipality
 
 
