@@ -383,7 +383,6 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             (EMNEBREV LIKE N'%Orientering - Gravid%')
             AND Godkommu.JOURNALDATO >= :from_date
             AND Godkommu.JOURNALDATO < :to_date
-            AND navn.CPR = '1604106TT2'
     """
 
     data = _get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
