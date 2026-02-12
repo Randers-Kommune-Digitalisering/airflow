@@ -5,7 +5,7 @@ import time
 from sqlalchemy.orm import Session
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy import Column, String
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from geoalchemy2 import Geometry
 from shapely import wkb
 from shapely.geometry import Point, multipolygon
