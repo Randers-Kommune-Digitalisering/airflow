@@ -2,6 +2,7 @@ from airflow.hooks.base import BaseHook
 import logging
 import requests
 import time
+from typing import Any
 from sqlalchemy.orm import Session
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy import Column, String
@@ -21,21 +22,44 @@ class DataforsyningClient:
         self.base_url = connection.host
         self.session = requests.Session()
 
-    def _get_with_retry(self, url: str, params: dict, retries: int = 3, delay_seconds: int = 5) -> requests.Response:
+        extra = connection.extra_dejson or {}
+        connect_timeout = extra.get("connect_timeout_seconds")
+        read_timeout = extra.get("read_timeout_seconds")
+
+        self.timeout: tuple[float, float] = (
+            float(connect_timeout) if connect_timeout is not None else 5.0,
+            float(read_timeout) if read_timeout is not None else 30.0,
+        )
+
+    def _get_with_retry(
+        self,
+        url: str,
+        params: dict[str, Any],
+        retries: int = 3,
+        delay_seconds: int = 5,
+        timeout: float | tuple[float, float] | None = None,
+    ) -> requests.Response:
         attempt = 0
         while True:
             try:
-                response = self.session.get(url, params=params)
+                response = self.session.get(url, params=params, timeout=timeout or self.timeout)
                 response.raise_for_status()
                 return response
-            except requests.exceptions.HTTPError:
-                if response.status_code not in [200, 400] and attempt < retries:
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response is not None else None
+                if status_code is not None and status_code not in [200, 400] and attempt < retries:
+                    attempt += 1
+                    time.sleep(delay_seconds)
+                    continue
+                raise
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+                if attempt < retries:
                     attempt += 1
                     time.sleep(delay_seconds)
                     continue
                 raise
 
-    def lookup_address(self, query: str) -> dict:
+    def lookup_address(self, query: str) -> dict | None:
         """
         Connects to Dataforsyning API to lookup (search) address information.
 
@@ -67,7 +91,7 @@ class DataforsyningClient:
             return None
         return results[0] if results and len(results) > 0 else None
 
-    def get_address_info(self, address_id) -> dict:
+    def get_address_info(self, address_id) -> dict | None:
         """
         Connects to Dataforsyning API to get detailed address information by ID.
 
