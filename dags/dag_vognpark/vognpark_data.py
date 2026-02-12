@@ -1,13 +1,15 @@
 import io
 import pandas as pd
 import logging
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+
 VOGNPARK_COLUMNS = [
-    "Level_1", "Level_2", "Level_3", "Level_4", "Level_5", "Level_6",
-    "Art", "Træk", "Drivmiddel", "Reg. nr.", "Mærke", "Model",
-    "Anvendelse", "Stel nr. "
+    "Level1", "Level2", "Level3", "Level4", "Level5", "Level6",
+    "Art", "Træk", "Drivmiddel", "Reg.nr.", "Mærke", "Model",
+    "Anvendelse", "Stelnr."
 ]
 
 
@@ -30,9 +32,13 @@ def read_vognpark_excel_from_sftp(sftp_client, remote_path: str) -> pd.DataFrame
     return df
 
 
-def get_latest_vognpark_excel_path(sftp_client, directory: str = "/Vognpark/") -> str | None:
+def get_latest_vognpark_excel_info(
+    sftp_client,
+    directory: str = "/Vognpark/",
+) -> tuple[str, datetime] | None:
     """
-    Finds the latest Excel file in the given SFTP directory and returns its path.
+    Returns (latest_file_path, modified_at_utc) for the newest .xlsx in directory.
+    modified_at is based on SFTP st_mtime.
     """
     sftp = sftp_client.get_conn()
     files = sftp.listdir_attr(directory)
@@ -43,4 +49,7 @@ def get_latest_vognpark_excel_path(sftp_client, directory: str = "/Vognpark/") -
         return None
 
     latest = max(excel_files, key=lambda f: f.st_mtime)
-    return directory.rstrip("/") + "/" + latest.filename
+    latest_path = directory.rstrip("/") + "/" + latest.filename
+    modified_at_utc = datetime.fromtimestamp(latest.st_mtime, tz=timezone.utc)
+
+    return latest_path, modified_at_utc

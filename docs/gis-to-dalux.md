@@ -22,12 +22,27 @@ Koden består af et DAG-job, der udfører følgende trin:
 :key: | **Airflow Connections**
 
 **Postgres DB:**
-- **`gis_db`**  
+- **`gis_db`**
+
+  **Conn Type**: Postgres
+
   Bruges som `Connection id` i Airflow til at hente host, database, bruger, adgangskode og port til Postgres DB'en
 
-**Jobindsats API:**
-- **`dalux_api`**  
+  *Required felter*:
+  - Connection id, Host, Database, Login, Password and Port(5432)
+
+**Dalux FM API:**
+- **`dalux_api`**
+
+  **Conn Type**: HTTP
+
   Bruges som `Connection id` i Airflow til at hente host og API-nøgle til Dalux FM API'et
+
+  *Required felter*:
+  - Connection id, Host, port og Extra(Skal indeholde api_key)
+  - f.eks: {
+    "api_key": x,
+  }
 
 ## Schedule
 
