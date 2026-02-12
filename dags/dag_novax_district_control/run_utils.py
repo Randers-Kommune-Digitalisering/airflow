@@ -36,7 +36,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
                 DagRun.state == DagRunState.SUCCESS,
                 DagRun.run_type == DagRunType.SCHEDULED,
             )
-            .order_by(DagRun.execution_date.desc())
+            .order_by(DagRun.data_interval_end.desc())
             .first()
         )
 
@@ -48,7 +48,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
     else:
         prev_end = getattr(prev_success, "data_interval_end", None)
         if prev_end is None:
-            prev_end = timezone.coerce_datetime(prev_success.execution_date) + datetime.timedelta(days=1)
+            prev_end = timezone.coerce_datetime(prev_success.data_interval_end) + datetime.timedelta(days=1)
         start_date = timezone.coerce_datetime(prev_end).in_timezone(dag_tz).date()
 
     logger.info("Determined date range for processing: start_date=%s, end_date=%s", start_date, end_date)
