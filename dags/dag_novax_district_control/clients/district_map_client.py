@@ -125,7 +125,7 @@ class District(Base):
     wkb_geometry = Column(Geometry(geometry_type='MULTIPOLYGON', srid=25832))
 
 
-class DistrictItem():
+class DistrictItem:
     def __init__(self, name: str, geom: multipolygon.MultiPolygon):
         self.name = name
         self.geom = geom
