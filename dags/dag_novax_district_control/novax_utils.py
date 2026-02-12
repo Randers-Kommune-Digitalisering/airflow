@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import logging
 import re
 
@@ -65,14 +65,14 @@ class Address:
 
 
 class UserData:
-    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, municipality_code: int | None, tlf_nr: str | None, due_date: datetime | None, timestamp: datetime, journal: str | None = None):
+    def __init__(self, cpr: str, navnid: str, address: Address | None, district: str, municipality_code: int | None, tlf_nr: str | None, due_date: date | None, timestamp: datetime, journal: str | None = None):
         self.cpr: str = cpr
         self.navnid: str = navnid
         self.current_address: Address | None = address
         self.current_district: str = district
         self.current_municipality_code: int | None = municipality_code
         self.current_tlf_nr: str | None = tlf_nr
-        self.current_due_date: datetime | None = due_date
+        self.current_due_date: date | None = due_date
         self.timestamp: datetime = timestamp
         self.journal: str | None = journal
 
@@ -80,7 +80,7 @@ class UserData:
         self.new_district: str | None = None
         self.new_municipality_code: int | None = None  # populated by Dataforsyning lookup
         self.new_tlf_nr: str | None = None
-        self.new_due_date: datetime | None = None
+        self.new_due_date: date | None = None
         self.parsed_journal: dict | None = None
 
 
@@ -131,24 +131,28 @@ def parse_address(address: str) -> Address | None:
     )
 
 
-def calculate_due(gestations_weeks: int, gestations_days: int, dato_str: str | None = None, dato_obj: datetime | None = None) -> datetime:
+def calculate_due(gestations_weeks: int, gestations_days: int, dato_str: str | None = None, dato_obj: date | datetime | None = None) -> date:
     """
     Calculate due date based on gestational age and given date.
 
     :param gestations_weeks: Number of full weeks in gestational age, e.g., 17
     :param gestations_days: Number of days in gestational age, e.g., 1
     :param dato_str: Date as a string in the format 'dd.mm.yyyy', e.g., '26.11.2025'
-    :param dato_obj: Date as a datetime object
+    :param dato_obj: Date as a datetime/date object
     """
-    # Convert dato_str to datetime object
+    # Convert inputs to a date object
     if dato_obj is not None:
-        if not isinstance(dato_obj, datetime):
-            raise TypeError("dato_obj must be a datetime object")
-        dato = dato_obj
+        if isinstance(dato_obj, datetime):
+            dato = dato_obj.date()
+        elif isinstance(dato_obj, date):
+            dato = dato_obj
+        else:
+            raise TypeError("dato_obj must be a datetime or date object")
     elif dato_str is not None:
-        dato = datetime.strptime(dato_str, '%d.%m.%Y')
+        dato = datetime.strptime(dato_str, '%d.%m.%Y').date()
     else:
         raise ValueError("Either dato_str or dato_obj must be provided")
+
     # Total gestational days
     gestations_total_days = gestations_weeks * 7 + gestations_days
     # Normal pregnancy length in days
@@ -156,9 +160,7 @@ def calculate_due(gestations_weeks: int, gestations_days: int, dato_str: str | N
     # Days remaining until due date
     days_until_due = pregnancy_days - gestations_total_days
     # Calculate due date (subtract 1 day to match clinical convention)
-    due_date = dato + timedelta(days=days_until_due - 1)
-
-    return due_date
+    return dato + timedelta(days=days_until_due - 1)
 
 
 def parse_journal_data(journal_string: str, journal_date: datetime | None = None) -> dict:
@@ -185,7 +187,7 @@ def parse_journal_data(journal_string: str, journal_date: datetime | None = None
         journal_string
     )
     termin_str = termin_match.group('date') if termin_match else None
-    termin_date = None
+    termin_date: date | None = None
     if termin_str:
         normalized = re.sub(r'[/-]', '.', termin_str)  # Normalize separators to dots
         parts = normalized.split('.')  # Handle year: 2 or 4 digits
@@ -194,13 +196,13 @@ def parse_journal_data(journal_string: str, journal_date: datetime | None = None
             if len(year) == 2:
                 year = '20' + year
             try:
-                termin_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y')
+                termin_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y').date()
             except ValueError:
                 logger.warning(f"Invalid termin date format in journal: {termin_str}")
 
     # Calculate due date using gestational age and journal date
     dato_str = None
-    dato_obj = None
+    dato_obj: date | datetime | None = None
     if journal_date is not None:
         dato_obj = journal_date
     else:

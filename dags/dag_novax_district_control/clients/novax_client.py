@@ -2,7 +2,7 @@ from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from sqlalchemy import text
 from sqlalchemy.engine import Result
 from sqlalchemy.orm import Session
-from datetime import date
+from datetime import date, datetime
 import logging
 
 from dag_novax_district_control.novax_utils import parse_address, to_int_or_none
@@ -76,6 +76,8 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                     try:
                         with session.begin_nested():
                             due_date = upd.get("due_date")
+                            if isinstance(due_date, datetime):
+                                due_date = due_date.date()
                             new_district = upd.get("new_district")
                             new_address = upd.get("new_address")
                             new_tlf_nr = upd.get("new_tlf_nr")
@@ -400,6 +402,10 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
         entry['parsed_address'] = parsed_address
         entry['timestamp'] = entry['JOURNALDATO'].strftime('%Y-%m-%d %H:%M:%S') if entry.get('JOURNALDATO') else None
 
+        due_date = entry.get('TERMIN')
+        if isinstance(due_date, datetime):
+            due_date = due_date.date()
+
         data_obj = UserData(
             cpr=entry['CPR'],
             navnid=entry['NAVNID'],
@@ -407,7 +413,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             district=entry['DISTRIKT'],
             municipality_code=to_int_or_none(entry.get('KOMMUNE_OPR')),
             tlf_nr=entry['TELEFONNUMMER'],
-            due_date=entry['TERMIN'],
+            due_date=due_date,
             timestamp=entry['JOURNALDATO'],
             journal=entry['NOTE']
         )
