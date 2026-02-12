@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"  # Set to True to log intended updates without making changes, False to perform updates
-DEFAULT_MUNICIPALITY_CODE = 730  # Default municipality code to use if not found in Dataforsyning - corresponds to Randers municipality
+DEFAULT_MUNICIPALITY_CODE = int(Variable.get("NOVAX_DEFAULT_MUNICIPALITY_CODE", default_var="730"))  # Default municipality code to use if not found in Dataforsyning - corresponds to Randers municipality
 
 
 def check_and_update_district() -> None:
@@ -73,7 +73,8 @@ def check_and_update_district() -> None:
             cpr_address_str = ", ".join([str(p).strip() for p in (std_addr, postnummer) if str(p).strip()])
             try:
                 parsed_new_address = parse_address(cpr_address_str)
-                parsed_new_address.is_protected = cpr_info['adressebeskyttelse'].get('beskyttet', False) is True  # Check if address is protected
+                adressebeskyttelse = cpr_info.get('adressebeskyttelse', {})
+                parsed_new_address.is_protected = adressebeskyttelse.get('beskyttet', False) is True  # Check if address is protected
             except Exception as e:
                 logger.warning(f"Error parsing CPR address for navnid {entry.navnid}: {e}")
 

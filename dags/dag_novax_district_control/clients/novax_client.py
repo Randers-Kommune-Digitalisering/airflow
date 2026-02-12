@@ -182,8 +182,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                 )
 
                                 # Insert new address record if not already present
-                                if new_municipality_code is None:
-                                    from dag_novax_district_control.check_and_update_district import DEFAULT_MUNICIPALITY_CODE
+                                from dag_novax_district_control.check_and_update_district import DEFAULT_MUNICIPALITY_CODE
                                 _exec(
                                     session,
                                     """
