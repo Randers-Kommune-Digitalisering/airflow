@@ -51,12 +51,8 @@ def check_and_update_district() -> None:
     skipped_navnids: set[str] = set()
     points_by_navnid: dict[str, tuple[float, float]] = {}
     address_by_navnid: dict[str, Address] = {}
-    for entry in entries:
-        if entry.journal is None:
-            logger.warning(f"No journal data for navnid: {entry.navnid}, skipping entry.")
-            skipped_navnids.add(entry.navnid)
-            continue
 
+    for entry in entries:
         # Parse journal note to dict
         try:
             entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
@@ -152,7 +148,7 @@ def check_and_update_district() -> None:
     update_requests_by_navnid: dict[str, dict] = {}
     for entry in entries:
         if entry.navnid in skipped_navnids:
-            continue
+            continue  # Skip entries with unparsable journal data
         detected_changes: list[str] = []
 
         # Check if district has changed
@@ -202,7 +198,7 @@ def check_and_update_district() -> None:
     # Return if DRY_RUN is enabled - log what would be updated without making changes
     if DRY_RUN:
         attempted_updates = len(update_requests_by_navnid)
-        logger.info(f"DRY_RUN enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped={len(skipped_navnids)} due to missing journal) for {start_date} to {end_date}.")
+        logger.info(f"DRY_RUN enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped {len(skipped_navnids)} due to unparsable journal data) for {start_date} to {end_date}.")
         return
 
     # Perform single Novax batch update
@@ -215,7 +211,7 @@ def check_and_update_district() -> None:
     entry_status = []
     for entry in entries:
         if entry.navnid in skipped_navnids:
-            logger.warning(f"Missing journal data for navnid {entry.navnid} (no update attempted).")
+            logger.warning(f"Skipped update for navnid {entry.navnid} (unparsable journal data).")
             continue
 
         update_success = bool(update_results.get(entry.navnid))
@@ -227,7 +223,7 @@ def check_and_update_district() -> None:
 
     # Log final status
     if skipped_navnids:
-        logger.info(f"Skipped {len(skipped_navnids)} entr{'y' if len(skipped_navnids) == 1 else 'ies'} due to missing journal data.")
+        logger.info(f"Skipped {len(skipped_navnids)} entr{'y' if len(skipped_navnids) == 1 else 'ies'} due to unparsable journal data.")
 
     # If nothing was attempted, treat the run as successful.
     success = all(entry_status) if entry_status else True

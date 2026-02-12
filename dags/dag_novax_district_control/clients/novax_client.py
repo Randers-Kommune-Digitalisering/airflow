@@ -413,5 +413,10 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             timestamp=entry['JOURNALDATO'],
             journal=entry['NOTE']
         )
+
+        if data_obj.journal is None:
+            logger.error(f"Missing NOTE for NAVNID {data_obj.navnid} with CPR {data_obj.cpr} at {data_obj.timestamp}")
+            continue
+
         userdata_list.append(data_obj)
     return userdata_list

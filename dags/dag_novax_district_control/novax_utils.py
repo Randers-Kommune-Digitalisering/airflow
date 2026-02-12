@@ -130,9 +130,6 @@ def parse_address(address: str) -> Address | None:
         city=city_name if city_name else None
     )
 
-# Test
-# print(vars(parse_address("Regimentvej 16F, 3. tv, 8920 Randers NV")))
-
 
 def calculate_due(gestations_weeks: int, gestations_days: int, dato_str: str | None = None, dato_obj: datetime | None = None) -> datetime:
     """
