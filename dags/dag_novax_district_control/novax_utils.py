@@ -183,7 +183,7 @@ def parse_journal_data(journal_string: str, journal_date: datetime | None = None
     gest_day = int(gest_match.group(2)) if gest_match else None
 
     termin_match = re.search(
-        r'(?:T(?:ermin)?\s*:?\s*)(?P<date>(\d{1,2}[./]\d{1,2}[./-]\d{2,4}))',
+        r'(?:T(?:ermin)?\s*:?\s*)(?P<date>(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}))',
         journal_string
     )
     termin_str = termin_match.group('date') if termin_match else None
