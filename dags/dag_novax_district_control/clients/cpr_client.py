@@ -10,7 +10,7 @@ from utils.token_provider import BearerAuth
 logger = logging.getLogger(__name__)
 
 
-class CPRClient():
+class CPRClient:
     def __init__(self):
         cpr_hook = BaseHook.get_connection('cpr_replica_prod')
         cpr_session = requests.Session()
