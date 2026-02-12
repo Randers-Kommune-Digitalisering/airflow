@@ -39,7 +39,7 @@ def check_and_update_district() -> None:
         logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
         return
 
-    # Filter out dublicates based on (navnid, timestamp) - keep latest entry per navnid
+    # Filter out duplicates based on (navnid, timestamp) - keep latest entry per navnid
     latest_entries_by_navnid: dict[str, any] = {}
     for entry in raw_entries:
         existing = latest_entries_by_navnid.get(entry.navnid)
