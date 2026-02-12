@@ -36,7 +36,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
                 DagRun.state == DagRunState.SUCCESS,
                 DagRun.run_type == DagRunType.SCHEDULED,
             )
-            .order_by(DagRun.execution_date.desc())
+            .order_by(DagRun.data_interval_end.desc(), DagRun.execution_date.desc())
             .first()
         )
 
