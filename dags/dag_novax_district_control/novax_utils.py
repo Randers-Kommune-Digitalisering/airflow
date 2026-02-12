@@ -77,6 +77,7 @@ class UserData:
         self.journal: str | None = journal
 
         self.new_address: Address | None = None
+        self.new_protected_address: bool | None = None
         self.new_district: str | None = None
         self.new_municipality_code: int | None = None  # populated by Dataforsyning lookup
         self.new_tlf_nr: str | None = None

@@ -92,16 +92,20 @@ def check_and_update_district() -> None:
             except Exception as e:
                 logger.warning(f"Error parsing journal address for navnid {entry.navnid}: {e}")
 
-        # Check if address has changed
+        # Check if address has changed (excluding protection flag)
         if parsed_new_address:
             if (
                 not entry.current_address or
                 entry.current_address.street != parsed_new_address.street or
                 entry.current_address.number != parsed_new_address.number or
-                entry.current_address.postal_code != parsed_new_address.postal_code or
-                entry.current_address.is_protected != parsed_new_address.is_protected
+                entry.current_address.postal_code != parsed_new_address.postal_code
             ):
                 entry.new_address = parsed_new_address
+
+            # If only the protection status has changed, track that separately to avoid unnecessary address updates
+            if entry.current_address is not None and entry.new_address is None:
+                if entry.current_address.is_protected != parsed_new_address.is_protected:
+                    entry.new_protected_address = parsed_new_address.is_protected
 
         # Look up address details for district info + vejkode in Dataforsyning
         address_to_lookup = entry.new_address if entry.new_address is not None else entry.current_address
@@ -169,6 +173,8 @@ def check_and_update_district() -> None:
         # Log detected changes
         if entry.new_address is not None:
             detected_changes.append("address" + (" (protected)" if entry.new_address.is_protected else ""))
+        if entry.new_protected_address is not None and entry.new_address is None:
+            detected_changes.append("protected address")
         if entry.new_district is not None and entry.new_district != entry.current_district:
             detected_changes.append("district")
         if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:
@@ -190,6 +196,7 @@ def check_and_update_district() -> None:
             "due_date": entry.new_due_date,
             "new_district": entry.new_district,
             "new_address": entry.new_address,
+            "new_protected_address": entry.new_protected_address,
             "new_tlf_nr": entry.new_tlf_nr,
             "new_municipality_code": entry.new_municipality_code
         }

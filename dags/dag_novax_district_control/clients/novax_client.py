@@ -38,7 +38,7 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
             result = conn.execute(text(query), params or {})
             return [dict(row) for row in result.mappings().all()]
     except Exception:
-        logger.exception(f"Error executing query")
+        logger.exception("Error executing query")
         raise
 
 
@@ -54,6 +54,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
       - due_date: date (optional)
       - new_district: string (optional)
       - new_address: Address (optional)
+            - new_protected_address: bool (optional)
       - new_tlf_nr: string (optional)
       - new_municipality_code: int (optional)
 
@@ -81,6 +82,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
                                 due_date = due_date.date()
                             new_district = upd.get("new_district")
                             new_address = upd.get("new_address")
+                            new_protected_address = upd.get("new_protected_address")
                             new_tlf_nr = upd.get("new_tlf_nr")
                             new_municipality_code = upd.get("new_municipality_code")
 
@@ -239,6 +241,20 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
                                     {"navnid": navnid, "protected_address": 1 if new_address.is_protected else 0},
                                 )
 
+                            # Update protected-address flag without touching address history
+                            if new_protected_address is not None and new_address is None:
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE NAVNDETALJER
+                                    SET BESKYTTETADRESSE = :protected_address,
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
+                                    WHERE NAVNID = :navnid
+                                    """,
+                                    {"navnid": navnid, "protected_address": 1 if new_protected_address else 0},
+                                )
+
                             if new_tlf_nr is not None:
                                 # Make the provided number primary and demote any existing primary number
                                 _exec(
@@ -333,7 +349,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
                         results[navnid] = False
 
         except Exception:
-            logger.exception(f"Batch commit failed; rolling back whole batch")
+            logger.exception("Batch commit failed; rolling back whole batch")
             try:
                 session.rollback()
             except Exception:
