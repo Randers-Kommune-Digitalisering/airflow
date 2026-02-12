@@ -4,6 +4,7 @@ from sqlalchemy.engine import Result
 from sqlalchemy.orm import Session
 from datetime import date, datetime
 import logging
+from typing import Any
 
 from dag_novax_district_control.novax_utils import parse_address, to_int_or_none
 from dag_novax_district_control.novax_utils import UserData
@@ -41,7 +42,7 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
         raise
 
 
-def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, bool]:
+def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, bool]:
     """Batch-update many NAVNID records using a single SQLAlchemy Session.
 
     This keeps 1 connection open for the whole batch and performs a single outer
