@@ -1,5 +1,6 @@
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from sqlalchemy import text
+from sqlalchemy.engine import Result
 from sqlalchemy.orm import Session
 from datetime import date
 import logging
@@ -60,8 +61,8 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
     engine = _get_sqlalchemy_engine()
     results: dict[str, bool] = {}
 
-    def _exec(session: Session, query: str, params: dict | None = None) -> None:
-        session.execute(text(query), params or {})
+    def _exec(session: Session, query: str, params: dict | None = None) -> Result:
+        return session.execute(text(query), params or {})
 
     with Session(engine) as session:
         try:
