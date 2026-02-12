@@ -35,7 +35,7 @@ Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfø
 Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, udfører batch-opdateringen altid disse opdateringer pr. patient:
 
 - Patienten tildeles altid til **“Gravid til fordeling”** ved at sætte `AnsvarsShpl = 'FIKTIV'` i Novax
-- Mor/BIOMOR for gravid-personen sættes altid til aktiv (`AKTIV = 1`) i Novax
+- Patienten sættes altid til aktiv (`AKTIV = 1`) i Novax
 
 **OBS:** Perioden for dataudtræk bestemmes automatisk ud fra sidste succesfulde scheduled run og det aktuelle runs data-interval (DAG'ens timezone). Intervaller behandles som hele dage, hvor start er inklusiv og slut er eksklusiv.
 

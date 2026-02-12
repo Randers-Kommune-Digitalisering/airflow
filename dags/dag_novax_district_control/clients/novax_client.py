@@ -316,8 +316,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                 {"navnid": navnid},
                             )
 
-                            # Always set mother of pregnant person to active
-                            # To do so, first get ID of mother from NAVNDETALJER, then set AKTIV = 1 in navn for that ID
+                            # Always set new pregnancy to active
                             _exec(
                                 session,
                                 """
@@ -325,12 +324,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                 SET AKTIV = 1,
                                     TS_UPDD = CAST(GETDATE() AS date),
                                     TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
-                                WHERE ID = (
-                                    SELECT TOP 1 BIOMOR
-                                    FROM FAMILIE
-                                    WHERE NAVNID = :navnid
-                                    ORDER BY TS_UPDD DESC
-                                )
+                                WHERE ID = :navnid
                                 """,
                                 {"navnid": navnid},
                             )
