@@ -6,6 +6,7 @@ from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
 from airflow.models import Variable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ def check_and_update_district() -> None:
         return
 
     # Filter out duplicates based on (navnid, timestamp) - keep latest entry per navnid
-    latest_entries_by_navnid: dict[str, any] = {}
+    latest_entries_by_navnid: dict[str, Any] = {}
     for entry in raw_entries:
         existing = latest_entries_by_navnid.get(entry.navnid)
         if existing is None or entry.timestamp > existing.timestamp:
