@@ -63,12 +63,6 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
     def _exec(session: Session, query: str, params: dict | None = None) -> None:
         session.execute(text(query), params or {})
 
-    def _exec_with_rowcount(
-        session: Session, query: str, params: dict | None = None
-    ) -> int:
-        result = session.execute(text(query), params or {})
-        return int(getattr(result, "rowcount", 0) or 0)
-
     with Session(engine) as session:
         try:
             with session.begin():
@@ -244,7 +238,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     )
 
                             if new_tlf_nr is not None:
-                                # Make the provided number primary and demote all others
+                                # Make the provided number primary and demote any existing primary number
                                 _exec(
                                     session,
                                     """
@@ -254,11 +248,12 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                         TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
                                     WHERE NAVNID = :navnid
                                       AND TELEFONNUMMER <> :new_tlf_nr
+                                      AND PRIMAER = 1
                                     """,
                                     {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
                                 )
 
-                                updated_rows = _exec_with_rowcount(
+                                res = _exec(
                                     session,
                                     """
                                     UPDATE TELEFON
@@ -271,6 +266,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     {"navnid": navnid, "new_tlf_nr": new_tlf_nr},
                                 )
 
+                                updated_rows = res.rowcount if res is not None else 0
                                 if updated_rows == 0:
                                     _exec(
                                         session,
@@ -387,6 +383,7 @@ def get_pregnancy_journals(from_date: date, to_date: date) -> list[UserData]:
             (EMNEBREV LIKE N'%Orientering - Gravid%')
             AND Godkommu.JOURNALDATO >= :from_date
             AND Godkommu.JOURNALDATO < :to_date
+            AND navn.CPR = '1604106TT2'
     """
 
     data = _get_sql_data(query, params={"from_date": from_date, "to_date": to_date})
