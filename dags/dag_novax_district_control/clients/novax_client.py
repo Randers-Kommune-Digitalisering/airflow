@@ -223,19 +223,18 @@ def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, boo
                                     },
                                 )
 
-                                # Set BESKYTTETADRESSE if CPR lookup indicates protected address
-                                if new_address.is_protected:
-                                    _exec(
-                                        session,
-                                        """
-                                        UPDATE NAVNDETALJER
-                                        SET BESKYTTETADRESSE = 1,
-                                            TS_UPDD = CAST(GETDATE() AS date),
-                                            TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
-                                        WHERE NAVNID = :navnid
-                                        """,
-                                        {"navnid": navnid},
-                                    )
+                                # Set BESKYTTETADRESSE to match CPR protected address flag
+                                _exec(
+                                    session,
+                                    """
+                                    UPDATE NAVNDETALJER
+                                    SET BESKYTTETADRESSE = :protected_address,
+                                        TS_UPDD = CAST(GETDATE() AS date),
+                                        TS_UPDT = CONVERT(varchar(5),GETDATE(), 108)
+                                    WHERE NAVNID = :navnid
+                                    """,
+                                    {"navnid": navnid, "protected_address": 1 if new_address.is_protected else 0},
+                                )
 
                             if new_tlf_nr is not None:
                                 # Make the provided number primary and demote any existing primary number
