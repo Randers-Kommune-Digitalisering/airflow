@@ -38,7 +38,7 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
             return [dict(row) for row in result.mappings().all()]
     except Exception as e:
         logger.error(f"Error executing query: {e}")
-        raise e
+        raise
 
 
 def update_novax_userdatas_batch(updates: list[dict[str, any]]) -> dict[str, bool]:
