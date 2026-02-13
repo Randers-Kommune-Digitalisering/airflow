@@ -11,7 +11,7 @@ dag_args["retries"] = 1
 with DAG(
     dag_id="dag_zylinc",
     start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="0 0 * * *",
+    schedule="0 0 * * *",
     catchup=False,
     default_args=dag_args,
     description="Fetch Zylinc data from Elasticsearch and load it into Postgres",
