@@ -741,7 +741,7 @@ def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         result = conn.execute(text(sql_command)).mappings().all()
 
     if not result:
-        logger.error("No data found in Computer/User/Department tables")
+        raise ValueError("No data found in Computer/User/Department tables")
 
     df = pd.DataFrame(result)
 
