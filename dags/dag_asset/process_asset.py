@@ -9,6 +9,7 @@ from airflow.exceptions import AirflowFailException
 
 from dag_asset.asset_data import (
     create_asset_tables,
+    export_assets_from_db,
     insert_department_ean_from_delta,
     insert_departments_data,
     insert_users_data,
@@ -92,8 +93,20 @@ def task_insert_device_license_and_historical_data() -> None:
 
 
 def task_upload_assets_to_topdesk() -> None:
-    asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
-    topdesk_http_hook = HttpHook(http_conn_id="topdesk_api_test")
+    asset_engine = PostgresHook(
+        postgres_conn_id="asset_db"
+    ).get_sqlalchemy_engine()
 
-    if not upload_assets_to_topdesk(asset_engine=asset_engine, http_hook=topdesk_http_hook):
-        raise AirflowFailException("Failed to upload assets to TopDesk")
+    csv_bytes = export_assets_from_db(asset_engine=asset_engine)
+
+    topdesk_test_hook = HttpHook(http_conn_id="topdesk_api_test")
+    topdesk_prod_hook = HttpHook(http_conn_id="topdesk_api_prod")
+
+    for hook in [topdesk_test_hook, topdesk_prod_hook]:
+        if not upload_assets_to_topdesk(
+            http_hook=hook,
+            csv_bytes=csv_bytes,
+        ):
+            raise AirflowFailException(
+                f"Failed to upload to Topdesk using connection {hook.http_conn_id}"
+            )
