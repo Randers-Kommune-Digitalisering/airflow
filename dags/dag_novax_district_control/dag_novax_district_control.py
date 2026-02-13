@@ -12,7 +12,7 @@ dag_args["retries"] = 0
 with DAG(
     dag_id="dag_novax_district_control",
     start_date=datetime(year=2026, month=1, day=1, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="15 1 * * *",
+    schedule="15 1 * * *",
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
