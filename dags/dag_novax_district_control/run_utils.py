@@ -25,7 +25,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
     dag_run = ctx.get("dag_run")
     data_interval_end = ctx.get("data_interval_end") or getattr(dag_run, "data_interval_end", None)
     if data_interval_end is None:
-        data_interval_end = timezone.now().in_timezone(dag_tz)
+        data_interval_end = timezone.utcnow().astimezone(dag_tz)
     end_date = timezone.coerce_datetime(data_interval_end).in_timezone(dag_tz).date()
 
     with create_session() as session:
