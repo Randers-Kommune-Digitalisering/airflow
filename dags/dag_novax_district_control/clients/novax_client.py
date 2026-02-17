@@ -42,7 +42,7 @@ def _get_sql_data(query: str, params: dict | None = None) -> list[dict]:
         raise
 
 
-def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, bool]:
+def update_novax_userdatas_batch(updates: list[dict[str, Any]], default_municipality_code: int) -> dict[str, bool]:
     """Batch-update many NAVNID records using a single SQLAlchemy Session.
 
     This keeps 1 connection open for the whole batch and performs a single outer
@@ -187,7 +187,6 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
                                 )
 
                                 # Insert new address record if not already present
-                                from dag_novax_district_control.check_and_update_district import DEFAULT_MUNICIPALITY_CODE
                                 _exec(
                                     session,
                                     """
@@ -224,7 +223,7 @@ def update_novax_userdatas_batch(updates: list[dict[str, Any]]) -> dict[str, boo
                                         "nr_lt_etage": (
                                             str((new_address.number or "") + " " + (new_address.door_extension or "")).strip()
                                         ),
-                                        "kommunekode": new_municipality_code or DEFAULT_MUNICIPALITY_CODE,
+                                        "kommunekode": new_municipality_code or default_municipality_code,
                                     },
                                 )
 

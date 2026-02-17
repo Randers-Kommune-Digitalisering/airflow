@@ -5,17 +5,12 @@ from dag_novax_district_control.novax_utils import Address, parse_address, parse
 from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
-from airflow.models import Variable
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"  # Set to True to log intended updates without making changes, False to perform updates
-DEFAULT_MUNICIPALITY_CODE = int(Variable.get("NOVAX_DEFAULT_MUNICIPALITY_CODE", default_var="730"))  # Default municipality code to use if not found in Dataforsyning - corresponds to Randers municipality
-
-
-def check_and_update_district() -> None:
+def check_and_update_district(dry_run: bool, default_municipality_code: int) -> None:
     """
     Retrieves and updates user, address and district information
     for any new patients based on their addresses.
@@ -167,8 +162,8 @@ def check_and_update_district() -> None:
                 logger.warning(f"District not found for navnid: {entry.navnid} at address: {address}")
 
         # Check if new municipality has been set - if not, set to default if current municipality is different from default
-        if entry.new_municipality_code is None and entry.current_municipality_code != DEFAULT_MUNICIPALITY_CODE:
-            entry.new_municipality_code = DEFAULT_MUNICIPALITY_CODE
+        if entry.new_municipality_code is None and entry.current_municipality_code != default_municipality_code:
+            entry.new_municipality_code = default_municipality_code
 
         # Log detected changes
         if entry.new_address is not None:
@@ -205,14 +200,14 @@ def check_and_update_district() -> None:
         update_requests_by_navnid[entry.navnid] = update_payload
 
     # Return if DRY_RUN is enabled - log what would be updated without making changes
-    if DRY_RUN:
+    if dry_run:
         attempted_updates = len(update_requests_by_navnid)
-        logger.info(f"DRY_RUN enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped {len(skipped_navnids)} due to unparsable journal data) for {start_date} to {end_date}.")
+        logger.info(f"Dry run enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped {len(skipped_navnids)} due to unparsable journal data) for {start_date} to {end_date}.")
         return
 
     # Perform single Novax batch update
     if update_requests_by_navnid:
-        update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()))
+        update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()), default_municipality_code)
     else:
         update_results = {}
 
