@@ -417,6 +417,7 @@ def insert_device_license_and_historical_data(
     device_license_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["device_license_file_path"]
     comm2ig_historical_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["comm2ig_historical_file_path"]
     ean_atea_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["ean_atea_file_path"]
+    dustin_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["dustin_file_path"]
 
     with sftp_hook.get_conn() as sftp_client:
         logger.info("Fetching Device License CSV from SFTP...")
@@ -443,6 +444,17 @@ def insert_device_license_and_historical_data(
                 usecols=['Nummer', 'EAN-nr.'],
             )
             df_atea.columns = df_atea.columns.str.strip()
+
+        logger.info("Fetching Dustin historical file from SFTP...")
+        with sftp_client.open(dustin_file, 'rb') as file:
+            df_dustin = pd.read_excel(
+                file,
+                dtype=str,
+                usecols=['Order Date', 'Serial Number', 'Net Sales (LC)', 'EAN Invoice Reference'],
+            )
+            df_dustin.columns = df_dustin.columns.str.strip()
+
+            df_dustin['Order Date'] = pd.to_datetime(df_dustin['Order Date'], errors='coerce')
 
     # Fetch Atea API Data
     atea_data = _fetch_atea_data(http_hook=http_hook)
@@ -515,11 +527,42 @@ def insert_device_license_and_historical_data(
                 computer_obj.kob_ean_nr = ean_nr
                 updated_atea += 1
 
+        updated_dustin = 0
+
+        for _, row in df_dustin.iterrows():
+            serial = row['Serial Number']
+            if pd.isna(serial):
+                continue
+
+            serial_norm = str(serial).lstrip('sS').lower()
+
+            price = row['Net Sales (LC)']
+            order_date = row['Order Date']
+            ean_nr = row.get('EAN Invoice Reference', None)
+
+            if pd.isna(ean_nr) or str(ean_nr).strip().lower() in ['nan', '']:
+                ean_nr = None
+
+            computer_obj = serial_to_computer.get(serial_norm)
+
+            if computer_obj:
+                computer_obj.price = float(str(price).replace(',', '.'))
+
+                if pd.notna(order_date):
+                    computer_obj.order_date = order_date
+                else:
+                    computer_obj.order_date = None
+
+                computer_obj.kob_ean_nr = ean_nr
+
+                updated_dustin += 1
+
         session.commit()
 
         logger.info(f"Device License updated for {updated_device} computers")
         logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
         logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
+        logger.info(f"Dustin historical data updated for {updated_dustin} computers")
 
         return True
 
