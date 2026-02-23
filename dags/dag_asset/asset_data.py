@@ -454,7 +454,7 @@ def insert_device_license_and_historical_data(
             )
             df_dustin.columns = df_dustin.columns.str.strip()
 
-            df_dustin['Order Date'] = pd.to_datetime(df_dustin['Order Date'], errors='coerce')
+        df_dustin['Order Date'] = pd.to_datetime(df_dustin['Order Date'], errors='coerce')
 
     # Fetch Atea API Data
     atea_data = _fetch_atea_data(http_hook=http_hook)
