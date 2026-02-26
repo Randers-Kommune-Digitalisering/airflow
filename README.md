@@ -23,7 +23,7 @@ To avoid big imports imports should be done in the task function, like:
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-def task_my_task(my_var: str) -> :
+def task_my_task(my_var: str):
     from dag_my_dag.my_task import my_task
     return my_task(my_var)
 
