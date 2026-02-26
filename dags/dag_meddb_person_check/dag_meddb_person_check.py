@@ -4,14 +4,10 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
+from dag_meddb_person_check.check_and_update_persons import check_and_update_persons
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
-
-
-def task_check_and_update_persons():
-    from dag_meddb_person_check.check_and_update_persons import check_and_update_persons
-    return check_and_update_persons()
 
 
 with DAG(
@@ -27,5 +23,5 @@ with DAG(
 
     task = PythonOperator(
         task_id="check_and_update_persons_task",
-        python_callable=task_check_and_update_persons
+        python_callable=check_and_update_persons
     )

@@ -1,16 +1,12 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
+
 from utils.config import DEFAULT_DAG_ARGS
+from dag_jobindsats.process_jobindsats import process_jobindsats
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
-
-
-def task_process_jobindsats():
-    from dag_jobindsats.process_jobindsats import process_jobindsats
-    return process_jobindsats()
-
 
 with DAG(
     dag_id="dag_jobindsats",
@@ -24,5 +20,5 @@ with DAG(
 
     run_jobindsats = PythonOperator(
         task_id="process_jobindsats_task",
-        python_callable=task_process_jobindsats
+        python_callable=process_jobindsats
     )

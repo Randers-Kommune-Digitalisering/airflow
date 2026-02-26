@@ -1,16 +1,12 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
+
 from utils.config import DEFAULT_DAG_ARGS
+from dag_gis_to_dalux.process_gis_to_dalux import process_gis_to_dalux
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
-
-
-def task_process_gis_to_dalux():
-    from dag_gis_to_dalux.process_gis_to_dalux import process_gis_to_dalux
-    return process_gis_to_dalux()
-
 
 with DAG(
     dag_id="dag_gis_to_dalux",
@@ -24,5 +20,5 @@ with DAG(
 
     run_prod = PythonOperator(
         task_id="process_gis_to_dalux_task_full",
-        python_callable=task_process_gis_to_dalux,
+        python_callable=process_gis_to_dalux,
     )
