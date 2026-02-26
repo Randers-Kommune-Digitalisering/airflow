@@ -3,10 +3,15 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_sharepoint.process_sharepoint import process_sharepoint_list_items
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
+
+
+def task_process_sharepoint_list_items():
+    from dag_sharepoint.process_sharepoint import process_sharepoint_list_items
+    return process_sharepoint_list_items()
+
 
 with DAG(
     dag_id="dag_sharepoint",
@@ -19,5 +24,5 @@ with DAG(
 ) as dag:
 
     run_sharepoint = PythonOperator(
-        task_id="process_sharepoint_task", python_callable=process_sharepoint_list_items
+        task_id="process_sharepoint_task", python_callable=task_process_sharepoint_list_items
     )

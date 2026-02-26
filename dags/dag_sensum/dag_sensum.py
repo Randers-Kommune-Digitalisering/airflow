@@ -3,10 +3,15 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_sensum.process_sensum import process_sensum
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
+
+
+def task_process_sensum():
+    from dag_sensum.process_sensum import process_sensum
+    return process_sensum()
+
 
 with DAG(
     dag_id="dag_sensum",
@@ -18,5 +23,5 @@ with DAG(
     tags=["sensum", "sftp", "postgres"],
 ) as dag:
     run_sensum = PythonOperator(
-        task_id="process_sensum_task", python_callable=process_sensum
+        task_id="process_sensum_task", python_callable=task_process_sensum
     )

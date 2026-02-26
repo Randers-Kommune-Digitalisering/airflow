@@ -3,10 +3,15 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_vognpark.process_vognpark import process_vognpark
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
+
+
+def task_process_vognpark():
+    from dag_vognpark.process_vognpark import process_vognpark
+    return process_vognpark()
+
 
 with DAG(
     dag_id="dag_vognpark",
@@ -20,5 +25,5 @@ with DAG(
 
     run_vognpark = PythonOperator(
         task_id="process_vognpark_task",
-        python_callable=process_vognpark
+        python_callable=task_process_vognpark
     )
