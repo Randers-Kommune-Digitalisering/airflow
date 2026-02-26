@@ -3,10 +3,15 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_zylinc.process_zylinc import process_zylinc
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
+
+
+def task_process_zylinc():
+    from dag_zylinc.process_zylinc import process_zylinc
+    return process_zylinc()
+
 
 with DAG(
     dag_id="dag_zylinc",
@@ -20,5 +25,5 @@ with DAG(
 
     run_zylinc = PythonOperator(
         task_id="process_zylinc_task",
-        python_callable=process_zylinc
+        python_callable=task_process_zylinc
     )

@@ -7,29 +7,18 @@ from airflow.providers.sftp.hooks.sftp import SFTPHook
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowFailException
 
-from dag_asset.asset_data import (
-    create_asset_tables,
-    export_assets_from_db,
-    insert_department_ean_from_delta,
-    insert_departments_data,
-    insert_users_data,
-    insert_computers_data,
-    insert_atea_data,
-    upload_assets_to_topdesk,
-    insert_device_license_and_historical_data,
-)
-from rkdigi.syncpkg.token_session import ManagedOAuth2Session
-
 logger = logging.getLogger(__name__)
 
 
 def task_create_asset_tables() -> None:
+    from dag_asset.asset_data import create_asset_tables
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
     if not create_asset_tables(db_engine=asset_engine):
         raise AirflowFailException("Failed to create asset tables")
 
 
 def task_insert_departments_data() -> None:
+    from dag_asset.asset_data import insert_departments_data
     capa_cms_engine = MsSqlHook(mssql_conn_id="capa_cms_db").get_sqlalchemy_engine()
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
 
@@ -38,6 +27,8 @@ def task_insert_departments_data() -> None:
 
 
 def task_insert_department_ean_from_delta() -> None:
+    from dag_asset.asset_data import insert_department_ean_from_delta
+    from rkdigi.syncpkg.token_session import ManagedOAuth2Session
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
     delta_hook = BaseHook.get_connection("delta_prod")
 
@@ -56,6 +47,7 @@ def task_insert_department_ean_from_delta() -> None:
 
 
 def task_insert_users_data() -> None:
+    from dag_asset.asset_data import insert_users_data
     capa_cms_engine = MsSqlHook(mssql_conn_id="capa_cms_db").get_sqlalchemy_engine()
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
 
@@ -64,6 +56,7 @@ def task_insert_users_data() -> None:
 
 
 def task_insert_computers_data() -> None:
+    from dag_asset.asset_data import insert_computers_data
     capa_cms_engine = MsSqlHook(mssql_conn_id="capa_cms_db").get_sqlalchemy_engine()
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
 
@@ -72,6 +65,7 @@ def task_insert_computers_data() -> None:
 
 
 def task_insert_atea_data() -> None:
+    from dag_asset.asset_data import insert_atea_data
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
     atea_http_hook = HttpHook(http_conn_id="atea_api")
 
@@ -80,6 +74,7 @@ def task_insert_atea_data() -> None:
 
 
 def task_insert_device_license_and_historical_data() -> None:
+    from dag_asset.asset_data import insert_device_license_and_historical_data
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
     atea_http_hook = HttpHook(http_conn_id="atea_api")
     asset_sftp_hook = SFTPHook(ssh_conn_id="asset_sftp")
@@ -93,6 +88,7 @@ def task_insert_device_license_and_historical_data() -> None:
 
 
 def task_upload_assets_to_topdesk() -> None:
+    from dag_asset.asset_data import export_assets_from_db, upload_assets_to_topdesk
     asset_engine = PostgresHook(
         postgres_conn_id="asset_db"
     ).get_sqlalchemy_engine()
