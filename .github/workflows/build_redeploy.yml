@@ -40,6 +40,14 @@ jobs:
           push: true
           tags: ghcr.io/${{ env.repo }}:${{ github.ref_name }}
 
+      - name: Build and push webserver Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./config/webserver
+          file: ./config/webserver/Dockerfile
+          push: true
+          tags: ghcr.io/${{ env.repo }}-webserver:${{ github.ref_name }}
+
   deploy:
     runs-on: ubuntu-latest
     needs: build-and-publish
@@ -68,8 +76,6 @@ jobs:
   
           yq e -i ".airflow.webserver.podAnnotations.rollme = \"${timestamp}\""   "$file"
           yq e -i ".airflow.scheduler.podAnnotations.rollme = \"${timestamp}\""   "$file"
-          yq e -i ".airflow.triggerer.podAnnotations.rollme = \"${timestamp}\""   "$file"
-          yq e -i ".airflow.workers.podAnnotations.rollme   = \"${timestamp}\""   "$file"
   
       - name: Commit and push
         run: |
