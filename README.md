@@ -25,7 +25,7 @@ from airflow.operators.python import PythonOperator
 
 def task_my_task(my_var: str) -> :
     from dag_my_dag.my_task import my_task
-    return process_zylinc(my_var)
+    return my_task(my_var)
 
 with DAG(
     ...  # DAG Stuff
