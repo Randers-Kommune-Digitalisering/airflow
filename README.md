@@ -15,7 +15,7 @@ Konfiguration for integration med keycloak findes [her](config/webserver/webserv
 - [Connections](https://airflow.apache.org/docs/apache-airflow/2.10.5/howto/connection.html)
 
 ## Dockerfiles / packages and requirements
-Packages needed in DAGs / tasks needs to be added to requiremts.txt and will be installed in Dockerfile. If a package is also needed for webser or scheduler then the requirements.txt and Dockerfile in config/webserver
+Packages needed in DAGs / tasks needs to be added to requirements.txt and will be installed in Dockerfile. If a package is also needed for webserver or scheduler then the requirements.txt and Dockerfile in config/webserver
 
 ## Imports
 To avoid big imports imports should be done in the task function, like:
