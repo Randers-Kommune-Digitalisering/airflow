@@ -18,7 +18,7 @@ from dag_asset.asset_data import (
     upload_assets_to_topdesk,
     insert_device_license_and_historical_data,
 )
-from rkdigi.syncpkg.token_session import ManagedOAuth2Session
+from rkdigi.token_session import ManagedOAuth2Session
 
 logger = logging.getLogger(__name__)
 

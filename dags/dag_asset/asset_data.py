@@ -13,8 +13,7 @@ from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
 from airflow.models import Variable
 from utils.utils import df_to_csv_bytes
-from rkdigi.syncpkg.token_session import ManagedOAuth2Session
-
+from rkdigi.token_session import ManagedOAuth2Session
 
 logger = logging.getLogger(__name__)
 
