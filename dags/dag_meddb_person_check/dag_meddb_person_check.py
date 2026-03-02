@@ -9,6 +9,7 @@ from dag_meddb_person_check.check_and_update_persons import check_and_update_per
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
 
+
 with DAG(
     dag_id="dag_meddb_person_check",
     start_date=datetime(year=2025, month=12, day=16, tz=timezone("Europe/Copenhagen")),
