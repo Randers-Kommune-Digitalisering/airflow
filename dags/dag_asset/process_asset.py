@@ -6,7 +6,6 @@ from airflow.providers.http.hooks.http import HttpHook
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowFailException
-from rkdigi.syncpkg.token_session import ManagedOAuth2Session
 
 from dag_asset.asset_data import (
     create_asset_tables,
