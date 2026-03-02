@@ -19,6 +19,7 @@ from dag_asset.asset_data import (
     export_assets_from_db,
     upload_assets_to_topdesk
 )
+from rkdigi.token_session import ManagedOAuth2Session
 
 logger = logging.getLogger(__name__)
 
