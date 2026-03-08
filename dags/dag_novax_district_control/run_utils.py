@@ -52,7 +52,6 @@ def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
         start_date = timezone.coerce_datetime(prev_end).in_timezone(dag_tz).date()
 
     logger.info("Determined date range for processing: start_date=%s, end_date=%s", start_date, end_date)
-    if start_date >= end_date:
-        logger.info("No new data to process: start_date %s is not before end_date %s.", start_date, end_date)
-        return None
+    if start_date > end_date:
+        raise ValueError(f"Start date {start_date} is after end date {end_date}. No interval to process.")
     return start_date, end_date

@@ -1,25 +1,25 @@
-
 import logging
-from dag_novax_district_control.clients.novax_client import get_pregnancy_journals, update_novax_userdatas_batch
-from dag_novax_district_control.novax_utils import Address, parse_address, parse_journal_data, to_int_or_none
-from dag_novax_district_control.run_utils import determine_date_range
-from dag_novax_district_control.clients.district_map_client import DataforsyningClient, DistrictMapDBClient
+
+from datetime import datetime
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, func
+from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
+
 from dag_novax_district_control.clients.cpr_client import CPRClient
-from typing import Any
+from dag_novax_district_control.clients.district_map_client import DistrictMapDBClient
+from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
+from dag_novax_district_control.novax_utils import parse_journal_data, get_allowed_journal_times
+from dag_novax_district_control.run_utils import determine_date_range
+from dag_novax_district_control.model import Name, Godkommu, Note, Phone, PersonDistrict, Address
 
 logger = logging.getLogger(__name__)
 
 
-def check_and_update_district(dry_run: bool, default_municipality_code: int) -> None:
+def check_and_update_district(dry_run: bool) -> None:
     """
     Retrieves and updates user, address and district information
     for any new patients based on their addresses.
     """
-    # Initialize clients
-    dataforsyning_client = DataforsyningClient()
-    district_db_client = DistrictMapDBClient()
-    cpr_client = CPRClient()
-
     # Determine date range for processing
     # Start date is inclusive, end date is exclusive
     date_range = determine_date_range()
@@ -28,212 +28,225 @@ def check_and_update_district(dry_run: bool, default_municipality_code: int) -> 
         return
     start_date, end_date = date_range
 
-    # Get data from Novax and parse to UserData (+Address) objects
-    logger.info(f"Starting check_and_update_district from {start_date} to {end_date}")
-    raw_entries = get_pregnancy_journals(from_date=start_date, to_date=end_date)
-    if not raw_entries:
-        logger.info(f"No data found for the period from {start_date} to {end_date}. Exiting.")
-        return
+    # Initialize clients
+    dataforsyning_client = DataforsyningClient()
+    district_db_client = DistrictMapDBClient()
+    cpr_client = CPRClient()
 
-    # Filter out duplicates based on (navnid, timestamp) - keep latest entry per navnid
-    latest_entries_by_navnid: dict[str, Any] = {}
-    for entry in raw_entries:
-        existing = latest_entries_by_navnid.get(entry.navnid)
-        if existing is None or entry.timestamp > existing.timestamp:
-            latest_entries_by_navnid[entry.navnid] = entry
-    entries = list(latest_entries_by_navnid.values())
+    # Novax session
+    hook = MsSqlHook(mssql_conn_id="novax_sql")
+    engine = hook.get_sqlalchemy_engine()
 
-    # Process each UserData entry
-    skipped_navnids: set[str] = set()
-    points_by_navnid: dict[str, tuple[float, float]] = {}
-    address_by_navnid: dict[str, Address] = {}
+    with Session(engine) as session:
+        results = (
+            session.query(Name, Godkommu, Note)
+            .join(Godkommu, Godkommu.NAVNID == Name.ID)
+            .outerjoin(
+                Note,
+                and_(
+                    Note.NAVNID == Godkommu.NAVNID,
+                    Note.DATO == Godkommu.JOURNALDATO,
+                    Note.NOTE.like('%Orientering - Gravid%')
+                )
+            )
+            .filter(
+                Godkommu.JOURNALDATO >= start_date,
+                Godkommu.JOURNALDATO <= end_date,
+                Godkommu.EMNEBREV.like('%Orientering - Gravid%')
+            )
+            .order_by(Godkommu.NAVNID, Godkommu.JOURNALDATO.desc(), func.trim(Godkommu.JOURNALTID).desc())
+            .all()
+        )
 
-    for entry in entries:
-        # Parse journal note to dict
-        try:
-            entry.parsed_journal = parse_journal_data(entry.journal, journal_date=entry.timestamp)
-        except Exception:
-            logger.exception(f"Error parsing journal data for navnid {entry.navnid}")
-            skipped_navnids.add(entry.navnid)
-            continue
-        entry.journal = None  # Clear raw journal text to save space/logging
+        # Set journal to Name objects
+        for name_obj, godkommu_obj, note_obj in results:
+            assigned = False
+            if note_obj and godkommu_obj.JOURNALTID:
+                allowed_times = get_allowed_journal_times(godkommu_obj.JOURNALTID)
+                note_time = note_obj.TIDSPUNKT.strip()
+                if note_time in allowed_times:
+                    name_obj.date = note_obj.DATO
+                    name_obj.journal = parse_journal_data(note_obj.NOTE)
+                    assigned = True
 
-        # Look up current address from CPR
-        cpr_info = cpr_client.lookup_address(entry.cpr)
+            if not assigned:
+                raise ValueError(f"No pregnancy note found for Name ID {name_obj.ID}")
+        entries = [name_obj for name_obj, _, _ in results]
 
-        parsed_new_address = None
-        if cpr_info and cpr_info.get('aktuelAdresse'):
-            # Try CPR address first
-            std_addr = cpr_info['aktuelAdresse'].get('standardadresse', '')
-            postnummer = cpr_info['aktuelAdresse'].get('postnummer', '')
-            cpr_address_str = ", ".join([str(p).strip() for p in (std_addr, postnummer) if str(p).strip()])
-            try:
-                parsed_new_address = parse_address(cpr_address_str)
-                adressebeskyttelse = cpr_info.get('adressebeskyttelse', {})
-                parsed_new_address.is_protected = adressebeskyttelse.get('beskyttet', False) is True  # Check if address is protected
-            except Exception as e:
-                logger.warning(f"Error parsing CPR address for navnid {entry.navnid}: {e}")
+        logger.info(f"Processing {len(entries)} entries for date range {start_date} to {end_date}")
 
-            # Fallback to journal address if CPR address is present but unparsable
-            if parsed_new_address is None:
-                logger.warning(f"CPR address present but could not be parsed for navnid: {entry.navnid}, using journal data if available.")
+        for entry in entries:
+            current_due_date = entry.details.TERMIN.date()
+            journal_due_date = entry.journal.get('due_date')
+            calculated_due_date = entry.journal.get('calculated_due_date')
+            new_due_date = None
+            if journal_due_date and journal_due_date != current_due_date:
+                new_due_date = journal_due_date
+            elif calculated_due_date and current_due_date == datetime(1753, 1, 1):
+                new_due_date = calculated_due_date
+
+            is_due_date_changed = False
+            if new_due_date:
+                entry.details.TERMIN = new_due_date
+                is_due_date_changed = True
+                logger.info(f"Updated due date for Name ID {entry.ID} from {current_due_date} to {new_due_date}")
+
+            # phone number
+            journal_phone = entry.journal.get('phone')
+            if journal_phone:
+                is_phone_already_set = any(
+                    p.TELEFONNUMMER == journal_phone and getattr(p, "PRIMAER", 0) == 1
+                    for p in entry.phones
+                )
+                if not is_phone_already_set:
+                    secondary_phone = next(
+                        (p for p in entry.phones if p.TELEFONNUMMER == journal_phone and getattr(p, "PRIMAER", 0) == 0),
+                        None
+                    )
+                    if secondary_phone:
+                        for p in entry.phones:
+                            if p.PRIMAER == 1:
+                                p.PRIMAER = 0
+                                p.TS_UPDD = datetime.now()
+                                p.TS_UPDT = datetime.now().strftime("%H:%M")
+                        secondary_phone.PRIMAER = 1
+                        secondary_phone.TS_UPDD = datetime.now()
+                        secondary_phone.TS_UPDT = datetime.now().strftime("%H:%M")
+                        logger.info(f"Updated phone number for Name ID {entry.ID} to {journal_phone} by setting existing secondary phone as primary")
+                    else:
+                        for p in entry.phones:
+                            if p.PRIMAER == 1:
+                                p.PRIMAER = 0
+                                p.TS_UPDD = datetime.now()
+                                p.TS_UPDT = datetime.now().strftime("%H:%M")
+                        new_phone = Phone(
+                            NAVNID=entry.ID,
+                            TELEFONNUMMER=journal_phone,
+                            PRIMAER=1,
+                            TS_DATE=datetime.now(),
+                            TS_TIME=datetime.now().strftime("%H:%M"),
+                            TS_UPDD=datetime.now(),
+                            TS_UPDT=datetime.now().strftime("%H:%M")
+                        )
+                        entry.phones.append(new_phone)
+                        logger.info(f"Added new phone number for Name ID {entry.ID}: {journal_phone}")
+
+            cpr_info = cpr_client.get_address_uuid_and_protected_status(entry.CPR)
+
+            has_changed_protected_status = False
+            if cpr_info['is_protected_address'] != bool(entry.details.BESKYTTETADRESSE):  # small int value in DB
+                entry.details.BESKYTTETADRESSE = int(cpr_info['is_protected_address'])
+                has_changed_protected_status = True
+                logger.info(f"Updated protected address status for Name ID {entry.ID} to {cpr_info['is_protected_address']}")
+
+            address_info = dataforsyning_client.get_address_by_id(cpr_info['address_uuid'])
+
+            is_new_address_set = None
+            if address_info['full_address'].strip() != entry.ADRESSE.strip():
+                is_new_address_set = True
+                entry.ADRESSE = address_info['full_address'].strip()
+                logger.info(f"Updated address for Name ID {entry.ID}")
+
+                has_valid_address = any(
+                    a.NR_LT_ETAGE.strip() == address_info['number_floor'].strip() and
+                    a.VEJKODE == address_info['street_code'] and
+                    a.STEDNAVN == address_info['town_name'] and
+                    a.POSTNR == address_info['postal_code'] and
+                    a.KOMMUNEKODE == address_info['municipality_code'] and
+                    a.DATO_FRA.date() <= entry.date and
+                    (
+                        a.DATO_TIL.date() == datetime(1753, 1, 1) or
+                        a.DATO_TIL.date() > entry.date
+                    )
+                    for a in entry.addresses
+                )
+
+                if not has_valid_address:
+                    for a in entry.addresses:
+                        if a.DATO_TIL.date() == datetime(1753, 1, 1):
+                            a.DATO_TIL = entry.date
+                            a.TS_UPDD = datetime.now()
+                            a.TS_UPDT = datetime.now().strftime("%H:%M")
+                            logger.info(f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {entry.date}")
+                    new_address_entry = Address(
+                        NAVNID=entry.ID,
+                        VEJKODE=address_info['street_code'],
+                        KOMMUNEKODE=address_info['municipality_code'],
+                        POSTNR=address_info['postal_code'],
+                        STEDNAVN=address_info['town_name'],
+                        NR_LT_ETAGE=address_info['number_floor'],
+                        DATO_FRA=entry.date,
+                        DATO_TIL=datetime(1753, 1, 1),
+                        TS_DATE=datetime.now(),
+                        TS_TIME=datetime.now().strftime("%H:%M"),
+                        TS_UPDD=datetime.now(),
+                        TS_UPDT=datetime.now().strftime("%H:%M")
+                    )
+                    entry.addresses.append(new_address_entry)
+                    logger.info(f"Added new address for Name ID {entry.ID}")
+
+            district = district_db_client.get_district_name_for_point(x=address_info['coordinates'][0], y=address_info['coordinates'][1])
+            is_new_district = None
+            is_new_district_details = False
+            if district and district.strip() != entry.DISTRIKT.strip():
+                is_new_district = True
+                entry.DISTRIKT = district.strip()
+                if entry.details.TS_KOMID.strip() != district.strip():
+                    entry.details.TS_KOMID = district.strip()
+                    is_new_district_details = True
+                    logger.info(f"Updated district details for Name ID {entry.ID} to {district.strip()}")
+                logger.info(f"Updated district for Name ID {entry.ID} to {district.strip()}")
+
+                has_valid_person_district = any(
+                    d.DISTRICT == district.strip() and
+                    d.DATEFROM.date() <= entry.date and
+                    (
+                        d.DATETO.date() == datetime(1753, 1, 1) or
+                        d.DATETO.date() > entry.date
+                    )
+                    for d in entry.person_districts
+                )
+                if not has_valid_person_district:
+                    for d in entry.person_districts:
+                        if d.DATETO.date() == datetime(1753, 1, 1):
+                            d.DATETO = entry.date
+                            d.TS_UPDD = datetime.now()
+                            d.TS_UPDT = datetime.now().strftime("%H:%M")
+                            logger.info(f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {entry.date}")
+                    new_person_district = PersonDistrict(
+                        NAVNID=entry.ID,
+                        DISTRICT=district.strip(),
+                        DATEFROM=entry.date,
+                        TS_DATE=datetime.now(),
+                        TS_TIME=datetime.now().strftime("%H:%M"),
+                        TS_UPDD=datetime.now(),
+                        TS_UPDT=datetime.now().strftime("%H:%M")
+                    )
+                    entry.person_districts.append(new_person_district)
+                    logger.info(f"Added new person district for Name ID {entry.ID}: {district.strip()}")
+
+            has_changed_active = False
+            if not bool(entry.AKTIV):
+                entry.AKTIV = 1
+                has_changed_active = True
+                logger.info(f"Set AKTIV to 1 for Name ID {entry.ID}")
+
+            # has_changed_ansvarshpl = False
+            # if entry.AnsvarsShpl != 'FIKTIV':
+            #     entry.AnsvarsShpl = 'FIKTIV'
+            #     has_changed_ansvarshpl = True
+            #     logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
+
+            if any([is_new_district, is_new_address_set, has_changed_active]):
+                entry.TS_UPDD = datetime.now()
+                entry.TS_UPDT = datetime.now().strftime("%H:%M")
+
+            if any([is_due_date_changed, has_changed_protected_status, is_new_district_details]):
+                entry.details.TS_UPDD = datetime.now()
+                entry.details.TS_UPDT = datetime.now().strftime("%H:%M")
+
+        if dry_run:
+            logger.warning("Dry run enabled - no changes committed to the database")
         else:
-            logger.warning(f"No address found in CPR for navnid: {entry.navnid}, using journal data if available.")
-
-        # Fallback to journal address if no CPR address is found
-        if parsed_new_address is None and entry.parsed_journal.get('address', None):
-            try:
-                parsed_new_address = parse_address(entry.parsed_journal.get('address'))
-            except Exception as e:
-                logger.warning(f"Error parsing journal address for navnid {entry.navnid}: {e}")
-
-        # Check if address has changed (excluding protection flag)
-        if parsed_new_address:
-            if (
-                not entry.current_address or
-                entry.current_address.street != parsed_new_address.street or
-                entry.current_address.number != parsed_new_address.number or
-                entry.current_address.postal_code != parsed_new_address.postal_code
-            ):
-                entry.new_address = parsed_new_address
-
-            # If only the protection status has changed, track that separately to avoid unnecessary address updates
-            if entry.current_address is not None and entry.new_address is None:
-                if entry.current_address.is_protected != parsed_new_address.is_protected:
-                    entry.new_protected_address = parsed_new_address.is_protected
-
-        # Look up address details for district info + vejkode in Dataforsyning
-        address_to_lookup = entry.new_address if entry.new_address is not None else entry.current_address
-
-        if address_to_lookup:
-            address_info = dataforsyning_client.lookup_address(address_to_lookup.address_dataforsyningen_lookup)
-            if address_info and address_info.get('adgangsadresse', {}).get('x') is not None and address_info.get('adgangsadresse', {}).get('y') is not None:
-                # Store coordinates for district lookup later
-                x = address_info['adgangsadresse']['x']
-                y = address_info['adgangsadresse']['y']
-                points_by_navnid[entry.navnid] = (x, y)
-
-                # Store address details for potential update and logging
-                address_to_lookup.street_code = address_info['adgangsadresse'].get('vejkode')
-                address_by_navnid[entry.navnid] = address_to_lookup
-
-                # Also check if municipality code has changed based on Dataforsyning info
-                looked_up_code = address_info['adgangsadresse'].get('kommunekode')
-                looked_up_code_int = to_int_or_none(looked_up_code)
-                if looked_up_code_int is not None and entry.current_municipality_code != looked_up_code_int:
-                    entry.new_municipality_code = looked_up_code_int
-            else:
-                logger.warning(f"Address not found in Dataforsyning: {address_to_lookup.address_dataforsyningen_lookup}")
-                entry.new_address = None  # Clear new address to avoid updating to an unknown address - will still update other fields if applicable
-        else:
-            logger.warning(f"No valid address to look up district for navnid: {entry.navnid}")
-
-        # Check new phone number from journal data
-        new_tlf_nr = entry.parsed_journal.get('phone', None)
-        if new_tlf_nr and new_tlf_nr != entry.current_tlf_nr:
-            if not (new_tlf_nr.isdigit() and len(new_tlf_nr) == 8):
-                logger.warning(f"Unusual phone number '{new_tlf_nr}' for navnid {entry.navnid}, skipping phone update.")
-            else:
-                entry.new_tlf_nr = new_tlf_nr
-
-        # Get due date from journal data - will override existing due date if present
-        journal_due_date = entry.parsed_journal.get('due_date', None) or entry.parsed_journal.get('calculated_due_date', None)
-        if journal_due_date and journal_due_date != entry.current_due_date:
-            entry.new_due_date = journal_due_date
-
-    # Get districts for all address coordinates in batch
-    points_for_district_lookup = [(navnid, x, y) for navnid, (x, y) in points_by_navnid.items()]
-    districts_by_navnid = district_db_client.get_district_names_by_key(points_for_district_lookup)
-
-    # Build update request for each entry
-    update_requests_by_navnid: dict[str, dict] = {}
-    for entry in entries:
-        if entry.navnid in skipped_navnids:
-            continue  # Skip entries with unparsable journal data
-        detected_changes: list[str] = []
-
-        # Check if district has changed
-        if entry.navnid in points_by_navnid:
-            new_district = districts_by_navnid.get(entry.navnid)
-            if new_district and new_district != entry.current_district:
-                entry.new_district = new_district
-            elif new_district is None:
-                address = address_by_navnid.get(entry.navnid, "<unknown>")  # For logging purposes
-                logger.warning(f"District not found for navnid: {entry.navnid} at address: {address}")
-
-        # Check if new municipality has been set - if not, set to default if current municipality is different from default
-        if entry.new_municipality_code is None and entry.current_municipality_code != default_municipality_code:
-            entry.new_municipality_code = default_municipality_code
-
-        # Log detected changes
-        if entry.new_address is not None:
-            detected_changes.append("address" + (" (protected)" if entry.new_address.is_protected else ""))
-        if entry.new_protected_address is not None and entry.new_address is None:
-            detected_changes.append("protected address")
-        if entry.new_district is not None and entry.new_district != entry.current_district:
-            detected_changes.append("district")
-        if entry.new_tlf_nr is not None and entry.new_tlf_nr != entry.current_tlf_nr:
-            detected_changes.append("phone")
-        if entry.new_due_date is not None:
-            detected_changes.append("due date")
-        if entry.new_municipality_code is not None:
-            detected_changes.append("municipality code")
-        if detected_changes == []:
-            detected_changes.append("none")
-        if detected_changes:
-            logger.info(f"Detected changes for navnid {entry.navnid}: {', '.join(detected_changes)}")
-
-        # Prepare update payload
-        # None values in the payload will be ignored by the update function
-        # Besides new values, new pregnancies will always get allocated to 'Gravid til fordeling' (id: 'FIKTIV')
-        update_payload = {
-            "navnid": entry.navnid,
-            "due_date": entry.new_due_date,
-            "new_district": entry.new_district,
-            "new_address": entry.new_address,
-            "new_protected_address": entry.new_protected_address,
-            "new_tlf_nr": entry.new_tlf_nr,
-            "new_municipality_code": entry.new_municipality_code
-        }
-
-        # Add to update requests
-        update_requests_by_navnid[entry.navnid] = update_payload
-
-    # Return if DRY_RUN is enabled - log what would be updated without making changes
-    if dry_run:
-        attempted_updates = len(update_requests_by_navnid)
-        logger.info(f"Dry run enabled: would update {attempted_updates} entr{'y' if attempted_updates == 1 else 'ies'} (skipped {len(skipped_navnids)} due to unparsable journal data) for {start_date} to {end_date}.")
-        return
-
-    # Perform single Novax batch update
-    if update_requests_by_navnid:
-        update_results = update_novax_userdatas_batch(list(update_requests_by_navnid.values()), default_municipality_code)
-    else:
-        update_results = {}
-
-    # Log update results per entry
-    entry_status = []
-    for entry in entries:
-        if entry.navnid in skipped_navnids:
-            logger.warning(f"Skipped update for navnid {entry.navnid} (unparsable journal data).")
-            continue
-
-        update_success = bool(update_results.get(entry.navnid))
-        entry_status.append(update_success)
-        if update_success:
-            logger.info(f"Successfully updated Novax userdata for navnid {entry.navnid}")
-        else:
-            logger.error(f"Failed to update Novax userdata for navnid {entry.navnid}")
-
-    # Log final status
-    if skipped_navnids:
-        logger.info(f"Skipped {len(skipped_navnids)} entr{'y' if len(skipped_navnids) == 1 else 'ies'} due to unparsable journal data.")
-
-    # If nothing was attempted, treat the run as successful.
-    success = all(entry_status) if entry_status else True
-    if success:
-        logger.info("Successfully completed check_and_update_district")
-    else:
-        logger.error("Errors occurred during check_and_update_district")
-        raise Exception("check_and_update_district failed: some updates failed")
-    return
+            logger.info("Committing changes to the database")
+            session.commit()

@@ -1,10 +1,8 @@
-
-import re
 import requests
 import logging
-import time
-from typing import Any
+
 from airflow.hooks.base import BaseHook
+
 from utils.token_provider import BearerAuth
 
 logger = logging.getLogger(__name__)
@@ -23,66 +21,27 @@ class CPRClient:
         self.session = cpr_session
         self.base_url = cpr_hook.host
 
-        extra = cpr_hook.extra_dejson or {}
-        connect_timeout = extra.get("connect_timeout_seconds")
-        read_timeout = extra.get("read_timeout_seconds")
+    def get_address_uuid_and_protected_status(self, cpr_number: str) -> dict:
+        """
+        Get the address UUID and protected status for a given CPR number.
 
-        self.timeout: tuple[float, float] = (
-            float(connect_timeout) if connect_timeout is not None else 5.0,
-            float(read_timeout) if read_timeout is not None else 30.0,
-        )
-
-    def _get_with_retry(
-        self,
-        url: str,
-        params: dict[str, Any] | None = None,
-        retries: int = 3,
-        delay_seconds: int = 5,
-        timeout: float | tuple[float, float] | None = None,
-    ) -> requests.Response:
-        attempt = 0
-        while True:
-            try:
-                response = self.session.get(url, params=params, timeout=timeout or self.timeout)
-                response.raise_for_status()
-                return response
-            except requests.exceptions.HTTPError as e:
-                status_code = e.response.status_code if e.response is not None else None
-                if status_code is not None and status_code not in [200, 400] and attempt < retries:
-                    attempt += 1
-                    time.sleep(delay_seconds)
-                    continue
-                raise
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
-                if attempt < retries:
-                    attempt += 1
-                    time.sleep(delay_seconds)
-                    continue
-                raise
-
-    def lookup_address(self, cpr_number: str) -> dict | None:
+        :param cpr_number: The CPR number to look up (format: 6 digits, a dash, and 4 digits, e.g. "123456-7890")
+        :return: A dictionary containing 'address_uuid' and 'protected_status'
+        """
+        # Fails if CPR replica is down/broken or if the CPR number is invalid.
+        # We want it to fail hard in those cases, so we can fix the underlying issue.
         endpoint = f'/PersonBaseDataExtendedService/lookup/address/{cpr_number}'
-        try:
-            res = self._get_with_retry(f"{self.base_url}{endpoint}")
-        except requests.RequestException as e:
-            logger.warning(f"Network error while looking up address for CPR {cpr_number[:6]}-XXXX: {e}")
-            return None
-        if res.status_code != 200:
-            logger.warning(f"Failed to lookup address for CPR {cpr_number[:6]}-XXXX: HTTP {res.status_code}")
-            return None
-        try:
-            data = res.json()
-        except ValueError as e:
-            logger.warning(f"Invalid JSON response while looking up address for CPR {cpr_number[:6]}-XXXX: {e}")
-            return None
-        std = data.get('aktuelAdresse', {}).get('standardadresse')
+        res = self.session.get(f"{self.base_url}{endpoint}", timeout=10)
+        res.raise_for_status()
+        data = res.json()
 
-        if isinstance(std, str) and std:
-            # Remove leading zeros from house numbers
-            data['aktuelAdresse']['standardadresse'] = re.sub(
-                r'(\s)0+(\d+[A-Za-z]?)\b',
-                r'\1\2',
-                std
-            )
+        addrees_uuid = data['aktuelAdresse'].get('adresseUUID', '')
+        protected = data.get('adressebeskyttelse', {}).get('beskyttet')
 
-        return data
+        if not isinstance(protected, bool) or not isinstance(addrees_uuid, str) or not len(addrees_uuid) == 36:
+            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX: {data}")
+
+        return {
+            'address_uuid': addrees_uuid,
+            'is_protected_address': protected
+        }
