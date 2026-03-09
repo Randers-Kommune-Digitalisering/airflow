@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 
 from rkdigi.database_manager import DatabaseManager
 from rkdigi.email_handling import EmailSender
@@ -8,6 +7,7 @@ from dag_affald.affald_data import (
     fetch_affald_registration_monthly_df,
     sheet_specs_requires_carrier
 )
+from airflow.operators.python import get_current_context
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +30,18 @@ def process_affald() -> None:
     )
 
     excel_bytes = build_affald_excel_bytes(df=affald_df)
-    today = datetime.now().date().isoformat()
-    filename = f"Affaldsterminalen_Udregning_{today}.xlsx"
+    ctx = get_current_context()
+    logical_date = ctx["logical_date"]
+    dag_tz = ctx["dag"].timezone
+    report_date = logical_date.in_timezone(dag_tz).date().isoformat()
+
+    filename = f"Affaldsterminalen_Udregning_{report_date}.xlsx"
 
     email_sender = EmailSender()
     email_sender.send_email(
         sender="xx@randers.dk",
         recipients="xx@randers.dk",
-        body=f"Mængde af Genbrugspladsen & Affaldsterminalen opdateret senest {today}.",
+        body=f"Mængde af Genbrugspladsen & Affaldsterminalen opdateret senest {report_date}.",
         attachments=[(filename, excel_bytes)],
     )
 
