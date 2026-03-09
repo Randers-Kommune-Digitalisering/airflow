@@ -60,7 +60,7 @@ SHEET_SPECS = [
         ],
     },
     {
-        "sheet_name": "Madaffald",
+        "sheet_name": "Organisk affald",
         "title": "Organisk affald - mængder Affaldsterminalen hele året",
         "row_label_mode": "generic",
         "ton_label_mode": "generic",
@@ -157,7 +157,7 @@ SHEET_SPECS = [
         ],
     },
     {
-        "sheet_name": "Madaffald INS",
+        "sheet_name": "Madaffald",
         "title": "Indsamlingsmængder Madaffald - hele året",
         "row_label_mode": "generic",
         "ton_label_mode": "generic",
