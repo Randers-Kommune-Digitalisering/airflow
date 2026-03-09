@@ -8,11 +8,15 @@ from dag_affald.affald_data import (
     sheet_specs_requires_carrier
 )
 from airflow.operators.python import get_current_context
+from airflow.models import Variable
 
 logger = logging.getLogger(__name__)
 
 
 def process_affald() -> None:
+
+    sender = Variable.get("affald_config", default_var=None, deserialize_json=True)["sender_email"]
+    recipients = Variable.get("affald_config", default_var=None, deserialize_json=True)["recipient_emails"]
 
     affald_db = DatabaseManager(
         profile_name="scanvaegt_db",
@@ -39,8 +43,8 @@ def process_affald() -> None:
 
     email_sender = EmailSender()
     email_sender.send_email(
-        sender="xx@randers.dk",
-        recipients="xx@randers.dk",
+        sender=sender,
+        recipients=recipients,
         body=f"Mængde af Genbrugspladsen & Affaldsterminalen opdateret senest {report_date}.",
         attachments=[(filename, excel_bytes)],
     )
