@@ -675,10 +675,11 @@ def _normalize_material_groups_for_sheet(
         return None
 
     out: list[dict[str, Any]] = []
-    for g in material_groups:
+    for i, g in enumerate(material_groups):
         if not isinstance(g, dict):
-            out.append(g)
-            continue
+            raise TypeError(
+                f"material_groups[{i}] must be a dict, got {type(g).__name__}: {g!r}"
+            )
 
         gg = dict(g)
         group_auto = gg.get("auto_append_vare_nr", auto_append_vare_nr)
