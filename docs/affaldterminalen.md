@@ -65,6 +65,7 @@ For hvert sheet:
 
 **MSSQL DB:**
 - **`scanvaegt_db`**
+- **Bitwarden navn: `SQL Bruger til ScanxNet - Affald UMT`**
 - **Database: `ScanXNET`**
 - **Tabel: `Registration`**
 
