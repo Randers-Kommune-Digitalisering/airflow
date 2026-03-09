@@ -10,7 +10,7 @@ dag_args["retries"] = 1
 
 with DAG(
     dag_id="dag_affald",
-    start_date=datetime(year=2026, month=1, day=30, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=3, day=9, tz=timezone("Europe/Copenhagen")),
     schedule="@monthly",
     catchup=False,
     default_args=dag_args,
