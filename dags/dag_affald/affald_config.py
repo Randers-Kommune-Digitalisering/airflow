@@ -137,7 +137,7 @@ SHEET_SPECS = [
         "blank_between": "material",
         "customer_names": None,
         "customer_label": "Randers",
-        "drop_unmapped_group_rows": True,  # drop rows that are not mapped to a material_group (if new article numbers appear)
+        "drop_unmapped_group_rows": True,  # drop rest rows for articles listed in material_groups that remain unmapped after applying per-group customer/carrier filters
         "material_groups": [
             {
                 "articles": ["1000"],
