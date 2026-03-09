@@ -15,8 +15,10 @@ logger = logging.getLogger(__name__)
 
 def process_affald() -> None:
 
-    sender = Variable.get("affald_config", default_var=None, deserialize_json=True)["sender_email"]
-    recipients = Variable.get("affald_config", default_var=None, deserialize_json=True)["recipient_emails"]
+    affald_config = Variable.get("affald_config", deserialize_json=True)
+
+    sender = affald_config["sender_email"]
+    recipients = affald_config["recipient_emails"]
 
     affald_db = DatabaseManager(
         profile_name="scanvaegt_db",
