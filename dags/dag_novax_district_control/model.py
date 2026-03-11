@@ -22,7 +22,7 @@ class Name(Base):
     AKTIV = Column(CHAR(1), nullable=False, default='')
     DISTRIKT = Column(CHAR(4), nullable=False, default='')
     ADRESSE = Column(CHAR(100), nullable=False, default='')
-    # AnsvarsShpl = Column(CHAR(8), nullable=False, default='')  # Must be 'FIKTIV' ?!
+    AnsvarsShpl = Column(CHAR(8), nullable=False, default='')
     TS_KOMID = Column(CHAR(3), nullable=False, default='')
     ID = Column(CHAR(36), nullable=False, default='')
     TS_UPDD = Column(DATETIME)

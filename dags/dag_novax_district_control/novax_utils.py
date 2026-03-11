@@ -77,6 +77,12 @@ def parse_journal_data(journal_string: str) -> dict:
 
 
 def get_allowed_journal_times(journal_time: str) -> set[str]:
+    """
+    Get allowed journal times based on the given journal time.
+
+    :param journal_time: Journal time as string in format "HH:MM"
+    :return: A set of allowed journal times (base time and one minute later)
+    """
     base_dt = datetime.strptime(journal_time.strip(), "%H:%M")
     next_dt = base_dt + timedelta(minutes=1)
     return {base_dt.strftime("%H:%M"), next_dt.strftime("%H:%M")}

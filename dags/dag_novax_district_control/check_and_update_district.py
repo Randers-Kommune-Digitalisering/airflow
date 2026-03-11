@@ -58,6 +58,7 @@ def check_and_update_district(dry_run: bool) -> None:
             .all()
         )
 
+        entries = []
         # Set journal to Name objects
         for name_obj, godkommu_obj, note_obj in results:
             assigned = False
@@ -68,10 +69,10 @@ def check_and_update_district(dry_run: bool) -> None:
                     name_obj.date = note_obj.DATO
                     name_obj.journal = parse_journal_data(note_obj.NOTE)
                     assigned = True
+                    entries.append(name_obj)
 
             if not assigned:
-                raise ValueError(f"No pregnancy note found for Name ID {name_obj.ID}")
-        entries = [name_obj for name_obj, _, _ in results]
+                logger.warning(f"No pregnancy note found for Name ID {name_obj.ID} with journal timestamp {godkommu_obj.JOURNALTID}. Skipping entry.")
 
         logger.info(f"Processing {len(entries)} entries for date range {start_date} to {end_date}")
 
@@ -231,13 +232,13 @@ def check_and_update_district(dry_run: bool) -> None:
                 has_changed_active = True
                 logger.info(f"Set AKTIV to 1 for Name ID {entry.ID}")
 
-            # has_changed_ansvarshpl = False
-            # if entry.AnsvarsShpl != 'FIKTIV':
-            #     entry.AnsvarsShpl = 'FIKTIV'
-            #     has_changed_ansvarshpl = True
-            #     logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
+            has_changed_ansvarshpl = False
+            if entry.AnsvarsShpl != 'FIKTIV':
+                entry.AnsvarsShpl = 'FIKTIV'
+                has_changed_ansvarshpl = True
+                logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
 
-            if any([is_new_district, is_new_address_set, has_changed_active]):
+            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl]):
                 entry.TS_UPDD = datetime.now()
                 entry.TS_UPDT = datetime.now().strftime("%H:%M")
 
