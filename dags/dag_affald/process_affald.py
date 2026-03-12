@@ -19,6 +19,7 @@ def process_affald() -> None:
 
     sender = affald_config["sender_email"]
     recipients = affald_config["recipient_emails"]
+    smtp_server = affald_config["smtp_server"]
 
     affald_db = DatabaseManager(
         profile_name="scanvaegt_db",
@@ -43,7 +44,7 @@ def process_affald() -> None:
 
     filename = f"Affaldsterminalen_Udregning_{report_date}.xlsx"
 
-    email_sender = EmailSender()
+    email_sender = EmailSender(smtp_server=smtp_server)
     email_sender.send_email(
         sender=sender,
         recipients=recipients,
