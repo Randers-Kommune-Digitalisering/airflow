@@ -17,6 +17,16 @@ logger = logging.getLogger(__name__)
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"]
 
 
+def _normalize_name(value: Any) -> str:
+    """Normalize names from SQL/config for stable matching.
+
+    Collapses repeated whitespace and trims the ends.
+    """
+    if value is None:
+        return ""
+    return " ".join(str(value).split()).strip()
+
+
 def sheet_specs_requires_carrier() -> bool:
     """
     Check whether any entry in ``SHEET_SPECS`` requires carrier (CarrierName) data.
@@ -216,33 +226,36 @@ def _apply_customer_and_material_view(
         return out
 
     out = df.copy()
-    out["CustomerName"] = out["CustomerName"].astype(str)
-    out["ArticleNumber"] = out["ArticleNumber"].astype(str)
+    out["CustomerName"] = out["CustomerName"].map(_normalize_name)
+    out["ArticleNumber"] = out["ArticleNumber"].astype(str).str.strip()
 
     if "CarrierName" not in out.columns:
         out["CarrierName"] = "Ukendt"
-    out["CarrierName"] = out["CarrierName"].astype(str)
+    out["CarrierName"] = out["CarrierName"].map(_normalize_name)
 
     # Customer-filter pr sheet
     if customer_names is not None:
-        cust = [str(c) for c in customer_names]
-        out = out[out["CustomerName"].isin(cust)]
+        cust = [_normalize_name(c) for c in customer_names]
+        cust = [c for c in cust if c]
+        if cust:
+            out = out[out["CustomerName"].isin(cust)]
 
     # Carrier-filter pr sheet (only if the entire sheet should be limited, not just specific material groups)
     if carrier_names is not None:
-        carr = [str(c) for c in carrier_names if str(c).strip() != ""]
+        carr = [_normalize_name(c) for c in carrier_names]
+        carr = [c for c in carr if c]
         if carr:
             out = out[out["CarrierName"].isin(carr)]
 
     # Generic customer label (summarizes all into one group)
     if customer_label is not None and str(customer_label).strip() != "":
-        out["CustomerKey"] = str(customer_label).strip()
+        out["CustomerKey"] = _normalize_name(customer_label)
     else:
         out["CustomerKey"] = out["CustomerName"]
 
     # Generic carrier label (summarizes all into one group)
     if carrier_label is not None and str(carrier_label).strip() != "":
-        out["CarrierKey"] = str(carrier_label).strip()
+        out["CarrierKey"] = _normalize_name(carrier_label)
     else:
         out["CarrierKey"] = out["CarrierName"]
 
@@ -253,7 +266,7 @@ def _apply_customer_and_material_view(
 
     if material_groups:
         for g in material_groups:
-            articles = [str(a) for a in g.get("articles", [])]
+            articles = [str(a).strip() for a in g.get("articles", [])]
             label = str(g.get("label", "")).strip()
             if not articles or not label:
                 continue
@@ -270,14 +283,16 @@ def _apply_customer_and_material_view(
                 else:
                     gcust = list(group_customers)
 
-                gcust = [str(c).strip() for c in gcust if str(c).strip() != ""]
+                gcust = [_normalize_name(c) for c in gcust]
+                gcust = [c for c in gcust if c]
                 if gcust:
                     mask = mask & out["CustomerName"].isin(gcust)
 
             # carrier_names filter pr material_group
             group_carriers = g.get("carrier_names", None)
             if group_carriers is not None:
-                gc = [str(c) for c in group_carriers if str(c).strip() != ""]
+                gc = [_normalize_name(c) for c in group_carriers]
+                gc = [c for c in gc if c]
                 if gc:
                     mask = mask & out["CarrierName"].isin(gc)
 

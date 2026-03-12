@@ -47,6 +47,7 @@ def process_affald() -> None:
     email_sender.send_email(
         sender=sender,
         recipients=recipients,
+        subject=f"Affald mængdeopdatering: {report_date}",
         body=f"Seneste opdatering af mængder for Genbrugspladsen, Affaldsterminalen og Indsamlingsmængder: {report_date}.",
         attachments=[(filename, excel_bytes)],
     )

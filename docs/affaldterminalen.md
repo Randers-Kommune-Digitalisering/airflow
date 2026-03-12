@@ -99,7 +99,7 @@ Excel-rapportens faner, labels og filtrering styres af:
   - `GENBRUGSPLADSEN_CUSTOMER_NAMES`: default customer-navne
 
 Carrier-logik:
-- `sheet_specs_need_carrier()` returnerer True hvis en sheet-spec kræver carrier, fx:
+- `sheet_specs_requires_carrier()` returnerer True hvis en sheet-spec kræver carrier, fx:
   - `group_by_carrier=True`
   - `carrier_names` på sheet-niveau
   - `material_groups[*].carrier_names`
