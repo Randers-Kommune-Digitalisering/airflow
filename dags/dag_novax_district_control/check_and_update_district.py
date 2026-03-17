@@ -203,12 +203,13 @@ def check_and_update_district(dry_run: bool) -> None:
                     logger.info(f"Updated district details for Name ID {entry.ID} to {district.strip()}")
                 logger.info(f"Updated district for Name ID {entry.ID} to {district.strip()}")
 
+                entry_date = entry.date.date()
                 has_valid_person_district = any(
                     d.DISTRICT == district.strip() and
-                    d.DATEFROM.date() <= entry.date and
+                    d.DATEFROM.date() <= entry_date and
                     (
                         d.DATETO.date() == datetime(1753, 1, 1).date() or
-                        d.DATETO.date() > entry.date
+                        d.DATETO.date() > entry_date
                     )
                     for d in entry.person_districts
                 )
