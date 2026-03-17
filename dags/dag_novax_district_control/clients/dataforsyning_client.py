@@ -44,7 +44,7 @@ class DataforsyningClient:
         results.raise_for_status()
         data = results.json()
         if len(data) != 1:
-            raise ValueError(f"Expected exactly one result for adresse_id {adresse_id}, but got {len(data)}: {data}")
+            raise ValueError(f"Expected exactly one result for adresse_id {adresse_id}, but got {len(data)}")
 
         full_address = data[0].get('tekst', '')
 
