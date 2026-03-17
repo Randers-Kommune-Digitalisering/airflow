@@ -39,7 +39,7 @@ class CPRClient:
         protected = data.get('adressebeskyttelse', {}).get('beskyttet')
 
         if not isinstance(protected, bool) or not isinstance(address_uuid, str) or not len(address_uuid) == 36:
-            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX: {data}")
+            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX")
 
         return {
             'address_uuid': address_uuid,
