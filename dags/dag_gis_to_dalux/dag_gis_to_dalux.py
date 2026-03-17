@@ -1,6 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
+
 from utils.config import DEFAULT_DAG_ARGS
 from dag_gis_to_dalux.process_gis_to_dalux import process_gis_to_dalux
 
@@ -10,7 +11,7 @@ dag_args["retries"] = 1
 with DAG(
     dag_id="dag_gis_to_dalux",
     start_date=datetime(2025, 12, 17, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="0 0 * * *",
+    schedule="0 0 * * *",
     catchup=False,
     default_args=dag_args,
     description="Sync GIS building data into Dalux FM",

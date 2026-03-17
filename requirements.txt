@@ -1,11 +1,10 @@
+apache-airflow-providers-microsoft-mssql==4.4.0
+apache-airflow-providers-postgres==6.2.0
 msgraph-sdk==1.49.0
 openpyxl==3.1.5
 pandas==2.1.4
 requests==2.32.5
-msgraph-sdk==1.49.0
 pyproj==3.7.2
-apache-airflow-providers-microsoft-mssql==4.4.0
-apache-airflow-providers-postgres==6.2.0
 geoalchemy2==0.18.1
 shapely==2.1.0
-rk-digi==0.2.0
+rk-digi==1.1.0

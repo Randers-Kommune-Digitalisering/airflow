@@ -14,7 +14,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 - Henter Købspris, Købsdato og Garantiudløb fra Atea API (`insert_atea_data`)
 - Henter Afdelings EAN fra Delta API (`insert_department_ean_from_delta`)
 - Dataen gemmes i en Postgres Database
-- Til sidst bliver relavant Asset data automatisk importeret til TopDesk(`upload_assets_to_topdesk`)
+- Til sidst bliver relavant Asset data automatisk importeret til TopDesk Test og Prod miljø(`upload_assets_to_topdesk`)
 
 **Dataflow:**
 - Data fra forskellige kilder → Data gemmes i Postgres DB → Automatisk import til TopDesk
@@ -88,8 +88,18 @@ Bruges som `Connection id` i Airflow til at hente host, database, user, pass og 
     "token_url": x,
   }
 
-**Topdesk Test(For nu) API:**
+**Topdesk Test API:**
 - **`topdesk_api_test`**
+
+  **Conn Type**: HTTP
+
+  Bruges som `Connection id` i Airflow til at hente host, login og password til TopDesk Test API'et.
+
+  *Required felter*:
+  - Connection id, Host, Login og Password
+
+**Topdesk Prod API:**
+- **`topdesk_api_prod`**
 
   **Conn Type**: HTTP
 

@@ -1,5 +1,6 @@
 import logging
 import pandas as pd
+import io
 
 from sqlalchemy.engine import Engine
 from sqlalchemy import text, select
@@ -12,8 +13,7 @@ from dateutil.parser import parse
 from dag_asset.model import Base, Department, User, Computer
 from airflow.models import Variable
 from utils.utils import df_to_csv_bytes
-from rkdigi.syncpkg.token_session import ManagedOAuth2Session
-
+from rkdigi.token_session import ManagedOAuth2Session
 
 logger = logging.getLogger(__name__)
 
@@ -416,6 +416,7 @@ def insert_device_license_and_historical_data(
     device_license_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["device_license_file_path"]
     comm2ig_historical_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["comm2ig_historical_file_path"]
     ean_atea_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["ean_atea_file_path"]
+    dustin_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["dustin_file_path"]
 
     with sftp_hook.get_conn() as sftp_client:
         logger.info("Fetching Device License CSV from SFTP...")
@@ -442,6 +443,17 @@ def insert_device_license_and_historical_data(
                 usecols=['Nummer', 'EAN-nr.'],
             )
             df_atea.columns = df_atea.columns.str.strip()
+
+        logger.info("Fetching Dustin historical file from SFTP...")
+        with sftp_client.open(dustin_file, 'rb') as file:
+            df_dustin = pd.read_excel(
+                file,
+                dtype=str,
+                usecols=['Order Date', 'Serial Number', 'Net Sales (LC)', 'EAN Invoice Reference'],
+            )
+            df_dustin.columns = df_dustin.columns.str.strip()
+
+        df_dustin['Order Date'] = pd.to_datetime(df_dustin['Order Date'], errors='coerce')
 
     # Fetch Atea API Data
     atea_data = _fetch_atea_data(http_hook=http_hook)
@@ -514,11 +526,42 @@ def insert_device_license_and_historical_data(
                 computer_obj.kob_ean_nr = ean_nr
                 updated_atea += 1
 
+        updated_dustin = 0
+
+        for _, row in df_dustin.iterrows():
+            serial = row['Serial Number']
+            if pd.isna(serial):
+                continue
+
+            serial_norm = str(serial).lstrip('sS').lower()
+
+            price = row['Net Sales (LC)']
+            order_date = row['Order Date']
+            ean_nr = row.get('EAN Invoice Reference', None)
+
+            if pd.isna(ean_nr) or str(ean_nr).strip().lower() in ['nan', '']:
+                ean_nr = None
+
+            computer_obj = serial_to_computer.get(serial_norm)
+
+            if computer_obj:
+                computer_obj.price = float(str(price).replace(',', '.'))
+
+                if pd.notna(order_date):
+                    computer_obj.order_date = order_date
+                else:
+                    computer_obj.order_date = None
+
+                computer_obj.kob_ean_nr = ean_nr
+
+                updated_dustin += 1
+
         session.commit()
 
         logger.info(f"Device License updated for {updated_device} computers")
         logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
         logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
+        logger.info(f"Dustin historical data updated for {updated_dustin} computers")
 
         return True
 
@@ -673,15 +716,13 @@ def insert_department_ean_from_delta(
         return False
 
 
-def upload_assets_to_topdesk(asset_engine: Engine, http_hook: HttpHook) -> bool:
+def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
-    Export asset data from the Asset DB and upload it to Topdesk API as a CSV.
+    Export asset data from the Asset DB as a CSV payload (bytes).
 
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
-    :param http_hook: Airflow HttpHook configured for the Topdesk API
-    :return: True if data was exported and uploaded successfully, otherwise False.
+    :return: CSV content as an io.BytesIO buffer
     """
-    topdesk_asset_filename = Variable.get("asset_config", default_var=None, deserialize_json=True)["topdesk_file_path"]
 
     sql_command = """
         SELECT
@@ -742,8 +783,7 @@ def upload_assets_to_topdesk(asset_engine: Engine, http_hook: HttpHook) -> bool:
         result = conn.execute(text(sql_command)).mappings().all()
 
     if not result:
-        logger.error("No data found in Computer/User/Department tables")
-        return False
+        raise ValueError("No data found in Computer/User/Department tables")
 
     df = pd.DataFrame(result)
 
@@ -766,19 +806,34 @@ def upload_assets_to_topdesk(asset_engine: Engine, http_hook: HttpHook) -> bool:
             lambda val: "{:.2f}".format(float(val)) if pd.notnull(val) and str(val).strip() else ""
         )
 
+    return df_to_csv_bytes(df, sep=';', encoding='UTF-8')
+
+
+def upload_assets_to_topdesk(
+    http_hook: HttpHook,
+    csv_bytes: io.BytesIO,
+) -> bool:
+    """
+    Upload a CSV payload to Topdesk as a source file.
+
+    :param http_hook: Airflow HttpHook configured for the Topdesk API.
+    :param csv_bytes: CSV content as an io.BytesIO buffer to be uploaded.
+    :return: True if upload succeeded, otherwise False.
+    """
+
+    topdesk_asset_filename = Variable.get("asset_config", default_var=None, deserialize_json=True)["topdesk_file_path"]
     logger.info(f"File name: {topdesk_asset_filename}")
 
-    csv_bytes = df_to_csv_bytes(df, sep=';', encoding='UTF-8')
     upload_path = f"/services/import-to-api-v1/api/sourceFiles?filename={topdesk_asset_filename}"
 
-    logger.info(f"Uploading {topdesk_asset_filename} to TopDesk {upload_path}")
+    logger.info(f"Uploading {topdesk_asset_filename} to Topdesk using connection: {http_hook.http_conn_id}")
 
     http_hook.method = "PUT"
     res = http_hook.run(
         endpoint=upload_path,
-        data=csv_bytes,
+        data=csv_bytes.getvalue(),
     )
 
-    logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: Code Status: {res.status_code}.")
+    logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: {http_hook.http_conn_id} Code Status: {res.status_code}.")
 
     return True

@@ -68,8 +68,6 @@ jobs:
   
           yq e -i ".airflow.webserver.podAnnotations.rollme = \"${timestamp}\""   "$file"
           yq e -i ".airflow.scheduler.podAnnotations.rollme = \"${timestamp}\""   "$file"
-          yq e -i ".airflow.triggerer.podAnnotations.rollme = \"${timestamp}\""   "$file"
-          yq e -i ".airflow.workers.podAnnotations.rollme   = \"${timestamp}\""   "$file"
   
       - name: Commit and push
         run: |
