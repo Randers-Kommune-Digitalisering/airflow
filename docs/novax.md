@@ -45,7 +45,7 @@ Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, udfør
 **Drift / sikkerhed**
 
 - Jobbet kan køres i “dry-run” mode (styres af Airflow-variablen `NOVAX_DRY_RUN`), hvor der kun logges hvilke ændringer der ville blive skrevet, uden at opdatere Novax.
-- Batch-opdateringen i Novax udføres i én session, men hver patient opdateres i en nested transaction (SAVEPOINT), så en fejl på én patient ikke nødvendigvis stopper hele batchen.
+- Batch-opdateringen i Novax udføres i én database-transaktion/session. Det betyder, at en fejl på én patient vil medføre, at hele transaktionen rulles tilbage, så enten bliver alle ændringer skrevet, eller også bliver ingen skrevet.
 
 ## Afhængigheder
 
