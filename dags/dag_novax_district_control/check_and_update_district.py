@@ -1,6 +1,6 @@
 import logging
 
-from datetime import datetime
+from datetime import datetime, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
@@ -83,7 +83,7 @@ def check_and_update_district(dry_run: bool) -> None:
             new_due_date = None
             if journal_due_date and journal_due_date != current_due_date:
                 new_due_date = journal_due_date
-            elif calculated_due_date and current_due_date == datetime(1753, 1, 1):
+            elif calculated_due_date and current_due_date == date(1753, 1, 1):
                 new_due_date = calculated_due_date
 
             is_due_date_changed = False
