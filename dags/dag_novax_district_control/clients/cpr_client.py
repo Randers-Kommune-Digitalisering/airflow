@@ -25,7 +25,7 @@ class CPRClient:
         """
         Get the address UUID and protected status for a given CPR number.
 
-        :param cpr_number: The CPR number to look up (format: 6 digits, a dash, and 4 digits, e.g. "123456-7890")
+        :param cpr_number: The CPR number to look up (format: 10 digits, e.g. "1234567890")
         :return: A dictionary containing 'address_uuid' and 'protected_status'
         """
         # Fails if CPR replica is down/broken or if the CPR number is invalid.
