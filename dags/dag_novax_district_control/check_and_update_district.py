@@ -22,11 +22,7 @@ def check_and_update_district(dry_run: bool) -> None:
     """
     # Determine date range for processing
     # Start date is inclusive, end date is exclusive
-    date_range = determine_date_range()
-    if date_range is None:
-        logger.info("No new date range to process. Exiting.")
-        return
-    start_date, end_date = date_range
+    start_date, end_date = determine_date_range()
 
     # Initialize clients
     dataforsyning_client = DataforsyningClient()
