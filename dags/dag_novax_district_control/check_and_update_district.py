@@ -159,10 +159,10 @@ def check_and_update_district(dry_run: bool) -> None:
                     a.STEDNAVN == address_info['town_name'] and
                     int(a.POSTNR) == address_info['postal_code'] and
                     int(a.KOMMUNEKODE) == address_info['municipality_code'] and
-                    a.DATO_FRA.date() <= entry.date and
+                    a.DATO_FRA.date() <= entry.date.date() and
                     (
                         a.DATO_TIL.date() == datetime(1753, 1, 1).date() or
-                        a.DATO_TIL.date() > entry.date
+                        a.DATO_TIL.date() > entry.date.date()
                     )
                     for a in entry.addresses
                 )
