@@ -11,11 +11,10 @@ from airflow.utils.types import DagRunType
 logger = logging.getLogger(__name__)
 
 
-def determine_date_range() -> tuple[datetime.date, datetime.date] | None:
+def determine_date_range() -> tuple[datetime.date, datetime.date]:
     """
     Determine the date range for processing based on provided dates or DAG context.
-    :return: A tuple of (start_date, end_date) where start is inclusive and end is exclusive.
-             Returns None when there is no new interval to process (e.g. start_date >= end_date).
+    :return: A tuple of (start_date, end_date).
     """
     ctx = get_current_context()
     dag = ctx["dag"]

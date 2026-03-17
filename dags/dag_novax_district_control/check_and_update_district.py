@@ -58,9 +58,13 @@ def check_and_update_district(dry_run: bool) -> None:
             .all()
         )
 
-        entries = []
         # Set journal to Name objects
+        entries = []
+        seen_navnids = set()
         for name_obj, godkommu_obj, note_obj in results:
+            navnid = godkommu_obj.NAVNID
+            if navnid in seen_navnids:
+                continue
             assigned = False
             if note_obj and godkommu_obj.JOURNALTID:
                 allowed_times = get_allowed_journal_times(godkommu_obj.JOURNALTID)
@@ -70,6 +74,7 @@ def check_and_update_district(dry_run: bool) -> None:
                     name_obj.journal = parse_journal_data(note_obj.NOTE)
                     assigned = True
                     entries.append(name_obj)
+                    seen_navnids.add(navnid)
 
             if not assigned:
                 logger.warning(f"No pregnancy note found for Name ID {name_obj.ID} with journal timestamp {godkommu_obj.JOURNALTID}. Skipping entry.")
@@ -150,13 +155,13 @@ def check_and_update_district(dry_run: bool) -> None:
 
                 has_valid_address = any(
                     a.NR_LT_ETAGE.strip() == address_info['number_floor'].strip() and
-                    a.VEJKODE == address_info['street_code'] and
+                    int(a.VEJKODE) == address_info['street_code'] and
                     a.STEDNAVN == address_info['town_name'] and
-                    a.POSTNR == address_info['postal_code'] and
-                    a.KOMMUNEKODE == address_info['municipality_code'] and
+                    int(a.POSTNR) == address_info['postal_code'] and
+                    int(a.KOMMUNEKODE) == address_info['municipality_code'] and
                     a.DATO_FRA.date() <= entry.date and
                     (
-                        a.DATO_TIL.date() == datetime(1753, 1, 1) or
+                        a.DATO_TIL.date() == datetime(1753, 1, 1).date() or
                         a.DATO_TIL.date() > entry.date
                     )
                     for a in entry.addresses
@@ -164,16 +169,16 @@ def check_and_update_district(dry_run: bool) -> None:
 
                 if not has_valid_address:
                     for a in entry.addresses:
-                        if a.DATO_TIL.date() == datetime(1753, 1, 1):
+                        if a.DATO_TIL.date() == datetime(1753, 1, 1).date():
                             a.DATO_TIL = entry.date
                             a.TS_UPDD = datetime.now()
                             a.TS_UPDT = datetime.now().strftime("%H:%M")
                             logger.info(f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {entry.date}")
                     new_address_entry = Address(
                         NAVNID=entry.ID,
-                        VEJKODE=address_info['street_code'],
-                        KOMMUNEKODE=address_info['municipality_code'],
-                        POSTNR=address_info['postal_code'],
+                        VEJKODE=str(address_info['street_code']),
+                        KOMMUNEKODE=str(address_info['municipality_code']),
+                        POSTNR=str(address_info['postal_code']),
                         STEDNAVN=address_info['town_name'],
                         NR_LT_ETAGE=address_info['number_floor'],
                         DATO_FRA=entry.date,
@@ -202,14 +207,14 @@ def check_and_update_district(dry_run: bool) -> None:
                     d.DISTRICT == district.strip() and
                     d.DATEFROM.date() <= entry.date and
                     (
-                        d.DATETO.date() == datetime(1753, 1, 1) or
+                        d.DATETO.date() == datetime(1753, 1, 1).date() or
                         d.DATETO.date() > entry.date
                     )
                     for d in entry.person_districts
                 )
                 if not has_valid_person_district:
                     for d in entry.person_districts:
-                        if d.DATETO.date() == datetime(1753, 1, 1):
+                        if d.DATETO.date() == datetime(1753, 1, 1).date():
                             d.DATETO = entry.date
                             d.TS_UPDD = datetime.now()
                             d.TS_UPDT = datetime.now().strftime("%H:%M")
@@ -227,8 +232,8 @@ def check_and_update_district(dry_run: bool) -> None:
                     logger.info(f"Added new person district for Name ID {entry.ID}: {district.strip()}")
 
             has_changed_active = False
-            if not bool(entry.AKTIV):
-                entry.AKTIV = 1
+            if entry.AKTIV is None or str(entry.AKTIV).strip() in ("", "0"):
+                entry.AKTIV = "1"
                 has_changed_active = True
                 logger.info(f"Set AKTIV to 1 for Name ID {entry.ID}")
 
