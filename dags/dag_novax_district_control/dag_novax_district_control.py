@@ -16,7 +16,7 @@ DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"
 with DAG(
     dag_id="dag_novax_district_control",
     start_date=datetime(year=2026, month=1, day=1, tz=timezone("Europe/Copenhagen")),
-    schedule_interval="@daily",  # midnight every day
+    schedule="@daily",  # midnight every day
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
