@@ -22,14 +22,25 @@ class PutCall:
 
 
 class FakeSFTPClient:
-    def __init__(self, *, put_impl: Callable[[bytes, str], None] | None = None):
+    def __init__(
+        self,
+        *,
+        put_impl: Callable[[bytes, str], None] | None = None,
+        existing_paths: set[str] | None = None,
+    ):
         self.put_calls: list[PutCall] = []
         self._put_impl = put_impl
+        self._existing_paths: set[str] = set(existing_paths or set())
+
+    def stat(self, remote_path: str) -> None:
+        if remote_path not in self._existing_paths:
+            raise FileNotFoundError(remote_path)
 
     def putfo(self, file_obj, remote_path: str) -> None:  # type: ignore[no-untyped-def]
         content = file_obj.read()
         if self._put_impl is not None:
             self._put_impl(content, remote_path)
+        self._existing_paths.add(remote_path)
         self.put_calls.append(PutCall(remote_path=remote_path, content_bytes=content))
 
     def __enter__(self) -> "FakeSFTPClient":
@@ -46,6 +57,17 @@ class FakeSFTPHook:
 
     def get_conn(self) -> FakeSFTPClient:
         return self._client
+
+
+class FakeVariable:
+    def __init__(self, initial: dict[str, str] | None = None):
+        self._store: dict[str, str] = dict(initial or {})
+
+    def get(self, key: str, default_var: str | None = None) -> str | None:
+        return self._store.get(key, default_var)
+
+    def set(self, key: str, value: str) -> None:
+        self._store[key] = value
 
 
 def make_email_with_attachments(
@@ -113,12 +135,14 @@ def test_unflags_mail_after_successful_processing_and_uploads_xml_bytes(monkeypa
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
 
     sftp_client = FakeSFTPClient()
+    fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
     def fake_sftp_hook_factory(conn_id: str):
         return FakeSFTPHook(conn_id, client=sftp_client)
 
     monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
     pk_mod.process_kantinedata()
 
@@ -129,7 +153,7 @@ def test_unflags_mail_after_successful_processing_and_uploads_xml_bytes(monkeypa
 
     # XML attachment uploaded byte-for-byte, with correct remote path
     assert len(sftp_client.put_calls) == 1
-    assert sftp_client.put_calls[0].remote_path == "/kantine.xml"
+    assert sftp_client.put_calls[0].remote_path == "/EksportedeOrdrer_1.xml"
     assert sftp_client.put_calls[0].content_bytes == xml_bytes
 
     # Success should trigger unflag of the processed UID
@@ -162,12 +186,14 @@ def test_mails_remain_flagged_if_sftp_upload_errors(monkeypatch) -> None:
         raise OSError("SFTP down")
 
     sftp_client = FakeSFTPClient(put_impl=raising_put_impl)
+    fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
     def fake_sftp_hook_factory(conn_id: str):
         return FakeSFTPHook(conn_id, client=sftp_client)
 
     monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
     with pytest.raises(Exception, match=r"Failed to process 1 email\(s\)\. UIDs: 7"):
         pk_mod.process_kantinedata()
@@ -217,12 +243,14 @@ def test_flagged_mail_is_retrieved_on_rerun_after_previous_failure(monkeypatch) 
             raise OSError("Transient SFTP error")
 
     sftp_client = FakeSFTPClient(put_impl=put_impl)
+    fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
     def fake_sftp_hook_factory(conn_id: str):
         return FakeSFTPHook(conn_id, client=sftp_client)
 
     monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
     with pytest.raises(Exception):
         pk_mod.process_kantinedata()
@@ -331,8 +359,11 @@ def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) ->
     def raising_sftp_hook_factory(_conn_id: str):
         raise RuntimeError("SFTP credentials invalid")
 
+    fake_var = FakeVariable({"kantinedata_file_counter": "0"})
+
     monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
     monkeypatch.setattr(pk_mod, "SFTPHook", raising_sftp_hook_factory)
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
     with pytest.raises(Exception, match=r"Failed to process 1 email\(s\)\. UIDs: 99"):
         pk_mod.process_kantinedata()
@@ -341,3 +372,38 @@ def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) ->
     assert any(
         c.get("criteria") == "UNSEEN" and c.get("set_flags") == "\\Flagged" for c in calls
     )
+
+
+def test_filename_counter_skips_existing_remote_path(monkeypatch) -> None:
+    xml_bytes = b"<root><a>1</a></root>"
+    msg = make_email_with_attachments(
+        message_id="<msg-skip-existing>",
+        attachments=[(xml_bytes, "application", "xml", "ignored.xml")],
+    )
+
+    def fake_imap_get_emails_with_uids(**kwargs):  # type: ignore[no-untyped-def]
+        criteria = kwargs.get("criteria")
+        if criteria == "FLAGGED":
+            return [], []
+        if criteria == "UNSEEN":
+            return [("1", msg)], []
+        if isinstance(criteria, str) and criteria.startswith("UID "):
+            return [], []
+        raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
+
+    # Simulate that EksportedeOrdrer_1.xml already exists on SFTP
+    sftp_client = FakeSFTPClient(existing_paths={"/EksportedeOrdrer_1.xml"})
+
+    def fake_sftp_hook_factory(conn_id: str):
+        return FakeSFTPHook(conn_id, client=sftp_client)
+
+    fake_var = FakeVariable({"kantinedata_file_counter": "0"})
+
+    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
+
+    pk_mod.process_kantinedata()
+
+    assert len(sftp_client.put_calls) == 1
+    assert sftp_client.put_calls[0].remote_path == "/EksportedeOrdrer_2.xml"
