@@ -28,10 +28,23 @@ def process_kantinedata():
         logger.error(f"Error fetching emails: {e}")
         return
 
-    # Combine flagged and unseen emails for processing
+    # Combine flagged and unseen emails for processing while avoiding duplicates
     # Each email item is (uid, email_message)
-    emails = flagged_emails + unseen_emails
-    failed_email_ids = flagged_failed_email_ids + unseen_failed_email_ids
+    emails = []
+    seen_uids = set()
+    for uid, mail in flagged_emails + unseen_emails:
+        if uid in seen_uids:
+            continue
+        seen_uids.add(uid)
+        emails.append((uid, mail))
+
+    failed_email_ids = []
+    seen_failed_email_ids = set()
+    for email_id in flagged_failed_email_ids + unseen_failed_email_ids:
+        if email_id in seen_failed_email_ids:
+            continue
+        seen_failed_email_ids.add(email_id)
+        failed_email_ids.append(email_id)
 
     if failed_email_ids:
         logger.warning(
