@@ -1,20 +1,12 @@
 import logging
 
 from airflow.providers.sftp.hooks.sftp import SFTPHook
-# from rkdigi.email_handling import EmailReader
 from airflow.hooks.base import BaseHook
 from dag_kantinedata.mail_utils import imap_get_emails_with_uids, extract_attachments, decode_mime_word
 
 logger = logging.getLogger(__name__)
 imap_conn = BaseHook.get_connection("kantinedata_imap")
 sftp_hook = SFTPHook("kantinedata_sftp")
-
-# reader = EmailReader(
-#     email=imap_conn.login,
-#     password=imap_conn.password,
-#     imap_server=imap_conn.host,
-#     imap_port=imap_conn.port
-# )
 
 
 def process_kantinedata():
@@ -52,7 +44,8 @@ def process_kantinedata():
         return
 
     # Process each email
-    processed_mail_ids: dict[str, dict] = {}
+    successful_mail_ids: list[str] = []
+    failed_mail_ids: list[str] = []
     for uid, mail in emails:
         try:
             message_id = mail.get("Message-ID") if hasattr(mail, "get") else None
@@ -69,7 +62,7 @@ def process_kantinedata():
             # Mark as processed if no attachments, to avoid reprocessing
             if not attachments:
                 logger.info("No attachments found for email UID: %s", uid)
-                processed_mail_ids[uid] = {"success": True}
+                successful_mail_ids.append(str(uid))
                 continue
 
             # Process attachments
@@ -99,8 +92,9 @@ def process_kantinedata():
                     )
 
             # Mark email as successfully processed
-            processed_mail_ids[uid] = {"success": True}
+            successful_mail_ids.append(str(uid))
 
+        # Log any exceptions during processing, but continue with other emails
         except Exception as e:
             logger.error(
                 "Error processing email (UID=%s, Message-ID=%s): %s",
@@ -108,15 +102,11 @@ def process_kantinedata():
                 getattr(mail, "get", lambda *_: None)("Message-ID"),
                 e,
             )
-            processed_mail_ids[uid] = {"success": False, "error": str(e)}
+            failed_mail_ids.append(str(uid))
 
     # Unflag successfully processed emails, and log errors for failures
-    successfully_processed_ids = [
-        uid for uid, result in processed_mail_ids.items() if result.get("success")
-    ]
-
-    if successfully_processed_ids:
-        uid_set = ",".join(sorted(set(successfully_processed_ids), key=int))
+    if successful_mail_ids:
+        uid_set = ",".join(sorted(set(successful_mail_ids), key=int))
         _, failed_to_unflag_ids = imap_get_emails_with_uids(
             mailbox="INBOX",
             criteria=f"UID {uid_set}",
@@ -124,4 +114,15 @@ def process_kantinedata():
         )
 
         if failed_to_unflag_ids:
-            logger.warning("Failed to unflag email sequence IDs: %s", failed_to_unflag_ids)
+            logger.error("Failed to unflag email sequence IDs: %s", failed_to_unflag_ids)
+
+    # Log failed email IDs and throw error to trigger retry
+    if failed_mail_ids:
+        logger.warning(
+            "Failed to process %s email(s). UIDs: %s",
+            len(failed_mail_ids),
+            ",".join(sorted(set(failed_mail_ids), key=int)),
+        )
+        raise Exception(f"Failed to process {len(failed_mail_ids)} email(s). UIDs: {','.join(sorted(set(failed_mail_ids), key=int))}")
+
+    return
