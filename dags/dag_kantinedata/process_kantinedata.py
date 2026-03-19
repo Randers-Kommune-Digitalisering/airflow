@@ -24,7 +24,7 @@ def process_kantinedata():
 
     except Exception as e:
         logger.error(f"Error fetching emails: {e}")
-        return
+        raise
 
     # Combine flagged and unseen emails for processing while avoiding duplicates
     # Each email item is (uid, email_message)
@@ -57,7 +57,7 @@ def process_kantinedata():
     # Process each email
     successful_mail_ids: list[str] = []
     failed_mail_ids: list[str] = []
-    sftp_hook: SFTPHook | None = SFTPHook("kantinedata_sftp")
+    sftp_hook: SFTPHook | None = None
     for uid, mail in emails:
         try:
             message_id = mail.get("Message-ID") if hasattr(mail, "get") else None

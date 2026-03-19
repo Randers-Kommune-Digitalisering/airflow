@@ -296,12 +296,48 @@ def test_no_new_emails_short_circuits(monkeypatch) -> None:
     assert [c.get("criteria") for c in calls] == ["FLAGGED", "UNSEEN"]
 
 
-def test_imap_fetch_exception_is_caught_and_returns(monkeypatch, caplog) -> None:
+def test_imap_fetch_exception_is_raised(monkeypatch, caplog) -> None:
     def raising_imap_get_emails_with_uids(**_kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("IMAP failure")
 
     monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", raising_imap_get_emails_with_uids)
 
-    pk_mod.process_kantinedata()
+    with pytest.raises(RuntimeError, match="IMAP failure"):
+        pk_mod.process_kantinedata()
 
     assert any("Error fetching emails" in rec.message for rec in caplog.records)
+
+
+def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) -> None:
+    xml_bytes = b"<root />"
+    msg = make_email_with_attachments(
+        message_id="<msg-sftp-init-fail>",
+        attachments=[(xml_bytes, "application", "xml", "initfail.xml")],
+    )
+
+    calls: list[dict[str, Any]] = []
+
+    def fake_imap_get_emails_with_uids(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+        criteria = kwargs.get("criteria")
+        if criteria == "FLAGGED":
+            return [], []
+        if criteria == "UNSEEN":
+            return [("99", msg)], []
+        if isinstance(criteria, str) and criteria.startswith("UID "):
+            pytest.fail("Unflagging should not happen when SFTP hook init fails")
+        raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
+
+    def raising_sftp_hook_factory(_conn_id: str):
+        raise RuntimeError("SFTP credentials invalid")
+
+    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(pk_mod, "SFTPHook", raising_sftp_hook_factory)
+
+    with pytest.raises(Exception, match=r"Failed to process 1 email\(s\)\. UIDs: 99"):
+        pk_mod.process_kantinedata()
+
+    # UNSEEN fetch should flag while processing (mail remains flagged for rerun)
+    assert any(
+        c.get("criteria") == "UNSEEN" and c.get("set_flags") == "\\Flagged" for c in calls
+    )
