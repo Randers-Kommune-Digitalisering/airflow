@@ -1,4 +1,5 @@
 import logging
+import io
 
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from airflow.hooks.base import BaseHook
@@ -91,8 +92,8 @@ def process_kantinedata():
                 # Upload attachment to SFTP if XML
                 if attachment.get("content_type") in ["application/xml", "text/xml"]:
                     remote_path = f"/{attachment['filename']}"
-                    # with sftp_hook.get_conn() as sftp_client:
-                    #     sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)
+                    with sftp_hook.get_conn() as sftp_client:
+                        sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)
                     logger.info("Uploaded attachment to SFTP: %s", remote_path)
 
                 # Skip non-XML attachments
