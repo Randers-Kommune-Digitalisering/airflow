@@ -2,12 +2,9 @@ import logging
 import io
 
 from airflow.providers.sftp.hooks.sftp import SFTPHook
-from airflow.hooks.base import BaseHook
 from dag_kantinedata.mail_utils import imap_get_emails_with_uids, extract_attachments, decode_mime_word
 
 logger = logging.getLogger(__name__)
-imap_conn = BaseHook.get_connection("kantinedata_imap")
-sftp_hook = SFTPHook("kantinedata_sftp")
 
 
 def process_kantinedata():
@@ -60,6 +57,7 @@ def process_kantinedata():
     # Process each email
     successful_mail_ids: list[str] = []
     failed_mail_ids: list[str] = []
+    sftp_hook: SFTPHook | None = SFTPHook("kantinedata_sftp")
     for uid, mail in emails:
         try:
             message_id = mail.get("Message-ID") if hasattr(mail, "get") else None
@@ -91,6 +89,8 @@ def process_kantinedata():
 
                 # Upload attachment to SFTP if XML
                 if attachment.get("content_type") in ["application/xml", "text/xml"]:
+                    if sftp_hook is None:
+                        sftp_hook = SFTPHook("kantinedata_sftp")
                     remote_path = f"/{attachment['filename']}"
                     with sftp_hook.get_conn() as sftp_client:
                         sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)

@@ -7,7 +7,6 @@ from airflow.hooks.base import BaseHook
 
 
 _UID_RE = re.compile(rb"\bUID (?P<uid>\d+)\b")
-imap_conn = BaseHook.get_connection("kantinedata_imap")
 
 
 def imap_get_emails_with_uids(
@@ -28,6 +27,7 @@ def imap_get_emails_with_uids(
       - We fetch using message sequence numbers returned by SEARCH.
       - UID is extracted from FETCH response (UID RFC822).
     """
+    imap_conn = BaseHook.get_connection("kantinedata_imap")
     with imaplib.IMAP4(host=imap_conn.host, port=imap_conn.port) as server:
         server.starttls()
         server.login(imap_conn.login, imap_conn.password)
