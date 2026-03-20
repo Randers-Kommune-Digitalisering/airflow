@@ -476,10 +476,18 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             "dq_number": item.get("user.user_id"),
         }
 
+    # Avoid DB hit if no devices
+    if not device_map:
+        logger.info("No Ivanti devices to upsert into MobileDevice table.")
+        return True
+
     with Session(asset_engine) as session:
+        # Only fetch existing devices for relevant serials
         existing_devices = {
             d.serial_number: d
-            for d in session.query(MobileDevice).all()
+            for d in session.query(MobileDevice)
+            .filter(MobileDevice.serial_number.in_(device_map.keys()))
+            .all()
         }
 
         inserted = 0
@@ -1057,7 +1065,12 @@ def upload_assets_to_topdesk(
     :return: True if upload succeeded, otherwise False.
     """
     # Get configuration from Airflow Variable
-    asset_config = Variable.get("asset_config", default_var=None, deserialize_json=True)
+    asset_config = Variable.get("asset_config", default_var={}, deserialize_json=True)
+
+    if not isinstance(asset_config, dict):
+        logger.error("Airflow Variable 'asset_config' must be a JSON object (dict).")
+        return False
+
     topdesk_asset_filename = asset_config.get(filename_key)
 
     if not topdesk_asset_filename:
