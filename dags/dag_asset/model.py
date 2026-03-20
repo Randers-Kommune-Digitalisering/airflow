@@ -52,3 +52,20 @@ class Computer(Base):
     kob_ean_nr = Column(String)
     user_id = Column(Integer, ForeignKey('user.user_id'))
     user = relationship('User', back_populates='computers')
+
+
+class MobileDevice(Base):
+    __tablename__ = "mobile_device"
+    serial_number = Column(String, primary_key=True)
+    os_version = Column(String)
+    manufacturer = Column(String)
+    model = Column(String)
+    device_name = Column(String)
+    imei = Column(String)
+    phone_number = Column(String)
+    carrier = Column(String)
+    created_at = Column(DateTime)
+    last_connected_at = Column(DateTime)
+    dq_number = Column(String)
+    user_display_name = Column(String)
+    user_email = Column(String)
