@@ -15,8 +15,10 @@ from dag_asset.asset_data import (
     insert_computers_data,
     insert_atea_data,
     insert_device_license_and_historical_data,
-    export_assets_from_db,
-    upload_assets_to_topdesk
+    insert_ivanti_data,
+    export_pc_assets_from_db,
+    export_mobile_assets_from_db,
+    upload_assets_to_topdesk,
 )
 from rkdigi.token_session import ManagedOAuth2Session
 
@@ -59,6 +61,13 @@ def task_insert_users_data() -> None:
         raise AirflowFailException("Failed to insert users data")
 
 
+def task_insert_ivanti_data() -> None:
+    asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
+    ivanti_http_hook = HttpHook(http_conn_id="ivanti_api")
+    if not insert_ivanti_data(http_hook=ivanti_http_hook, asset_engine=asset_engine):
+        raise AirflowFailException("Failed to insert Ivanti data")
+
+
 def task_insert_computers_data() -> None:
     capa_cms_engine = MsSqlHook(mssql_conn_id="capa_cms_db").get_sqlalchemy_engine()
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
@@ -85,16 +94,31 @@ def task_insert_device_license_and_historical_data() -> None:
         raise AirflowFailException("Failed to insert device license and historical data")
 
 
-def task_upload_assets_to_topdesk() -> None:
+def task_upload_pc_assets_to_topdesk() -> None:
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
-    csv_bytes = export_assets_from_db(asset_engine=asset_engine)
+    csv_bytes = export_pc_assets_from_db(asset_engine=asset_engine)
     topdesk_test_hook = HttpHook(http_conn_id="topdesk_api_test")
     topdesk_prod_hook = HttpHook(http_conn_id="topdesk_api_prod")
     for hook in [topdesk_test_hook, topdesk_prod_hook]:
         if not upload_assets_to_topdesk(
             http_hook=hook,
             csv_bytes=csv_bytes,
+            filename_key="topdesk_pc_file_path",
         ):
             raise AirflowFailException(
                 f"Failed to upload to Topdesk using connection {hook.http_conn_id}"
             )
+
+
+def task_upload_mobile_assets_to_topdesk() -> None:
+    asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
+    csv_bytes = export_mobile_assets_from_db(asset_engine=asset_engine)
+    topdesk_test_hook = HttpHook(http_conn_id="topdesk_api_test") # Only for Test right now
+    if not upload_assets_to_topdesk(
+        http_hook=topdesk_test_hook,
+        csv_bytes=csv_bytes,
+        filename_key="topdesk_mobile_file_path",
+    ):
+        raise AirflowFailException(
+            f"Failed to upload to Topdesk using connection {topdesk_test_hook.http_conn_id}"
+        )
