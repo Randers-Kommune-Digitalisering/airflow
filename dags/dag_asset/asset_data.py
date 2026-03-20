@@ -10,7 +10,7 @@ from airflow.providers.http.hooks.http import HttpHook
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
-from dag_asset.model import Base, Department, User, Computer
+from dag_asset.model import Base, Department, MobileDevice, User, Computer
 from airflow.models import Variable
 from utils.utils import df_to_csv_bytes
 from rkdigi.token_session import ManagedOAuth2Session
@@ -307,6 +307,9 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
 def _fetch_atea_data(http_hook: HttpHook) -> list:
     """
     Fetch asset data from Atea API
+
+    :param http_hook: Airflow HttpHook for the Atea API
+    :return: List of asset data from Atea API
     """
     logger.info("Fetching assets from Atea API ...")
 
@@ -344,6 +347,172 @@ def _fetch_atea_data(http_hook: HttpHook) -> list:
 
     logger.info(f"Successfully retrieved data from Atea API. Total records: {len(all_rows)} (pages fetched: {page})")
     return all_rows
+
+
+IVANTI_FIELDS = (
+    "common.home_operator_name,android.device,ios.iPhone PRODUCT,android.brand,"
+    "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
+    "user.user_id,user.display_name,user.email_address,"
+    "common.manufacturer,common.model,common.imei,common.SerialNumber,android.samsung_model_number"
+)
+
+
+def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
+    """
+    Fetch mobile device data from Ivanti API
+
+    :param http_hook: Airflow HttpHook for the Ivanti API
+    :return: List of devices
+    """
+    logger.info("Fetching devices from Ivanti API ...")
+
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+
+    if not conn.login or not conn.password:
+        raise ValueError("Missing credentials for Ivanti API connection.")
+
+    http_hook.method = "GET"
+
+    limit = 200
+    offset = 0
+    all_devices: list[dict] = []
+
+    while True:
+        logger.debug(f"Fetching Ivanti devices offset={offset} limit={limit} ...")
+
+        params = {
+            "adminDeviceSpaceId": 1,
+            "fields": IVANTI_FIELDS,
+            "query": "",
+            "limit": limit,
+            "offset": offset,
+        }
+
+        res = http_hook.run(
+            endpoint="/api/v2/devices",
+            data=params,
+            headers={
+                "Content-Type": "application/json",
+            },
+        )
+
+        data = res.json()
+        batch = data.get("results", []) or []
+
+        all_devices.extend(batch)
+
+        if len(batch) < limit:
+            break
+
+        offset += limit
+
+    logger.info(f"Successfully retrieved data from Ivanti API. Total records: {len(all_devices)}")
+    return all_devices
+
+
+def _filter_ivanti_devices(devices: list[dict]) -> list[dict]:
+    """
+    Filter Ivanti devices.
+
+    :param devices: List of raw device dicts as returned from the Ivanti API.
+    :return: Filtered list of devices
+    """
+
+    android = []
+    ios = []
+
+    for d in devices:
+        manufacturer = str(d.get("common.manufacturer", "")).lower()
+
+        if manufacturer == "samsung":
+            android.append(d)
+
+        elif manufacturer == "apple":
+            model = str(d.get("common.model", "")).lower()
+
+            if "ipad" in model or "appletv" in model:
+                continue
+
+            ios.append(d)
+
+    return android + ios
+
+
+def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
+    """
+    Fetch device data from Ivanti API and upsert into MobileDevice table.
+
+    :param http_hook: Airflow HttpHook for the Ivanti API
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if the insert/update succeeded, otherwise False.
+    """
+    ivanti_data = _fetch_ivanti_devices(http_hook=http_hook)
+
+    if not ivanti_data:
+        logger.error("No data fetched from Ivanti API.")
+        return False
+
+    filtered_devices = _filter_ivanti_devices(devices=ivanti_data)
+
+    logger.debug(f"Filtered Ivanti devices: {len(filtered_devices)} out of {len(ivanti_data)}")
+
+    device_map = {}
+
+    for item in filtered_devices:
+        serial = item.get("common.SerialNumber")
+
+        if not serial:
+            continue
+
+        device_map[serial] = {
+            "os_version": item.get("common.platform_name"),
+            "manufacturer": item.get("common.manufacturer"),
+            "model": item.get("common.model"),
+            "device_name": item.get("android.device") or item.get("ios.iPhone PRODUCT"),
+            "imei": item.get("common.imei"),
+            "phone_number": item.get("common.current_phone_number"),
+            "carrier": item.get("common.home_operator_name"),
+            "created_at": item.get("common.creation_date"),
+            "last_connected_at": item.get("common.last_connected_at"),
+            "user_display_name": item.get("user.display_name"),
+            "user_email": item.get("user.email_address"),
+            "dq_number": item.get("user.user_id"),
+        }
+
+    with Session(asset_engine) as session:
+        existing_devices = {
+            d.serial_number: d
+            for d in session.query(MobileDevice).all()
+        }
+
+        inserted = 0
+        updated = 0
+
+        for serial, data in device_map.items():
+            existing = existing_devices.get(serial)
+
+            if existing:
+                # Update
+                for key, value in data.items():
+                    setattr(existing, key, value)
+
+                updated += 1
+            else:
+                # Insert
+                new_device = MobileDevice(
+                    serial_number=serial,
+                    **data,
+                )
+                session.add(new_device)
+                inserted += 1
+
+        session.commit()
+
+        logger.info(
+            f"Inserted: {inserted}, Updated: {updated}, Total: {len(device_map)} from Ivanti API data into MobileDevice table."
+        )
+
+    return True
 
 
 def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
@@ -716,7 +885,7 @@ def insert_department_ean_from_delta(
         return False
 
 
-def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
+def export_pc_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
     Export asset data from the Asset DB as a CSV payload (bytes).
 
@@ -809,6 +978,52 @@ def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     return df_to_csv_bytes(df, sep=';', encoding='UTF-8')
 
 
+def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
+    """
+    Export mobile device data from the Asset DB as a CSV payload (bytes).
+
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: CSV content as an io.BytesIO buffer
+    """
+    sql_command = """
+        SELECT
+            md."serial_number",
+            md."os_version",
+            md."manufacturer",
+            md."model",
+            md."device_name",
+            md."imei",
+            md."phone_number",
+            md."carrier",
+            md."created_at",
+            md."last_connected_at",
+            md."dq_number",
+            md."user_display_name",
+            md."user_email"
+        FROM public."mobile_device" md
+    """
+
+    logger.debug(f"Executing mobile device SQL command: {sql_command}")
+
+    with asset_engine.connect() as conn:
+        result = conn.execute(text(sql_command)).mappings().all()
+
+    if not result:
+        raise ValueError("No data found in MobileDevice table")
+
+    df = pd.DataFrame(result)
+
+    # Transform datetime columns to TopDesk format
+    for col in ["created_at", "last_connected_at"]:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda val: "" if pd.isnull(val) else pd.to_datetime(val).strftime("%Y-%m-%dT%H:%M:%S.00")
+                if str(val).strip() else str(val)
+            )
+
+    return df_to_csv_bytes(df, sep=';', encoding='UTF-8')
+
+
 def upload_assets_to_topdesk(
     http_hook: HttpHook,
     csv_bytes: io.BytesIO,
@@ -837,3 +1052,4 @@ def upload_assets_to_topdesk(
     logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: {http_hook.http_conn_id} Code Status: {res.status_code}.")
 
     return True
+
