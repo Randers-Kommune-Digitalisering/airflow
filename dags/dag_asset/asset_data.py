@@ -391,9 +391,6 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
         res = http_hook.run(
             endpoint="/api/v2/devices",
             data=params,
-            headers={
-                "Content-Type": "application/json",
-            },
         )
 
         data = res.json()
@@ -987,20 +984,42 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
     sql_command = """
         SELECT
-            md."serial_number",
-            md."os_version",
-            md."manufacturer",
-            md."model",
-            md."device_name",
-            md."imei",
-            md."phone_number",
-            md."carrier",
-            md."created_at",
-            md."last_connected_at",
-            md."dq_number",
-            md."user_display_name",
-            md."user_email"
-        FROM public."mobile_device" md
+        STRING_AGG(d."name", ', ') AS department,
+        STRING_AGG(d."ean", ', ') AS department_ean,
+        md."serial_number",
+        md."os_version",
+        md."manufacturer",
+        md."model",
+        md."device_name",
+        md."imei",
+        md."phone_number",
+        md."carrier",
+        md."created_at",
+        md."last_connected_at",
+        md."dq_number",
+        md."user_display_name",
+        md."user_email"
+    FROM public."mobile_device" md
+    LEFT JOIN public."user" u
+        ON UPPER(md."dq_number") = u."primary_user"
+    LEFT JOIN public."user_department" ud
+        ON ud."user_id" = u."user_id"
+    LEFT JOIN public."department" d
+        ON d."department_id" = ud."department_id"
+    GROUP BY
+        md."serial_number",
+        md."os_version",
+        md."manufacturer",
+        md."model",
+        md."device_name",
+        md."imei",
+        md."phone_number",
+        md."carrier",
+        md."created_at",
+        md."last_connected_at",
+        md."dq_number",
+        md."user_display_name",
+        md."user_email";
     """
 
     logger.debug(f"Executing mobile device SQL command: {sql_command}")
@@ -1027,21 +1046,28 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
 def upload_assets_to_topdesk(
     http_hook: HttpHook,
     csv_bytes: io.BytesIO,
+    filename_key: str,
 ) -> bool:
     """
     Upload a CSV payload to Topdesk as a source file.
 
     :param http_hook: Airflow HttpHook configured for the Topdesk API.
     :param csv_bytes: CSV content as an io.BytesIO buffer to be uploaded.
+    :param filename_key: Key in Airflow Variable 'asset_config' containing the Topdesk file name.
     :return: True if upload succeeded, otherwise False.
     """
+    # Get configuration from Airflow Variable
+    asset_config = Variable.get("asset_config", default_var=None, deserialize_json=True)
+    topdesk_asset_filename = asset_config.get(filename_key)
 
-    topdesk_asset_filename = Variable.get("asset_config", default_var=None, deserialize_json=True)["topdesk_file_path"]
-    logger.info(f"File name: {topdesk_asset_filename}")
+    if not topdesk_asset_filename:
+        logger.error(f"No Topdesk file name found for key '{filename_key}' in asset_config")
+        return False
 
+    logger.info(f"Uploading file to Topdesk: {topdesk_asset_filename}")
+
+    # Topdesk endpoint
     upload_path = f"/services/import-to-api-v1/api/sourceFiles?filename={topdesk_asset_filename}"
-
-    logger.info(f"Uploading {topdesk_asset_filename} to Topdesk using connection: {http_hook.http_conn_id}")
 
     http_hook.method = "PUT"
     res = http_hook.run(
@@ -1052,4 +1078,3 @@ def upload_assets_to_topdesk(
     logger.info(f"Successfully uploaded {topdesk_asset_filename} to TopDesk: {http_hook.http_conn_id} Code Status: {res.status_code}.")
 
     return True
-
