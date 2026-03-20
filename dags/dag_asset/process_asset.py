@@ -113,7 +113,7 @@ def task_upload_pc_assets_to_topdesk() -> None:
 def task_upload_mobile_assets_to_topdesk() -> None:
     asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
     csv_bytes = export_mobile_assets_from_db(asset_engine=asset_engine)
-    topdesk_test_hook = HttpHook(http_conn_id="topdesk_api_test") # Only for Test right now
+    topdesk_test_hook = HttpHook(http_conn_id="topdesk_api_test")  # Only for Test right now
     if not upload_assets_to_topdesk(
         http_hook=topdesk_test_hook,
         csv_bytes=csv_bytes,
