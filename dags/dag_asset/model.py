@@ -54,6 +54,7 @@ class Computer(Base):
     user = relationship('User', back_populates='computers')
 
 
+# TODO: relationships to User table
 class MobileDevice(Base):
     __tablename__ = "mobile_device"
     serial_number = Column(String, primary_key=True)
@@ -66,6 +67,6 @@ class MobileDevice(Base):
     carrier = Column(String)
     created_at = Column(DateTime)
     last_connected_at = Column(DateTime)
-    dq_number = Column(String)
     user_display_name = Column(String)
     user_email = Column(String)
+    dq_number = Column(String)

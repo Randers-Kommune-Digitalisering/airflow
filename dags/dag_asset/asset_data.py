@@ -349,14 +349,6 @@ def _fetch_atea_data(http_hook: HttpHook) -> list:
     return all_rows
 
 
-IVANTI_FIELDS = (
-    "common.home_operator_name,android.device,ios.iPhone PRODUCT,android.brand,"
-    "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
-    "user.user_id,user.display_name,user.email_address,"
-    "common.manufacturer,common.model,common.imei,common.SerialNumber,android.samsung_model_number"
-)
-
-
 def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
     """
     Fetch mobile device data from Ivanti API
@@ -373,17 +365,26 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
 
     http_hook.method = "GET"
 
-    limit = 200
+    # Fields needed to get the required data for the MobileDevice table
+    fields = (
+        "common.home_operator_name,android.device,ios.iPhone PRODUCT,"  # "android.brand" is not used, TODO: Remove this comment
+        "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
+        "user.user_id,user.display_name,user.email_address,"
+        "common.manufacturer,common.model,common.imei,common.SerialNumber"  # "android.samsung_model_number" is not used, TODO: Remove this comment
+    )
+    # Query parameters for filtering away non-mobile Samsung android devices and Apple devices that are not iPhones (iPads, Apple TVs etc.)
+    query = 'common.manufacturer contains "samsung" OR common.model does not contain "iPad" AND common.model does not contain "AppleTV"'
+    limit = 200  # can be higher but documentation specifies "no more than 200."
     offset = 0
-    all_devices: list[dict] = []
 
+    all_devices: list[dict] = []
     while True:
         logger.debug(f"Fetching Ivanti devices offset={offset} limit={limit} ...")
 
         params = {
             "adminDeviceSpaceId": 1,
-            "fields": IVANTI_FIELDS,
-            "query": "",
+            "fields": fields,
+            "query": query,
             "limit": limit,
             "offset": offset,
         }
@@ -407,32 +408,33 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
     return all_devices
 
 
-def _filter_ivanti_devices(devices: list[dict]) -> list[dict]:
-    """
-    Filter Ivanti devices.
+# TODO: Remove, not needed with the new query filtering in _fetch_ivanti_devices
+# def _filter_ivanti_devices(devices: list[dict]) -> list[dict]:
+#     """
+#     Filter Ivanti devices.
 
-    :param devices: List of raw device dicts as returned from the Ivanti API.
-    :return: Filtered list of devices
-    """
+#     :param devices: List of raw device dicts as returned from the Ivanti API.
+#     :return: Filtered list of devices
+#     """
 
-    android = []
-    ios = []
+#     android = []
+#     ios = []
 
-    for d in devices:
-        manufacturer = str(d.get("common.manufacturer", "")).lower()
+#     for d in devices:
+#         manufacturer = str(d.get("common.manufacturer", "")).lower()
 
-        if manufacturer == "samsung":
-            android.append(d)
+#         if manufacturer == "samsung":
+#             android.append(d)
 
-        elif manufacturer == "apple":
-            model = str(d.get("common.model", "")).lower()
+#         elif manufacturer == "apple":
+#             model = str(d.get("common.model", "")).lower()
 
-            if "ipad" in model or "appletv" in model:
-                continue
+#             if "ipad" in model or "appletv" in model:
+#                 continue
 
-            ios.append(d)
+#             ios.append(d)
 
-    return android + ios
+#     return android + ios
 
 
 def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
@@ -449,13 +451,13 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
         logger.error("No data fetched from Ivanti API.")
         return False
 
-    filtered_devices = _filter_ivanti_devices(devices=ivanti_data)
+    # filtered_devices = _filter_ivanti_devices(devices=ivanti_data)
 
-    logger.debug(f"Filtered Ivanti devices: {len(filtered_devices)} out of {len(ivanti_data)}")
+    logger.debug(f"Ivanti devices: {len(ivanti_data)} records after filtering.")
 
     device_map = {}
 
-    for item in filtered_devices:
+    for item in ivanti_data:
         serial = item.get("common.SerialNumber")
 
         if not serial:
