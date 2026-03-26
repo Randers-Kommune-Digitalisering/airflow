@@ -1,13 +1,97 @@
 import logging
 import io
+import errno
+from typing import TYPE_CHECKING
 
-from airflow.providers.sftp.hooks.sftp import SFTPHook
+try:
+    from airflow.providers.sftp.hooks.sftp import SFTPHook
+    from airflow.models import Variable
+except ModuleNotFoundError as e:
+    if e.name and (e.name == "airflow" or e.name.startswith("airflow.")):  # For pytest environment without Airflow installed
+        SFTPHook = None
+        Variable = None
+    else:
+        raise
 from dag_kantinedata.mail_utils import imap_get_emails_with_uids, extract_attachments, decode_mime_word
+
+if TYPE_CHECKING:
+    from paramiko import SFTPClient
 
 logger = logging.getLogger(__name__)
 
 
+_KANTINEDATA_FILE_COUNTER_VAR_KEY = "kantinedata_file_counter"
+_KANTINEDATA_FILE_COUNTER_MAX = 10
+
+
+def _sftp_path_exists(sftp_client: "SFTPClient", remote_path: str) -> bool:
+    """
+    Check if a remote path exists on the SFTP server.
+
+    :param sftp_client: An active SFTP client connection.
+    :param remote_path: The remote path to check (e.g. "/EksportedeOrdrer_1.xml").
+    :return: True if the path exists, False otherwise.
+    """
+    try:
+        sftp_client.stat(remote_path)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as e:
+        if getattr(e, "errno", None) in {errno.ENOENT, 2}:
+            return False
+        raise
+
+
+def _allocate_next_filename(sftp_client: "SFTPClient") -> str:
+    """Allocate the next Kantinedata filename (1..10, wrapping).
+
+    Uses an Airflow Variable as the source of truth and increments it (wrapping after 10).
+    Also checks the SFTP destination for collisions (e.g. if the variable was reset).
+
+    :param sftp_client: An active SFTP client connection.
+    :return: The allocated filename (e.g. "EksportedeOrdrer_1.xml").
+    """
+    if Variable is None:
+        raise RuntimeError(
+            "Airflow Variable is not available."
+        )
+
+    current_raw = Variable.get(_KANTINEDATA_FILE_COUNTER_VAR_KEY, default_var="0")
+    current_number = 0
+    try:
+        current_number = int(current_raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid value for Airflow Variable '%s': %s. Defaulting to 0.",
+            _KANTINEDATA_FILE_COUNTER_VAR_KEY,
+            current_raw,
+        )
+
+    candidate = (current_number % _KANTINEDATA_FILE_COUNTER_MAX) + 1
+    for _ in range(_KANTINEDATA_FILE_COUNTER_MAX):
+        remote_path = f"/EksportedeOrdrer_{candidate}.xml"
+        if not _sftp_path_exists(sftp_client, remote_path):
+            Variable.set(_KANTINEDATA_FILE_COUNTER_VAR_KEY, str(candidate))
+            return remote_path.lstrip("/")
+        candidate = (candidate % _KANTINEDATA_FILE_COUNTER_MAX) + 1
+
+    raise RuntimeError(
+        f"No available Kantinedata filename slots on SFTP (1-{_KANTINEDATA_FILE_COUNTER_MAX})."
+    )
+
+
 def process_kantinedata():
+    """
+    Main function to process Kantinedata emails from the INBOX.
+    - Fetches flagged emails (from previous failed runs) and unseen emails (new).
+    - Flags unseen emails while processing.
+    - Extracts attachments and uploads XML files to SFTP.
+    - Unflags successfully processed emails, and logs any failures for retry.
+    - Uses Airflow Variable to maintain a counter for filenames, with collision checks against SFTP.
+    - Logs detailed information about processing steps and errors.
+    - Raises an exception if any email fails to process, which triggers retries.
+    """
     # Fetch emails from the kantinedata INBOX
     try:
         # First, fetch flagged mails that have not finished processing (from failed runs)
@@ -91,8 +175,9 @@ def process_kantinedata():
                 if attachment.get("content_type") in ["application/xml", "text/xml"]:
                     if sftp_hook is None:
                         sftp_hook = SFTPHook("kantinedata_sftp")
-                    remote_path = f"/{attachment['filename']}"
                     with sftp_hook.get_conn() as sftp_client:
+                        filename = _allocate_next_filename(sftp_client)
+                        remote_path = f"/{filename}"
                         sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)
                     logger.info("Uploaded attachment to SFTP: %s", remote_path)
 
