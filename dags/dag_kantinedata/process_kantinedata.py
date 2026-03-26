@@ -3,10 +3,7 @@ import io
 import errno
 
 from airflow.providers.sftp.hooks.sftp import SFTPHook
-try:
-    from airflow.models import Variable
-except Exception:
-    Variable = None
+from airflow.models import Variable
 from dag_kantinedata.mail_utils import imap_get_emails_with_uids, extract_attachments, decode_mime_word
 
 logger = logging.getLogger(__name__)
@@ -14,20 +11,6 @@ logger = logging.getLogger(__name__)
 
 _KANTINEDATA_FILE_COUNTER_VAR_KEY = "kantinedata_file_counter"
 _KANTINEDATA_FILE_COUNTER_MAX = 10
-
-
-def _safe_int(value: object, default: int = 0) -> int:
-    """
-    Safely convert a value to an integer, returning a default if conversion fails.
-
-    :param value: The value to convert (e.g. from Airflow Variable).
-    :param default: The default integer to return if conversion fails.
-    :return: The converted integer or the default.
-    """
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _sftp_path_exists(sftp_client: SFTPHook, remote_path: str) -> bool:
@@ -64,7 +47,15 @@ def _allocate_next_filename(sftp_client: SFTPHook) -> str:
         )
 
     current_raw = Variable.get(_KANTINEDATA_FILE_COUNTER_VAR_KEY, default_var="0")
-    current_number = _safe_int(current_raw, default=0)
+    current_number = 0
+    try:
+        current_number = int(current_raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid value for Airflow Variable '%s': %s. Defaulting to 0.",
+            _KANTINEDATA_FILE_COUNTER_VAR_KEY,
+            current_raw,
+        )
 
     candidate = (current_number % _KANTINEDATA_FILE_COUNTER_MAX) + 1
     for _ in range(_KANTINEDATA_FILE_COUNTER_MAX):
@@ -86,7 +77,7 @@ def process_kantinedata():
     - Flags unseen emails while processing.
     - Extracts attachments and uploads XML files to SFTP.
     - Unflags successfully processed emails, and logs any failures for retry.
-    - Uses Airflow Variable to maintain a monotonic counter for filenames, with collision checks against SFTP.
+    - Uses Airflow Variable to maintain a counter for filenames, with collision checks against SFTP.
     - Logs detailed information about processing steps and errors.
     - Raises an exception if any email fails to process, which triggers retries.
     """
