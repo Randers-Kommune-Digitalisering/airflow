@@ -2,26 +2,38 @@ import logging
 import io
 import errno
 from typing import TYPE_CHECKING
+from airflow.hooks.base import BaseHook
 
 try:
     from airflow.providers.sftp.hooks.sftp import SFTPHook
     from airflow.models import Variable
 except ModuleNotFoundError as e:
-    if e.name and (e.name == "airflow" or e.name.startswith("airflow.")):  # For pytest environment without Airflow installed
+    if e.name == "airflow.models":  # For pytest environment without Airflow installed
         SFTPHook = None
         Variable = None
     else:
         raise
-from dag_kantinedata.mail_utils import imap_get_emails_with_uids, extract_attachments, decode_mime_word
+
+from rkdigi.email_handling import EmailReader
+from dag_kantinedata.mail_utils import extract_attachments, decode_mime_word
 
 if TYPE_CHECKING:
     from paramiko import SFTPClient
 
 logger = logging.getLogger(__name__)
 
-
 _KANTINEDATA_FILE_COUNTER_VAR_KEY = "kantinedata_file_counter"
 _KANTINEDATA_FILE_COUNTER_MAX = 10
+
+
+def _get_email_reader() -> EmailReader:
+    imap_conn = BaseHook.get_connection("kantinedata_imap")
+    return EmailReader(
+        email=imap_conn.login,
+        password=imap_conn.password,
+        imap_server=imap_conn.host,
+        imap_port=imap_conn.port,
+    )
 
 
 def _sftp_path_exists(sftp_client: "SFTPClient", remote_path: str) -> bool:
@@ -93,14 +105,15 @@ def process_kantinedata():
     - Raises an exception if any email fails to process, which triggers retries.
     """
     # Fetch emails from the kantinedata INBOX
+    email_reader = _get_email_reader()
     try:
         # First, fetch flagged mails that have not finished processing (from failed runs)
-        flagged_emails, flagged_failed_email_ids = imap_get_emails_with_uids(
+        flagged_emails, flagged_failed_email_ids = email_reader.get_emails(
             mailbox="INBOX",
             criteria="FLAGGED",
         )
         # Then, fetch unseen mails and flag them for processing
-        unseen_emails, unseen_failed_email_ids = imap_get_emails_with_uids(
+        unseen_emails, unseen_failed_email_ids = email_reader.get_emails(
             mailbox="INBOX",
             criteria="UNSEEN",
             set_flags="\\Flagged",  # Flag while processing
@@ -111,10 +124,10 @@ def process_kantinedata():
         raise
 
     # Combine flagged and unseen emails for processing while avoiding duplicates
-    # Each email item is (uid, email_message)
     emails = []
     seen_uids = set()
-    for uid, mail in flagged_emails + unseen_emails:
+    for mail in flagged_emails + unseen_emails:
+        uid = int(mail.uid)
         if uid in seen_uids:
             continue
         seen_uids.add(uid)
@@ -206,7 +219,7 @@ def process_kantinedata():
     # Unflag successfully processed emails, and log errors for failures
     if successful_mail_ids:
         uid_set = ",".join(sorted(set(successful_mail_ids), key=int))
-        _, failed_to_unflag_ids = imap_get_emails_with_uids(
+        _, failed_to_unflag_ids = email_reader.get_emails(
             mailbox="INBOX",
             criteria=f"UID {uid_set}",
             del_flags="\\Flagged",  # Unflag

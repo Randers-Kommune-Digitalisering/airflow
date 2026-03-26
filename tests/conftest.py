@@ -38,10 +38,24 @@ except Exception:
     _ensure_module("airflow.hooks")
     base_mod = _ensure_module("airflow.hooks.base")
 
+    class _FakeConnection:  # type: ignore[too-few-public-methods]
+        """Minimal stand-in for Airflow Connection used in unit tests."""
+
+        def __init__(self):
+            self.host = ""
+            self.login = ""
+            self.password = ""
+            self.schema = ""
+            self.port = None
+            self.extra = "{}"
+
     class BaseHook:  # type: ignore[too-few-public-methods]
         @staticmethod
         def get_connection(_conn_id: str):  # noqa: ANN001
-            raise RuntimeError("Airflow hook stub; patch BaseHook.get_connection in tests")
+            # Default to a harmless fake connection so modules that call
+            # BaseHook.get_connection at import time can still be imported.
+            # Individual tests may monkeypatch this for more specific behavior.
+            return _FakeConnection()
 
     base_mod.BaseHook = BaseHook
 

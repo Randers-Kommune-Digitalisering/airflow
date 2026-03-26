@@ -70,10 +70,19 @@ class FakeVariable:
         self._store[key] = value
 
 
+class FakeEmailReader:
+    def __init__(self, *, get_emails_impl: Callable[..., tuple[list[EmailMessage], list[bytes]]]):
+        self._get_emails_impl = get_emails_impl
+
+    def get_emails(self, **kwargs):  # type: ignore[no-untyped-def]
+        return self._get_emails_impl(**kwargs)
+
+
 def make_email_with_attachments(
     *,
     message_id: str = "<msg-1>",
     subject: str = "Test subject",
+    uid: str = "1",
     attachments: list[tuple[bytes, str, str, str]] | None = None,
 ) -> EmailMessage:
     """Create an EmailMessage with attachments.
@@ -84,6 +93,9 @@ def make_email_with_attachments(
     msg["Message-ID"] = message_id
     msg["Subject"] = subject
     msg.set_content("Body")
+
+    # process_kantinedata expects a `.uid` attribute on each message.
+    msg.uid = uid  # type: ignore[attr-defined]
 
     for content_bytes, maintype, subtype, filename in attachments or []:
         msg.add_attachment(
@@ -115,6 +127,7 @@ def test_unflags_mail_after_successful_processing_and_uploads_xml_bytes(monkeypa
     xml_bytes = b"<root><a>123</a></root>"
     msg = make_email_with_attachments(
         message_id="<msg-xml>",
+        uid="123",
         attachments=[
             (xml_bytes, "application", "xml", "kantine.xml"),
             (b"ignored", "text", "plain", "note.txt"),
@@ -129,7 +142,7 @@ def test_unflags_mail_after_successful_processing_and_uploads_xml_bytes(monkeypa
         if criteria == "FLAGGED":
             return [], []
         if criteria == "UNSEEN":
-            return [("123", msg)], []
+            return [msg], []
         if isinstance(criteria, str) and criteria.startswith("UID "):
             return [], []
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
@@ -140,7 +153,11 @@ def test_unflags_mail_after_successful_processing_and_uploads_xml_bytes(monkeypa
     def fake_sftp_hook_factory(conn_id: str):
         return FakeSFTPHook(conn_id, client=sftp_client)
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
     monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
@@ -166,6 +183,7 @@ def test_mails_remain_flagged_if_sftp_upload_errors(monkeypatch) -> None:
     xml_bytes = b"<root />"
     msg = make_email_with_attachments(
         message_id="<msg-fail>",
+        uid="7",
         attachments=[(xml_bytes, "application", "xml", "fail.xml")],
     )
 
@@ -177,7 +195,7 @@ def test_mails_remain_flagged_if_sftp_upload_errors(monkeypatch) -> None:
         if criteria == "FLAGGED":
             return [], []
         if criteria == "UNSEEN":
-            return [("7", msg)], []
+            return [msg], []
         if isinstance(criteria, str) and criteria.startswith("UID "):
             pytest.fail("Unflagging should not happen when processing fails")
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
@@ -191,7 +209,11 @@ def test_mails_remain_flagged_if_sftp_upload_errors(monkeypatch) -> None:
     def fake_sftp_hook_factory(conn_id: str):
         return FakeSFTPHook(conn_id, client=sftp_client)
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
     monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
@@ -208,6 +230,7 @@ def test_flagged_mail_is_retrieved_on_rerun_after_previous_failure(monkeypatch) 
     xml_bytes = b"<root>rerun</root>"
     msg = make_email_with_attachments(
         message_id="<msg-rerun>",
+        uid="42",
         attachments=[(xml_bytes, "application", "xml", "rerun.xml")],
     )
 
@@ -222,12 +245,12 @@ def test_flagged_mail_is_retrieved_on_rerun_after_previous_failure(monkeypatch) 
             if criteria == "FLAGGED":
                 return [], []
             if criteria == "UNSEEN":
-                return [("42", msg)], []
+                return [msg], []
             if isinstance(criteria, str) and criteria.startswith("UID "):
                 pytest.fail("First run fails, so unflagging should not happen")
         else:
             if criteria == "FLAGGED":
-                return [("42", msg)], []
+                return [msg], []
             if criteria == "UNSEEN":
                 return [], []
             if isinstance(criteria, str) and criteria.startswith("UID "):
@@ -248,7 +271,11 @@ def test_flagged_mail_is_retrieved_on_rerun_after_previous_failure(monkeypatch) 
     def fake_sftp_hook_factory(conn_id: str):
         return FakeSFTPHook(conn_id, client=sftp_client)
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
     monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
@@ -270,8 +297,8 @@ def test_flagged_mail_is_retrieved_on_rerun_after_previous_failure(monkeypatch) 
 
 
 def test_unflagging_dedupes_and_sorts_uids(monkeypatch) -> None:
-    msg1 = make_email_with_attachments(message_id="<m1>", attachments=[])
-    msg2 = make_email_with_attachments(message_id="<m2>", attachments=[])
+    msg1 = make_email_with_attachments(message_id="<m1>", uid="1", attachments=[])
+    msg2 = make_email_with_attachments(message_id="<m2>", uid="2", attachments=[])
 
     calls: list[dict[str, Any]] = []
 
@@ -280,10 +307,10 @@ def test_unflagging_dedupes_and_sorts_uids(monkeypatch) -> None:
         criteria = kwargs.get("criteria")
         if criteria == "FLAGGED":
             # include UID 2
-            return [("2", msg2)], []
+            return [msg2], []
         if criteria == "UNSEEN":
             # include UID 1 and a duplicate UID 2
-            return [("1", msg1), ("2", msg2)], []
+            return [msg1, msg2], []
         if isinstance(criteria, str) and criteria.startswith("UID "):
             return [], []
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
@@ -292,7 +319,11 @@ def test_unflagging_dedupes_and_sorts_uids(monkeypatch) -> None:
     def fail_sftp_hook_factory(_conn_id: str):
         pytest.fail("SFTPHook should not be created when there are no XML attachments")
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", fail_sftp_hook_factory)
 
     pk_mod.process_kantinedata()
@@ -316,7 +347,11 @@ def test_no_new_emails_short_circuits(monkeypatch) -> None:
     def fail_sftp_hook_factory(_conn_id: str):
         pytest.fail("SFTPHook should not be created when there are no emails")
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", fail_sftp_hook_factory)
 
     pk_mod.process_kantinedata()
@@ -328,7 +363,11 @@ def test_imap_fetch_exception_is_raised(monkeypatch, caplog) -> None:
     def raising_imap_get_emails_with_uids(**_kwargs):  # type: ignore[no-untyped-def]
         raise RuntimeError("IMAP failure")
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", raising_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=raising_imap_get_emails_with_uids),
+    )
 
     with pytest.raises(RuntimeError, match="IMAP failure"):
         pk_mod.process_kantinedata()
@@ -340,6 +379,7 @@ def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) ->
     xml_bytes = b"<root />"
     msg = make_email_with_attachments(
         message_id="<msg-sftp-init-fail>",
+        uid="99",
         attachments=[(xml_bytes, "application", "xml", "initfail.xml")],
     )
 
@@ -351,7 +391,7 @@ def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) ->
         if criteria == "FLAGGED":
             return [], []
         if criteria == "UNSEEN":
-            return [("99", msg)], []
+            return [msg], []
         if isinstance(criteria, str) and criteria.startswith("UID "):
             pytest.fail("Unflagging should not happen when SFTP hook init fails")
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
@@ -361,7 +401,11 @@ def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) ->
 
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", raising_sftp_hook_factory)
     monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
@@ -378,6 +422,7 @@ def test_filename_counter_skips_existing_remote_path(monkeypatch) -> None:
     xml_bytes = b"<root><a>1</a></root>"
     msg = make_email_with_attachments(
         message_id="<msg-skip-existing>",
+        uid="1",
         attachments=[(xml_bytes, "application", "xml", "ignored.xml")],
     )
 
@@ -386,7 +431,7 @@ def test_filename_counter_skips_existing_remote_path(monkeypatch) -> None:
         if criteria == "FLAGGED":
             return [], []
         if criteria == "UNSEEN":
-            return [("1", msg)], []
+            return [msg], []
         if isinstance(criteria, str) and criteria.startswith("UID "):
             return [], []
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
@@ -399,7 +444,11 @@ def test_filename_counter_skips_existing_remote_path(monkeypatch) -> None:
 
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
-    monkeypatch.setattr(pk_mod, "imap_get_emails_with_uids", fake_imap_get_emails_with_uids)
+    monkeypatch.setattr(
+        pk_mod,
+        "_get_email_reader",
+        lambda: FakeEmailReader(get_emails_impl=fake_imap_get_emails_with_uids),
+    )
     monkeypatch.setattr(pk_mod, "SFTPHook", fake_sftp_hook_factory)
     monkeypatch.setattr(pk_mod, "Variable", fake_var)
 
