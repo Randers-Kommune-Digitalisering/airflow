@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at hente UUID'er for administrativ enheder relevante for Nexus brugere fra Delta og sætte resultatet som en Airflow variabel.
+Formålet med jobbet er at hente UUID'er for administrative enheder, der er relevante for Nexus-brugere fra Delta og sætte resultatet som en Airflow variabel.
 
 ## Beskrivelse
 
