@@ -150,8 +150,18 @@ def test_unflags_mail_after_successful_processing_and_uploads_xml_bytes(monkeypa
     sftp_client = FakeSFTPClient()
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
-    def fake_sftp_hook_factory(conn_id: str):
-        return FakeSFTPHook(conn_id, client=sftp_client)
+    def fake_sftp_hook_factory(
+        *args: Any,
+        ssh_conn_id: str | None = None,
+        **kwargs: Any,
+    ) -> FakeSFTPHook:
+        # Compatible with SFTPHook(conn_id) and SFTPHook(ssh_conn_id=...).
+        # Keep accepting unused kwargs so signature stays resilient to upstream changes.
+        _ = kwargs
+        conn_id = ssh_conn_id
+        if conn_id is None and args:
+            conn_id = args[0]
+        return FakeSFTPHook(conn_id or "", client=sftp_client)
 
     monkeypatch.setattr(
         pk_mod,
@@ -206,8 +216,16 @@ def test_mails_remain_flagged_if_sftp_upload_errors(monkeypatch) -> None:
     sftp_client = FakeSFTPClient(put_impl=raising_put_impl)
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
-    def fake_sftp_hook_factory(conn_id: str):
-        return FakeSFTPHook(conn_id, client=sftp_client)
+    def fake_sftp_hook_factory(
+        *args: Any,
+        ssh_conn_id: str | None = None,
+        **kwargs: Any,
+    ) -> FakeSFTPHook:
+        _ = kwargs
+        conn_id = ssh_conn_id
+        if conn_id is None and args:
+            conn_id = args[0]
+        return FakeSFTPHook(conn_id or "", client=sftp_client)
 
     monkeypatch.setattr(
         pk_mod,
@@ -268,8 +286,16 @@ def test_flagged_mail_is_retrieved_on_rerun_after_previous_failure(monkeypatch) 
     sftp_client = FakeSFTPClient(put_impl=put_impl)
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
-    def fake_sftp_hook_factory(conn_id: str):
-        return FakeSFTPHook(conn_id, client=sftp_client)
+    def fake_sftp_hook_factory(
+        *args: Any,
+        ssh_conn_id: str | None = None,
+        **kwargs: Any,
+    ) -> FakeSFTPHook:
+        _ = kwargs
+        conn_id = ssh_conn_id
+        if conn_id is None and args:
+            conn_id = args[0]
+        return FakeSFTPHook(conn_id or "", client=sftp_client)
 
     monkeypatch.setattr(
         pk_mod,
@@ -316,7 +342,7 @@ def test_unflagging_dedupes_and_sorts_uids(monkeypatch) -> None:
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
 
     # SFTP should never be used because there are no attachments.
-    def fail_sftp_hook_factory(_conn_id: str):
+    def fail_sftp_hook_factory(ssh_conn_id: str | None = None, *args: Any, **kwargs: Any):
         pytest.fail("SFTPHook should not be created when there are no XML attachments")
 
     monkeypatch.setattr(
@@ -344,7 +370,7 @@ def test_no_new_emails_short_circuits(monkeypatch) -> None:
             return [], []
         pytest.fail(f"No further IMAP calls expected, got: {criteria!r}")
 
-    def fail_sftp_hook_factory(_conn_id: str):
+    def fail_sftp_hook_factory(ssh_conn_id: str | None = None, *args: Any, **kwargs: Any):
         pytest.fail("SFTPHook should not be created when there are no emails")
 
     monkeypatch.setattr(
@@ -396,7 +422,7 @@ def test_sftp_hook_init_failure_is_raised_and_mail_not_unflagged(monkeypatch) ->
             pytest.fail("Unflagging should not happen when SFTP hook init fails")
         raise AssertionError(f"Unexpected IMAP criteria: {criteria!r}")
 
-    def raising_sftp_hook_factory(_conn_id: str):
+    def raising_sftp_hook_factory(ssh_conn_id: str | None = None, *args: Any, **kwargs: Any):
         raise RuntimeError("SFTP credentials invalid")
 
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
@@ -439,8 +465,16 @@ def test_filename_counter_skips_existing_remote_path(monkeypatch) -> None:
     # Simulate that EksportedeOrdrer_1.xml already exists on SFTP
     sftp_client = FakeSFTPClient(existing_paths={"/EksportedeOrdrer_1.xml"})
 
-    def fake_sftp_hook_factory(conn_id: str):
-        return FakeSFTPHook(conn_id, client=sftp_client)
+    def fake_sftp_hook_factory(
+        *args: Any,
+        ssh_conn_id: str | None = None,
+        **kwargs: Any,
+    ) -> FakeSFTPHook:
+        _ = kwargs
+        conn_id = ssh_conn_id
+        if conn_id is None and args:
+            conn_id = args[0]
+        return FakeSFTPHook(conn_id or "", client=sftp_client)
 
     fake_var = FakeVariable({"kantinedata_file_counter": "0"})
 
