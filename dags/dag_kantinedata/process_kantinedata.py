@@ -121,7 +121,7 @@ def process_kantinedata() -> None:
             set_flags="\\Flagged",  # Flag while processing
         )
 
-    except Exception as e:
+    except Exception:
         logger.exception("Error fetching emails")
         raise
 
@@ -157,66 +157,79 @@ def process_kantinedata() -> None:
     successful_mail_ids: list[str] = []
     failed_mail_ids: list[str] = []
     sftp_hook: SFTPHook | None = None
-    for uid, mail in emails:
-        try:
-            message_id = mail.get("Message-ID") if hasattr(mail, "get") else None
-            subject = mail.get("Subject") if hasattr(mail, "get") else None
-            logger.info(
-                "Processing email UID: %s (Message-ID=%s) with subject: %s",
-                uid,
-                message_id,
-                decode_mime_word(subject) if isinstance(subject, str) else subject,
-            )
-
-            attachments = extract_attachments(mail)
-
-            # Mark as processed if no attachments, to avoid reprocessing
-            if not attachments:
-                logger.info("No attachments found for email UID: %s", uid)
-                successful_mail_ids.append(str(uid))
-                continue
-
-            # Process attachments
-            for attachment in attachments:
+    sftp_client: SFTPClient | None = None
+    try:
+        for uid, mail in emails:
+            try:
+                message_id = mail.get("Message-ID") if hasattr(mail, "get") else None
+                subject = mail.get("Subject") if hasattr(mail, "get") else None
                 logger.info(
-                    "Found attachment: %s (type=%s, bytes=%s) for email ID: %s",
-                    attachment.get("filename"),
-                    attachment.get("content_type"),
-                    len(attachment.get("content_bytes") or b""),
+                    "Processing email UID: %s (Message-ID=%s) with subject: %s",
+                    uid,
                     message_id,
+                    decode_mime_word(subject) if isinstance(subject, str) else subject,
                 )
 
-                # Upload attachment to SFTP if XML
-                if attachment.get("content_type") in ["application/xml", "text/xml"]:
-                    if sftp_hook is None:
-                        sftp_hook = SFTPHook(ssh_conn_id="kantinedata_sftp")
-                    with sftp_hook.get_conn() as sftp_client:
-                        filename = _allocate_next_filename(sftp_client)
-                        remote_path = f"/{filename}"
-                        sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)
-                    logger.info("Uploaded attachment to SFTP: %s", remote_path)
+                attachments = extract_attachments(mail)
 
-                # Skip non-XML attachments
-                else:
+                # Mark as processed if no attachments, to avoid reprocessing
+                if not attachments:
+                    logger.info("No attachments found for email UID: %s", uid)
+                    successful_mail_ids.append(str(uid))
+                    continue
+
+                # Process attachments
+                for attachment in attachments:
                     logger.info(
-                        "Skipping non-XML attachment: %s (type=%s) for email ID: %s",
+                        "Found attachment: %s (type=%s, bytes=%s) for email ID: %s",
                         attachment.get("filename"),
                         attachment.get("content_type"),
+                        len(attachment.get("content_bytes") or b""),
                         message_id,
                     )
 
-            # Mark email as successfully processed
-            successful_mail_ids.append(str(uid))
+                    # Upload attachment to SFTP if XML
+                    if attachment.get("content_type") in ["application/xml", "text/xml"]:
+                        if sftp_hook is None:
+                            try:
+                                sftp_hook = SFTPHook(ssh_conn_id="kantinedata_sftp")
+                            except TypeError:
+                                sftp_hook = SFTPHook("kantinedata_sftp")
+                        if sftp_client is None:
+                            sftp_client = sftp_hook.get_conn()
 
-        # Log any exceptions during processing, but continue with other emails
-        except Exception as e:
-            logger.error(
-                "Error processing email (UID=%s, Message-ID=%s): %s",
-                uid,
-                getattr(mail, "get", lambda *_: None)("Message-ID"),
-                e,
-            )
-            failed_mail_ids.append(str(uid))
+                        filename = _allocate_next_filename(sftp_client)
+                        remote_path = f"/{filename}"
+                        sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)
+                        logger.info("Uploaded attachment to SFTP: %s", remote_path)
+
+                    # Skip non-XML attachments
+                    else:
+                        logger.info(
+                            "Skipping non-XML attachment: %s (type=%s) for email ID: %s",
+                            attachment.get("filename"),
+                            attachment.get("content_type"),
+                            message_id,
+                        )
+
+                # Mark email as successfully processed
+                successful_mail_ids.append(str(uid))
+
+            except Exception as e:
+                logger.error(
+                    "Error processing email (UID=%s, Message-ID=%s): %s",
+                    uid,
+                    getattr(mail, "get", lambda *_: None)("Message-ID"),
+                    e,
+                )
+                failed_mail_ids.append(str(uid))
+
+    finally:
+        if sftp_client is not None:
+            try:
+                sftp_client.close()
+            except Exception:
+                logger.warning("Failed to close SFTP connection", exc_info=True)
 
     # Unflag successfully processed emails, and log errors for failures
     if successful_mail_ids:
