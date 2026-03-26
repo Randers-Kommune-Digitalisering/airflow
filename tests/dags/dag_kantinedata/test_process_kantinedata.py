@@ -51,8 +51,21 @@ class FakeSFTPClient:
 
 
 class FakeSFTPHook:
-    def __init__(self, conn_id: str, *, client: FakeSFTPClient):
-        self.conn_id = conn_id
+    def __init__(
+        self,
+        *args: Any,
+        ssh_conn_id: str | None = None,
+        conn_id: str | None = None,
+        client: FakeSFTPClient,
+        **kwargs: Any,
+    ):
+        _ = kwargs
+        # Airflow/providers generally use `ssh_conn_id=`; some code may still pass a
+        # positional conn id or `conn_id=` depending on version.
+        resolved = ssh_conn_id or conn_id
+        if resolved is None and args:
+            resolved = args[0]
+        self.conn_id = resolved or ""
         self._client = client
 
     def get_conn(self) -> FakeSFTPClient:

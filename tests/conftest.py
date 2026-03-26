@@ -70,8 +70,18 @@ except Exception:
     sftp_mod = _ensure_module("airflow.providers.sftp.hooks.sftp")
 
     class SFTPHook:  # type: ignore[too-few-public-methods]
-        def __init__(self, _conn_id: str):
-            self.conn_id = _conn_id
+        def __init__(
+            self,
+            *args,  # noqa: ANN002
+            ssh_conn_id: str | None = None,
+            conn_id: str | None = None,
+            **kwargs,  # noqa: ANN003
+        ):
+            _ = kwargs
+            resolved = ssh_conn_id or conn_id
+            if resolved is None and args:
+                resolved = args[0]
+            self.conn_id = resolved or ""
 
         def get_conn(self):  # noqa: ANN001
             raise RuntimeError("Airflow SFTP stub; patch SFTPHook.get_conn in tests")
