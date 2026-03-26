@@ -407,3 +407,33 @@ def test_filename_counter_skips_existing_remote_path(monkeypatch) -> None:
 
     assert len(sftp_client.put_calls) == 1
     assert sftp_client.put_calls[0].remote_path == "/EksportedeOrdrer_2.xml"
+
+
+def test_filename_counter_wraps_after_10(monkeypatch) -> None:
+    sftp_client = FakeSFTPClient()
+    fake_var = FakeVariable({"kantinedata_file_counter": "10"})
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
+
+    filename = pk_mod._allocate_next_filename(sftp_client)
+
+    assert filename == "EksportedeOrdrer_1.xml"
+
+
+def test_filename_counter_wraps_and_skips_existing(monkeypatch) -> None:
+    sftp_client = FakeSFTPClient(existing_paths={"/EksportedeOrdrer_1.xml"})
+    fake_var = FakeVariable({"kantinedata_file_counter": "10"})
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
+
+    filename = pk_mod._allocate_next_filename(sftp_client)
+
+    assert filename == "EksportedeOrdrer_2.xml"
+
+
+def test_filename_counter_raises_when_all_10_slots_taken(monkeypatch) -> None:
+    existing = {f"/EksportedeOrdrer_{i}.xml" for i in range(1, 11)}
+    sftp_client = FakeSFTPClient(existing_paths=existing)
+    fake_var = FakeVariable({"kantinedata_file_counter": "10"})
+    monkeypatch.setattr(pk_mod, "Variable", fake_var)
+
+    with pytest.raises(RuntimeError, match=r"No available Kantinedata filename slots"):
+        pk_mod._allocate_next_filename(sftp_client)

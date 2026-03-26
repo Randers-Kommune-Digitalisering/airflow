@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 _KANTINEDATA_FILE_COUNTER_VAR_KEY = "kantinedata_file_counter"
+_KANTINEDATA_FILE_COUNTER_MAX = 10
 
 
 def _safe_int(value: object, default: int = 0) -> int:
@@ -49,9 +50,9 @@ def _sftp_path_exists(sftp_client: SFTPHook, remote_path: str) -> bool:
 
 
 def _allocate_next_filename(sftp_client: SFTPHook) -> str:
-    """Allocate the next monotonic Kantinedata filename.
+    """Allocate the next Kantinedata filename (1..10, wrapping).
 
-    Uses an Airflow Variable as the source of truth and increments it.
+    Uses an Airflow Variable as the source of truth and increments it (wrapping after 10).
     Also checks the SFTP destination for collisions (e.g. if the variable was reset).
 
     :param sftp_client: An active SFTP client connection.
@@ -63,15 +64,19 @@ def _allocate_next_filename(sftp_client: SFTPHook) -> str:
         )
 
     current_raw = Variable.get(_KANTINEDATA_FILE_COUNTER_VAR_KEY, default_var="0")
-    next_number = max(1, _safe_int(current_raw, default=0) + 1)
+    current_number = _safe_int(current_raw, default=0)
 
-    remote_path = f"/EksportedeOrdrer_{next_number}.xml"
-    while _sftp_path_exists(sftp_client, remote_path):
-        next_number += 1
-        remote_path = f"/EksportedeOrdrer_{next_number}.xml"
+    candidate = (current_number % _KANTINEDATA_FILE_COUNTER_MAX) + 1
+    for _ in range(_KANTINEDATA_FILE_COUNTER_MAX):
+        remote_path = f"/EksportedeOrdrer_{candidate}.xml"
+        if not _sftp_path_exists(sftp_client, remote_path):
+            Variable.set(_KANTINEDATA_FILE_COUNTER_VAR_KEY, str(candidate))
+            return remote_path.lstrip("/")
+        candidate = (candidate % _KANTINEDATA_FILE_COUNTER_MAX) + 1
 
-    Variable.set(_KANTINEDATA_FILE_COUNTER_VAR_KEY, str(next_number))
-    return remote_path.lstrip("/")
+    raise RuntimeError(
+        f"No available Kantinedata filename slots on SFTP (1-{_KANTINEDATA_FILE_COUNTER_MAX})."
+    )
 
 
 def process_kantinedata():
