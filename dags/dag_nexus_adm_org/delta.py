@@ -7,22 +7,25 @@ class DeltaClient():
     def __init__(self, delta_hook: BaseHook, top_uuid: str):
         self.top_uuid = top_uuid
         self.session = ManagedOAuth2Session(
-            token_url=delta_hook.extra_dejson.get("token_url"),
+            token_url=delta_hook.extra_dejson["token_url"],
             client_id=delta_hook.login,
             client_secret=delta_hook.password
         )
         self.graph_query_url = f"{delta_hook.host.rstrip('/')}/api/object/graph-query"
 
-    def _get_adm_org_units_recursive(self, instances: dict, adm_org_list: list):
+    @staticmethod
+    def _get_adm_org_units_recursive(instances: list) -> list:
+        """Recursively traverses the administrative organization units and returns their UUIDs."""
+        result = []
         for adm in instances:
-            if 'identity' in adm:
-                if 'uuid' in adm['identity']:
-                    adm_org_list.append(adm['identity']['uuid'])
-            if 'childrenObjects' in adm:
-                for child in adm['childrenObjects']:
-                    self._get_adm_org_units_recursive([child], adm_org_list)
+            if 'uuid' in adm.get('identity', {}):
+                result.append(adm['identity']['uuid'])
+            for child in adm.get('childrenObjects', []):
+                result.extend(DeltaClient._get_adm_org_units_recursive([child]))
+        return result
 
-    def _check_has_employees_and_add_sub_adm_org_units(self, adm_org_list):
+    def _check_has_employees_and_add_sub_adm_org_units(self, adm_org_list: list) -> dict:
+        """Checks if the administrative organization units have employees and adds sub administrative organization units if they do."""
         adm_org_dict = {}
         for adm_org in adm_org_list:
             graph_query = {
@@ -106,12 +109,11 @@ class DeltaClient():
                     }
                 ]
             }
-            res = self.session.post(self.graph_query_url, json=graph_query)
+            res = self.session.post(self.graph_query_url, json=graph_query, timeout=30)
             res.raise_for_status()
             data = res.json()
             if len(data['graphQueryResult'][0]['instances']) > 0:
-                sub_adm_orgs = []
-                self._get_adm_org_units_recursive(data['graphQueryResult'][0]['instances'], sub_adm_orgs)
+                sub_adm_orgs = self._get_adm_org_units_recursive(data['graphQueryResult'][0]['instances'])
                 sub_adm_orgs = [e for e in sub_adm_orgs if e != adm_org]
                 adm_org_dict[adm_org] = sub_adm_orgs
 
@@ -128,7 +130,13 @@ class DeltaClient():
 
         return adm_org_dict
 
-    def get_adm_org_list(self):
+    def get_adm_org_list(self) -> dict:
+        """
+            Queries Delta for the administrative organization units and returns a dict
+            with the administrative organization units that have employees and their sub administrative organization units.
+            NB: Graph query is hardcoded to have a max depth of 5 levels of administrative organization units.
+                if there are changes to the depth, this query might need to be modified.
+        """
         graph_query = {
             "graphQueries": [
                 {
@@ -142,31 +150,31 @@ class DeltaClient():
                             "userKey": "APOS-Types-AdministrativeUnit",
                             "relations": [
                                 {
-                                    "alias": "adm",
+                                    "alias": "adm1",
                                     "userKey": "APOS-Types-Engagement-TypeRelation-AdmUnit",
                                     "typeUserKey": "APOS-Types-Engagement",
                                     "direction": "IN",
                                     "relations": [
                                         {
-                                            "alias": "adm",
+                                            "alias": "adm2",
                                             "userKey": "APOS-Types-Engagement-TypeRelation-AdmUnit",
                                             "typeUserKey": "APOS-Types-Engagement",
                                             "direction": "IN",
                                             "relations": [
                                                 {
-                                                    "alias": "adm",
+                                                    "alias": "adm3",
                                                     "userKey": "APOS-Types-Engagement-TypeRelation-AdmUnit",
                                                     "typeUserKey": "APOS-Types-Engagement",
                                                     "direction": "IN",
                                                     "relations": [
                                                         {
-                                                            "alias": "adm",
+                                                            "alias": "adm4",
                                                             "userKey": "APOS-Types-Engagement-TypeRelation-AdmUnit",
                                                             "typeUserKey": "APOS-Types-Engagement",
                                                             "direction": "IN",
                                                             "relations": [
                                                                 {
-                                                                    "alias": "adm",
+                                                                    "alias": "adm5",
                                                                     "userKey": "APOS-Types-Engagement-TypeRelation-AdmUnit",
                                                                     "typeUserKey": "APOS-Types-Engagement",
                                                                     "direction": "IN"
@@ -235,11 +243,10 @@ class DeltaClient():
             ]
         }
 
-        res = self.session.post(self.graph_query_url, json=graph_query)
+        res = self.session.post(self.graph_query_url, json=graph_query, timeout=30)
         res.raise_for_status()
         data = res.json()
-        adm_org_list = []
-        self._get_adm_org_units_recursive(data['graphQueryResult'][0]['instances'], adm_org_list)
+        adm_org_list = self._get_adm_org_units_recursive(data['graphQueryResult'][0]['instances'])
 
         final_adm_org_list = self._check_has_employees_and_add_sub_adm_org_units(adm_org_list)
 

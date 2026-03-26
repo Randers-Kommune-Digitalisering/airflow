@@ -10,7 +10,7 @@ Formålet med jobbet er at hente UUID'er for administrativ enheder relevante for
 Koden består af et DAG-job, der udfører følgende trin:
 
 - Henter alle Adm. org. under top UUID fra Delta
-- Trækker kun uuid'er og fjerne adm. org. uden medarbejdere.
+- Trækker kun uuid'er og fjerner adm. org. uden medarbejdere.
 - Et dict bygges hvor uuid sættes som key og en liste af uuids som value (under adm. org.)
 - Resultatet gemmes som json i variablen 'nexus_adm_org_dict'
 
@@ -31,7 +31,7 @@ Auth til Delta API
 *Påkrævede felter*:
   - Connection id, Host, Login, Password og Extra (skal have token_url)
 
-**SFTP:**
+**Variable:**
 - **`nexus_top_adm_org_uuid`**
 
 **Type**: variable
