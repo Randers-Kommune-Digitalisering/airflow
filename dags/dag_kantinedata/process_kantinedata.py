@@ -122,7 +122,7 @@ def process_kantinedata() -> None:
         )
 
     except Exception as e:
-        logger.exception(f"Error fetching emails: {e}")
+        logger.exception("Error fetching emails")
         raise
 
     # Combine flagged and unseen emails for processing while avoiding duplicates
@@ -189,7 +189,7 @@ def process_kantinedata() -> None:
                 # Upload attachment to SFTP if XML
                 if attachment.get("content_type") in ["application/xml", "text/xml"]:
                     if sftp_hook is None:
-                        sftp_hook = SFTPHook("kantinedata_sftp")
+                        sftp_hook = SFTPHook(ssh_conn_id="kantinedata_sftp")
                     with sftp_hook.get_conn() as sftp_client:
                         filename = _allocate_next_filename(sftp_client)
                         remote_path = f"/{filename}"
@@ -232,11 +232,14 @@ def process_kantinedata() -> None:
 
     # Log failed email IDs and throw error to trigger retry
     if failed_mail_ids:
+        failed_uids_str = ",".join(sorted(set(failed_mail_ids), key=int))
         logger.warning(
             "Failed to process %s email(s). UIDs: %s",
             len(failed_mail_ids),
-            ",".join(sorted(set(failed_mail_ids), key=int)),
+            failed_uids_str,
         )
-        raise Exception(f"Failed to process {len(failed_mail_ids)} email(s). UIDs: {','.join(sorted(set(failed_mail_ids), key=int))}")
+        raise RuntimeError(
+            f"Failed to process {len(failed_mail_ids)} email(s). UIDs: {failed_uids_str}"
+        )
 
     return
