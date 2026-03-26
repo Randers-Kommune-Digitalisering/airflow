@@ -1,10 +1,21 @@
 import logging
 import io
 import errno
+from typing import TYPE_CHECKING
 
-from airflow.providers.sftp.hooks.sftp import SFTPHook
-from airflow.models import Variable
+try:
+    from airflow.providers.sftp.hooks.sftp import SFTPHook
+    from airflow.models import Variable
+except ModuleNotFoundError as e:
+    if e.name and (e.name == "airflow" or e.name.startswith("airflow.")):  # For pytest environment without Airflow installed
+        SFTPHook = None
+        Variable = None
+    else:
+        raise
 from dag_kantinedata.mail_utils import imap_get_emails_with_uids, extract_attachments, decode_mime_word
+
+if TYPE_CHECKING:
+    from paramiko import SFTPClient
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +24,7 @@ _KANTINEDATA_FILE_COUNTER_VAR_KEY = "kantinedata_file_counter"
 _KANTINEDATA_FILE_COUNTER_MAX = 10
 
 
-def _sftp_path_exists(sftp_client: SFTPHook, remote_path: str) -> bool:
+def _sftp_path_exists(sftp_client: "SFTPClient", remote_path: str) -> bool:
     """
     Check if a remote path exists on the SFTP server.
 
@@ -32,7 +43,7 @@ def _sftp_path_exists(sftp_client: SFTPHook, remote_path: str) -> bool:
         raise
 
 
-def _allocate_next_filename(sftp_client: SFTPHook) -> str:
+def _allocate_next_filename(sftp_client: "SFTPClient") -> str:
     """Allocate the next Kantinedata filename (1..10, wrapping).
 
     Uses an Airflow Variable as the source of truth and increments it (wrapping after 10).
