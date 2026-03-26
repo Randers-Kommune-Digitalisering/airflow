@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import types
+import json
 
 
 # Ensure `dags/` is importable as a top-level package during tests.
@@ -76,3 +77,43 @@ except Exception:
             raise RuntimeError("Airflow SFTP stub; patch SFTPHook.get_conn in tests")
 
     sftp_mod.SFTPHook = SFTPHook
+
+
+try:
+    from airflow.models import Variable as _Variable  # noqa: F401
+except Exception:
+    models_mod = _ensure_module("airflow.models")
+
+    class Variable:  # type: ignore[too-few-public-methods]
+        _store: dict[str, str] = {}
+
+        @classmethod
+        def get(
+            cls,
+            key: str,
+            default_var=None,  # noqa: ANN001
+            deserialize_json: bool = False,
+        ):  # noqa: ANN201
+            val = cls._store.get(key)
+            if val is None:
+                return default_var
+            if not deserialize_json:
+                return val
+            try:
+                return json.loads(val)
+            except Exception:
+                return default_var
+
+        @classmethod
+        def set(
+            cls,
+            key: str,
+            value,  # noqa: ANN001
+            serialize_json: bool = False,
+        ) -> None:
+            if serialize_json:
+                cls._store[key] = json.dumps(value)
+            else:
+                cls._store[key] = str(value)
+
+    models_mod.Variable = Variable

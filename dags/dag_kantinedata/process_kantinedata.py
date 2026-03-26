@@ -95,7 +95,7 @@ def _allocate_next_filename(sftp_client: "SFTPClient") -> str:
     )
 
 
-def process_kantinedata():
+def process_kantinedata() -> None:
     """
     Main function to process Kantinedata emails from the INBOX.
     - Fetches flagged emails (from previous failed runs) and unseen emails (new).
@@ -122,7 +122,7 @@ def process_kantinedata():
         )
 
     except Exception as e:
-        logger.error(f"Error fetching emails: {e}")
+        logger.exception(f"Error fetching emails: {e}")
         raise
 
     # Combine flagged and unseen emails for processing while avoiding duplicates
