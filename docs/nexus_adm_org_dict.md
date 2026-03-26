@@ -36,7 +36,7 @@ Auth til Delta API
 
 **Type**: variable
 
- Bruges som øverste adm. org. uuid hvor all under hentes
+ Bruges som øverste adm. org. uuid hvor alle underenheder hentes
 
  *Påkrævede felter*:
   - Val
