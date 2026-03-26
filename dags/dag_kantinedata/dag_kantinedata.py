@@ -6,7 +6,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_kantinedata.process_kantinedata import process_kantinedata
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 with DAG(
     dag_id="dag_kantinedata",
