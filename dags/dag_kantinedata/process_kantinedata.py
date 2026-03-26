@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import logging
 import io
 import errno
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 from airflow.hooks.base import BaseHook
 
 try:
@@ -9,7 +11,7 @@ try:
     from airflow.models import Variable
 except ModuleNotFoundError as e:
     if e.name == "airflow.models":  # For pytest environment without Airflow installed
-        SFTPHook = None
+        SFTPHook = cast(Any, object)
         Variable = None
     else:
         raise
