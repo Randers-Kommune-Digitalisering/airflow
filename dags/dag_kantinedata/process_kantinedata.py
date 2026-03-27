@@ -84,7 +84,7 @@ def _allocate_next_filename(sftp_client: "SFTPClient") -> str:
 
     candidate = (current_number % _KANTINEDATA_FILE_COUNTER_MAX) + 1
     for _ in range(_KANTINEDATA_FILE_COUNTER_MAX):
-        remote_path = f"/EksportedeOrdrer_{candidate}.xml"
+        remote_path = f"/EksporteredeOrdrer_{candidate}.xml"
         if not _sftp_path_exists(sftp_client, remote_path):
             Variable.set(_KANTINEDATA_FILE_COUNTER_VAR_KEY, str(candidate))
             return remote_path.lstrip("/")
