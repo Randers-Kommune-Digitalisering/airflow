@@ -25,8 +25,10 @@ class User(Base):
     user_id = Column(Integer, primary_key=True, autoincrement=True)
     full_name = Column(String, nullable=False)
     primary_user = Column(String, nullable=False)
+    email = Column(String, nullable=True)
     departments = relationship('Department', secondary=user_department, back_populates='users')
     computers = relationship('Computer', back_populates='user')
+    mobile_devices = relationship("MobileDevice", back_populates="user")
 
 
 class Computer(Base):
@@ -54,7 +56,6 @@ class Computer(Base):
     user = relationship('User', back_populates='computers')
 
 
-# TODO: relationships to User table
 class MobileDevice(Base):
     __tablename__ = "mobile_device"
     serial_number = Column(String, primary_key=True)
@@ -67,6 +68,5 @@ class MobileDevice(Base):
     carrier = Column(String)
     created_at = Column(DateTime)
     last_connected_at = Column(DateTime)
-    user_display_name = Column(String)
-    user_email = Column(String)
-    dq_number = Column(String)
+    user_id = Column(Integer, ForeignKey("user.user_id"), nullable=True, index=True)
+    user = relationship("User", back_populates="mobile_devices")
