@@ -9,7 +9,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_nexus_sms_hjaelpemiddelhuset.nexus import send_sms_for_hjaelpemiddelhuset_orders
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 
 def get_config_and_and_call_main_function() -> bool:
