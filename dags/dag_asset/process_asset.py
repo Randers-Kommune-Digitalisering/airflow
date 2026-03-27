@@ -19,6 +19,7 @@ from dag_asset.asset_data import (
     export_pc_assets_from_db,
     export_mobile_assets_from_db,
     upload_assets_to_topdesk,
+    insert_email_from_delta
 )
 from rkdigi.token_session import ManagedOAuth2Session
 
@@ -52,6 +53,22 @@ def task_insert_department_ean_from_delta() -> None:
         delta_base_url=delta_hook.host,
     ):
         raise AirflowFailException("Failed to insert department EANs from Delta")
+
+
+def task_insert_email_from_delta() -> None:
+    asset_engine = PostgresHook(postgres_conn_id="asset_db").get_sqlalchemy_engine()
+    delta_hook = BaseHook.get_connection("delta_prod")
+    delta_token_session = ManagedOAuth2Session(
+        token_url=delta_hook.extra_dejson.get("token_url"),
+        client_id=delta_hook.login,
+        client_secret=delta_hook.password,
+    )
+    if not insert_email_from_delta(
+        token_session=delta_token_session,
+        asset_engine=asset_engine,
+        delta_base_url=delta_hook.host,
+    ):
+        raise AirflowFailException("Failed to insert Email from Delta")
 
 
 def task_insert_users_data() -> None:
