@@ -8,6 +8,7 @@ from dag_asset.process_asset import (
     task_insert_departments_data,
     task_insert_department_ean_from_delta,
     task_insert_users_data,
+    task_insert_email_from_delta,
     task_insert_computers_data,
     task_insert_atea_data,
     task_insert_device_license_and_historical_data,
@@ -47,8 +48,13 @@ with DAG(
         python_callable=task_insert_users_data,
     )
 
+    t_email = PythonOperator(
+        task_id="insert_email_and_username_from_delta",
+        python_callable=task_insert_email_from_delta,
+    )
+
     t_fetch_ivanti_devices = PythonOperator(
-        task_id="fetch_ivanti_devices",
+        task_id="insert_ivanti_data",
         python_callable=task_insert_ivanti_data,
     )
 
@@ -77,10 +83,14 @@ with DAG(
         python_callable=task_upload_mobile_assets_to_topdesk,
     )
 
-    t_create_tables >> [t_departments, t_fetch_ivanti_devices]
-    t_departments >> [t_users, t_delta_ean]
+    t_create_tables >> t_departments
 
-    [t_users, t_delta_ean, t_fetch_ivanti_devices] >> t_upload_mobile_assets_to_topdesk
+    t_departments >> [t_users, t_delta_ean]
+    t_users >> t_email
+
+    [t_users, t_email, t_delta_ean] >> t_fetch_ivanti_devices
+
+    [t_users, t_email, t_delta_ean, t_fetch_ivanti_devices] >> t_upload_mobile_assets_to_topdesk
 
     t_users >> t_computers >> t_atea >> t_device_license
     [t_delta_ean, t_device_license] >> t_upload_pc_assets_to_topdesk
