@@ -21,7 +21,7 @@ Jobbet henter selvhentningsordre fra Nexus, sender SMS(er) og opdaterer ordre me
   - Connection id, Host, Login, Password, extra med token url
 
 **Computronic:**
-- **`computronic_omsorg`**
+- **`computronic_89158600`**
 - **Bitwarden navn: `Hjælpemiddelhuset SMS Login`**
 
 **Conn Type**: HTTP

@@ -39,12 +39,13 @@ Denne sms kan ikke besvares.
 
 
 def send_sms_for_hjaelpemiddelhuset_orders(nexus_hook: BaseHook, sms_hook: HttpHook, door_codes: list[str]) -> bool:
+    nexus_conn = nexus_hook.get_connection(nexus_hook.http_conn_id)
     nexus_session = ManagedOAuth2Session(
-        token_url=nexus_hook.extra_dejson.get("token_url"),
-        client_id=nexus_hook.login,
-        client_secret=nexus_hook.password,
+        token_url=nexus_conn.extra_dejson.get("token_url"),
+        client_id=nexus_conn.login,
+        client_secret=nexus_conn.password,
     )
-    res = nexus_session.get(f"{nexus_hook.host.strip('/')}/api/core/mobile/randers/v2/")
+    res = nexus_session.get(f"{nexus_conn.host.strip('/')}/api/core/mobile/randers/v2/")
     res.raise_for_status()
     home = res.json()
 
@@ -52,7 +53,7 @@ def send_sms_for_hjaelpemiddelhuset_orders(nexus_hook: BaseHook, sms_hook: HttpH
         logger.error("Nexus failed")
         return False
 
-    orders = _get_orders(session=nexus_session, home=home)
+    orders = _get_orders(session=nexus_session, base_url=nexus_conn.host, home=home)
 
     for item in orders:
         res = nexus_session.get(item['_links']['self']['href'])
@@ -73,7 +74,7 @@ def send_sms_for_hjaelpemiddelhuset_orders(nexus_hook: BaseHook, sms_hook: HttpH
         delivery_date = order.get('requestedDeliveryDate', None)
 
         if MSG_PREFIX in delivery_note:
-            # logger.info(f"Order {order.get('uid', 'unknown id')} has already been handled. Skipping.")
+            # has already been handled. Skipping
             continue
 
         if not order_number:
@@ -113,12 +114,11 @@ def send_sms_for_hjaelpemiddelhuset_orders(nexus_hook: BaseHook, sms_hook: HttpH
                 message = MSG_PREFIX + "Intet navn tilknyttet ordren" + MSG_SUFFIX
         # Updating the order with a message in the delivery note
         res = nexus_session.put(order['_links']['update']['href'], json={"phones": order['phones'], "requestedDeliveryDate": delivery_date, "deliveryNote": delivery_note + message})
-    logger.info("SMS service job completed successfully")
     return True
 
 
 # helper functions
-def _get_orders(session: ManagedOAuth2Session, home: dict) -> list:
+def _get_orders(session: ManagedOAuth2Session, base_url: str, home: dict) -> list:
     """Fetches orders from Nexus, filters them based on handover type and status, and returns the filtered list."""
     res = session.get(f"{home['_links']['preferences']['href']}")
     res.raise_for_status()
@@ -133,7 +133,7 @@ def _get_orders(session: ManagedOAuth2Session, home: dict) -> list:
     if selvafhentning_filter_id is None:
         raise ValueError("Selvafhentning filter not found")
 
-    res = session.get(f"{home['_links']['hclRegisterOrderFilterConfiguration']['href']}", params={'nexusPreferenceId': selvafhentning_filter_id})
+    res = session.get(f"{base_url}{home['_links']['hclRegisterOrderFilterConfiguration']['href']}", params={'nexusPreferenceId': selvafhentning_filter_id})
     res.raise_for_status()
     filtered_views = res.json()
 

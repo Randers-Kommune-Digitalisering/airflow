@@ -31,7 +31,7 @@ def send_sms(http_hook: HttpHook, phone_number: str, text_message: str) -> str:
                     return f"10 SMSer allerede sendt til {cleaned_phone_number} indenfor det sidste døgn."
 
             response = http_hook.run(
-                endpoint="/api/sms/send",
+                endpoint="/sms",
                 data=xml_payload.encode('utf-8'),
                 headers={"Content-Type": "application/xml; charset=utf-8"}
             )
