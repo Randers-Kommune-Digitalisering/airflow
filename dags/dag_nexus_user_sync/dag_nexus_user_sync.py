@@ -7,6 +7,7 @@ import json
 from airflow.models import Variable
 from utils.config import DEFAULT_DAG_ARGS
 from dag_nexus_user_sync.delta import DeltaClient
+from rkdigi.token_session import ManagedOAuth2Session
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
@@ -33,6 +34,26 @@ def testing():
     delta_client = DeltaClient(delta_hook=delta_hook, **delta_client_params)
     user_changes = delta_client.get_employment_changes()
     print(user_changes)
+
+    nexus_hook = BaseHook.get_hook("nexus_review")
+
+    nexus_conn = nexus_hook.get_connection(nexus_hook.http_conn_id)
+    nexus_session = ManagedOAuth2Session(
+        token_url=nexus_conn.extra_dejson.get("token_url"),
+        client_id=nexus_conn.login,
+        client_secret=nexus_conn.password,
+    )
+
+    res = nexus_session.get(f"{nexus_conn.host.strip('/')}/api/core/mobile/randers/v2/")
+    res.raise_for_status()
+    home = res.json()
+
+    res = nexus_session.get(home['_links']['suppliers']['href'])
+    res.raise_for_status()
+    all_suppliers = res.json()
+
+    acvite_suppliers = [supplier for supplier in all_suppliers if supplier.get('active')]
+    print(acvite_suppliers)
 
 
 with DAG(

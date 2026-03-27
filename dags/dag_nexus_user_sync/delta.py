@@ -74,7 +74,7 @@ class DeltaClient():
         removed_on_date = [obj for obj in employee_delta_dict.get('closedTypeRefBiList', []) if obj.get('value', {}).get('userKey') in changes_to_look_for]
         return any([state_change, added_on_date, removed_on_date])
 
-    def _unpack_employee_details(self, employee_details_response: dict) -> dict:
+    def _unpack_employee_details(self, employee_details_response: dict, users_to_get: int) -> dict:
         """
         Unpack employee details response from Delta graph query into a more accessible format.
         Employees / engagements without a user are filters out. Employees / engagements with multiple users will be associated with the first user found.
@@ -82,6 +82,12 @@ class DeltaClient():
         :return: List of dictionaries with employee details in a more accessible format.
         """
         instances = employee_details_response['graphQueryResult'][0]['instances']
+
+        if len(instances) != users_to_get:
+            raise ValueError(
+                'Number of returned engagements from graph query does not match number of requested engagements.\n'
+                f'Number requested: {users_to_get}, number returned: {len(instances)}.'
+            )
 
         unpacked_details = []
         for instance in instances:
@@ -254,7 +260,7 @@ class DeltaClient():
         res = self.session.post(self.graph_query_url, json=graph_query)
         res.raise_for_status()
         data = res.json()
-        return self._unpack_employee_details(data)
+        return self._unpack_employee_details(employee_details_response=data, users_to_get=len(engagement_uuids))
 
     def get_employment_changes(self) -> list[dict]:
         """
