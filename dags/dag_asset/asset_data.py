@@ -367,10 +367,9 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
 
     # Fields needed to get the required data for the MobileDevice table
     fields = (
-        "common.home_operator_name,android.device,ios.iPhone PRODUCT,"  # "android.brand" is not used, TODO: Remove this comment
+        "common.home_operator_name,android.device,ios.iPhone PRODUCT,user.display_name,"
         "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
-        "user.user_id,user.display_name,user.email_address,"
-        "common.manufacturer,common.model,common.imei,common.SerialNumber"  # "android.samsung_model_number" is not used, TODO: Remove this comment
+        "common.manufacturer,common.model,common.imei,common.SerialNumber"
     )
     # Query parameters for filtering away non-mobile Samsung android devices and Apple devices that are not iPhones (iPads, Apple TVs etc.)
     query = 'common.manufacturer contains "samsung" OR common.model does not contain "iPad" AND common.model does not contain "AppleTV"'
@@ -408,50 +407,20 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
     return all_devices
 
 
-# TODO: Remove, not needed with the new query filtering in _fetch_ivanti_devices
-# def _filter_ivanti_devices(devices: list[dict]) -> list[dict]:
-#     """
-#     Filter Ivanti devices.
-
-#     :param devices: List of raw device dicts as returned from the Ivanti API.
-#     :return: Filtered list of devices
-#     """
-
-#     android = []
-#     ios = []
-
-#     for d in devices:
-#         manufacturer = str(d.get("common.manufacturer", "")).lower()
-
-#         if manufacturer == "samsung":
-#             android.append(d)
-
-#         elif manufacturer == "apple":
-#             model = str(d.get("common.model", "")).lower()
-
-#             if "ipad" in model or "appletv" in model:
-#                 continue
-
-#             ios.append(d)
-
-#     return android + ios
-
-
 def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     """
     Fetch device data from Ivanti API and upsert into MobileDevice table.
 
     :param http_hook: Airflow HttpHook for the Ivanti API
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
-    :return: True if the insert/update succeeded, otherwise False.
+    :return: True if the update succeeded, otherwise False.
     """
+
     ivanti_data = _fetch_ivanti_devices(http_hook=http_hook)
 
     if not ivanti_data:
         logger.error("No data fetched from Ivanti API.")
         return False
-
-    # filtered_devices = _filter_ivanti_devices(devices=ivanti_data)
 
     logger.debug(f"Ivanti devices: {len(ivanti_data)} records after filtering.")
 
@@ -459,7 +428,6 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
 
     for item in ivanti_data:
         serial = item.get("common.SerialNumber")
-
         if not serial:
             continue
 
@@ -473,18 +441,30 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             "carrier": item.get("common.home_operator_name"),
             "created_at": item.get("common.creation_date"),
             "last_connected_at": item.get("common.last_connected_at"),
-            "user_display_name": item.get("user.display_name"),
-            "user_email": item.get("user.email_address"),
-            "dq_number": item.get("user.user_id"),
+            # Look up for User and MobileDevice Relation
+            "user_full_name": item.get("user.display_name"),
         }
 
-    # Avoid DB hit if no devices
     if not device_map:
         logger.info("No Ivanti devices to upsert into MobileDevice table.")
         return True
 
     with Session(asset_engine) as session:
-        # Only fetch existing devices for relevant serials
+        # Preload users by full_name
+        full_names = {
+            d["user_full_name"]
+            for d in device_map.values()
+            if d.get("user_full_name")
+        }
+
+        users_by_full_name = {
+            u.full_name: u
+            for u in session.query(User)
+            .filter(User.full_name.in_(full_names))
+            .all()
+        }
+
+        # Fetch existing devices
         existing_devices = {
             d.serial_number: d
             for d in session.query(MobileDevice)
@@ -498,26 +478,22 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
         for serial, data in device_map.items():
             existing = existing_devices.get(serial)
 
+            user_full_name = data.pop("user_full_name", None)
+            user = users_by_full_name.get(user_full_name) if user_full_name else None
+            user_id = user.user_id if user else None
+
             if existing:
-                # Update
                 for key, value in data.items():
                     setattr(existing, key, value)
-
+                existing.user_id = user_id
                 updated += 1
             else:
-                # Insert
-                new_device = MobileDevice(
-                    serial_number=serial,
-                    **data,
-                )
-                session.add(new_device)
+                session.add(MobileDevice(serial_number=serial, user_id=user_id, **data))
                 inserted += 1
 
         session.commit()
 
-        logger.info(
-            f"Inserted: {inserted}, Updated: {updated}, Total: {len(device_map)} from Ivanti API data into MobileDevice table."
-        )
+        logger.info(f"Inserted: {inserted}, Updated: {updated}, Total: {len(device_map)} from Ivanti API data into MobileDevice table.")
 
     return True
 
@@ -892,6 +868,199 @@ def insert_department_ean_from_delta(
         return False
 
 
+def _delta_get_all_emails(
+    token_session: ManagedOAuth2Session,
+    base_url: str,
+) -> list[dict]:
+    """
+    Query Delta system for all persons with active engagements and extract their names and emails.
+
+    :param token_session: ManagedOAuth2Session that handles OAuth2 token acquisition automatically.
+    :param base_url: Base URL for the Delta API.
+    :return: list of dicts with keys: name, email
+    """
+    url = f"{base_url.rstrip('/')}/api/object/graph-query"
+
+    offset = 0
+    limit = 1000
+    results: list[dict] = []
+
+    while True:
+        graph_query = {
+            "graphQueries": [
+                {
+                    "computeAvailablePages": True,
+                    "graphQuery": {
+                        "structure": {
+                            "alias": "person",
+                            "userKey": "APOS-Types-Person",
+                            "relations": [
+                                {
+                                    "alias": "emp",
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "typeUserKey": "APOS-Types-Engagement",
+                                    "direction": "IN",
+                                    "attributes": [
+                                        {
+                                            "alias": "email",
+                                            "userKey": "APOS-Types-Engagement-Attribute-Email",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                        "criteria": {
+                            "type": "AND",
+                            "criteria": [
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {"source": "DEFINITION", "alias": "person.$state"},
+                                    "right": {"source": "STATIC", "value": "STATE_ACTIVE"},
+                                },
+                                {
+                                    "type": "MATCH",
+                                    "operator": "LIKE",
+                                    "left": {"source": "DEFINITION", "alias": "person.emp.email"},
+                                    "right": {"source": "STATIC", "value": "%@%"},
+                                },
+                            ],
+                        },
+                        "projection": {
+                            "identity": True,
+                            "state": True,
+                            "incomingTypeRelations": [
+                                {
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "projection": {
+                                        "identity": True,
+                                        "state": True,
+                                        "attributes": ["APOS-Types-Engagement-Attribute-Email"],
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                    "validDate": "NOW",
+                    "offset": offset,
+                    "limit": limit,
+                }
+            ]
+        }
+
+        res = token_session.post(url=url, json=graph_query, timeout=30)
+        res.raise_for_status()
+        payload = res.json()
+
+        graph_results = payload.get("graphQueryResult") or []
+        if not graph_results:
+            break
+
+        graph0 = graph_results[0] or {}
+        instances = graph0.get("instances") or []
+        if not instances:
+            break
+
+        for inst in instances:
+            name = (inst.get("identity") or {}).get("name")
+
+            for ref in inst.get("inTypeRefs", []) or []:
+                if ref.get("userKey") != "APOS-Types-Engagement-TypeRelation-Person":
+                    continue
+
+                target = ref.get("targetObject") or {}
+                if target.get("state") != "STATE_ACTIVE":
+                    continue
+
+                email = None
+                for attr in target.get("attributes", []) or []:
+                    if attr.get("userKey") == "APOS-Types-Engagement-Attribute-Email":
+                        email = attr.get("value")
+                        break
+
+                if not email:
+                    continue
+
+                logger.debug(f"Found person: name={name}, email={email}")
+                results.append({"name": name, "email": email})
+
+        if len(instances) < limit:
+            break
+
+        offset += limit
+
+    return results
+
+
+def insert_email_from_delta(
+    token_session: ManagedOAuth2Session,
+    asset_engine: Engine,
+    delta_base_url: str,
+) -> bool:
+    """
+    Update User email in the asset database using data from Delta.
+
+    :param token_session: ManagedOAuth2Session used to call Delta API (handles OAuth2 tokens automatically).
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :param delta_base_url: Base URL for the Delta API
+    :return: True if the update succeeded, otherwise False.
+    """
+    try:
+        logger.info("Fetching user emails from Delta...")
+        delta_data = _delta_get_all_emails(
+            token_session=token_session,
+            base_url=delta_base_url,
+        )
+
+        if not delta_data:
+            logger.error("No user emails fetched from Delta.")
+            return False
+
+        first_email_by_name: dict[str, str] = {}
+
+        for person in delta_data:
+            name = person.get("name")
+            email = person.get("email")
+            if not name or not email:
+                continue
+
+            name = str(name).strip()
+            email = str(email).strip()
+            if not name or not email:
+                continue
+
+            if name not in first_email_by_name:
+                first_email_by_name[name] = email
+
+        with Session(asset_engine) as session:
+            users = session.query(User).all()
+            updated = 0
+
+            for user in users:
+                if not user.full_name:
+                    continue
+
+                full_name = str(user.full_name).strip()
+                email_from_delta = first_email_by_name.get(full_name)
+                if not email_from_delta:
+                    continue
+
+                if (user.email or "").strip() == email_from_delta:
+                    continue
+
+                user.email = email_from_delta
+                updated += 1
+
+            session.commit()
+            logger.info(f"Updated email for {updated} users from Delta.")
+
+        return True
+
+    except Exception as e:
+        logger.exception(f"Error updating user email from Delta: {e}")
+        return False
+
+
 def export_pc_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
     Export asset data from the Asset DB as a CSV payload (bytes).
@@ -994,8 +1163,8 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
     sql_command = """
         SELECT
-        STRING_AGG(d."name", ', ') AS department,
-        STRING_AGG(d."ean", ', ') AS department_ean,
+        STRING_AGG(DISTINCT d."name", ', ') AS department,
+        STRING_AGG(DISTINCT d."ean", ', ') AS department_ean,
         md."serial_number",
         md."os_version",
         md."manufacturer",
@@ -1006,12 +1175,12 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
-        md."dq_number",
-        md."user_display_name",
-        md."user_email"
+        u."primary_user",
+        u."full_name",
+        u."email"
     FROM public."mobile_device" md
     LEFT JOIN public."user" u
-        ON UPPER(md."dq_number") = u."primary_user"
+        ON md."user_id" = u."user_id"
     LEFT JOIN public."user_department" ud
         ON ud."user_id" = u."user_id"
     LEFT JOIN public."department" d
@@ -1027,9 +1196,9 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
-        md."dq_number",
-        md."user_display_name",
-        md."user_email";
+        u."primary_user",
+        u."full_name",
+        u."email";
     """
 
     logger.debug(f"Executing mobile device SQL command: {sql_command}")
