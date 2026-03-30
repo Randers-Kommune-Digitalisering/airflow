@@ -6,10 +6,9 @@ from dataclasses import dataclass
 
 
 def determine_run_date() -> datetime.date:
-    """Return the run's logical date as a local date in the DAG timezone.
-
-    Mirrors the timezone handling style used in `run_utils.determine_date_range()`.
-    Falls back to "today" when executed outside Airflow.
+    """
+    :return: The run's logical date as a local date in the DAG timezone.
+             Falls back to "today" when executed outside Airflow.
     """
     try:
         from airflow.operators.python import get_current_context
@@ -107,7 +106,7 @@ def followup_due_date_windows(run_date: datetime.date, months_ahead: int = 9) ->
     - DAG runs weekly.
     - Each run targets the 'next-week block' for the anchor month and for the next
       (months_ahead-1) months.
-    - Additionally include a window for due dates ~2 weeks ahead (Option A):
+    - Additionally include a window for due dates ~2-3 weeks ahead:
       [run_date+14, run_date+21).
 
     The 'next-week block' is computed from anchor = run_date + 7 days by taking
@@ -138,5 +137,10 @@ def followup_due_date_windows(run_date: datetime.date, months_ahead: int = 9) ->
 
 
 def determine_followup_due_date_windows(months_ahead: int = 9) -> list[DateWindow]:
-    """Convenience wrapper for Airflow tasks."""
+    """
+    Convenience wrapper to determine followup due date windows for the current run date.
+
+    :param months_ahead: Number of months ahead to include (default: 9).
+    :return: List of coalesced date windows for the current run date.
+    """
     return followup_due_date_windows(run_date=determine_run_date(), months_ahead=months_ahead)
