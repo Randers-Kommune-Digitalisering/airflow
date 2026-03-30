@@ -1,12 +1,23 @@
 
 from email.header import decode_header
 import email as email_module
+from email.message import EmailMessage
+from typing import TypedDict
 
 
-def extract_attachments(mail) -> list[dict]:
-    """Extract attachments from an EmailMessage or raw RFC822 email.
+class Attachment(TypedDict):
+    filename: str | None
+    content_bytes: bytes
+    content_type: str
+    content_disposition: str | None
 
-    Returns a list of dicts:
+
+def extract_attachments(mail: EmailMessage) -> list[Attachment]:
+    """
+    Extract attachments from an EmailMessage or raw RFC822 email.
+
+    :param mail: An EmailMessage object or raw email content as bytes or string.
+    :return: A list of attachments, where each attachment is a dictionary with keys:
       - filename: str | None
       - content_bytes: bytes
       - content_type: str
@@ -24,7 +35,7 @@ def extract_attachments(mail) -> list[dict]:
     if not hasattr(msg, "walk"):
         raise TypeError(f"Unsupported mail type for attachment extraction: {type(mail)!r}")
 
-    attachments: list[dict] = []
+    attachments: list[Attachment] = []
     for part in msg.walk():
         if part.get_content_maintype() == "multipart":
             continue
@@ -53,6 +64,12 @@ def extract_attachments(mail) -> list[dict]:
 
 
 def decode_mime_word(value: str | None) -> str | None:
+    """
+    Decodes a MIME-encoded word (e.g., from email headers) into a human-readable string.
+
+    :param value: The MIME-encoded string to decode.
+    :return: The decoded string, or None if the input was None.
+    """
     if value is None:
         return None
     decoded_parts: list[str] = []
