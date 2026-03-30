@@ -221,6 +221,7 @@ def process_kantinedata() -> None:
                     uid,
                     getattr(mail, "get", lambda *_: None)("Message-ID"),
                     e,
+                    exc_info=True,
                 )
                 failed_mail_ids.append(str(uid))
 
