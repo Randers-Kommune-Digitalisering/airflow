@@ -78,6 +78,18 @@ def check_and_update_district(dry_run: bool) -> None:
         logger.info(f"Processing {len(entries)} entries for date range {start_date} to {end_date}")
 
         for entry in entries:
+
+            # CPR validation and normalization
+            normalized_cpr = CPRClient.normalize_cpr_number(entry.CPR)
+            if not normalized_cpr:
+                logger.warning(
+                    "Skipping Name ID %s: invalid CPR value (%s)",
+                    entry.ID,
+                    CPRClient.mask_cpr_for_log(entry.CPR),
+                )
+                continue
+
+            # Due date
             current_due_date = entry.details.TERMIN.date()
             journal_due_date = entry.journal.get('due_date')
             calculated_due_date = entry.journal.get('calculated_due_date')
@@ -93,7 +105,7 @@ def check_and_update_district(dry_run: bool) -> None:
                 is_due_date_changed = True
                 logger.info(f"Updated due date for Name ID {entry.ID} from {current_due_date} to {new_due_date}")
 
-            # phone number
+            # Phone number update
             journal_phone = entry.journal.get('phone')
             if journal_phone:
                 is_phone_already_set = any(
@@ -133,7 +145,8 @@ def check_and_update_district(dry_run: bool) -> None:
                         entry.phones.append(new_phone)
                         logger.info(f"Added new phone number for Name ID {entry.ID}: {journal_phone}")
 
-            cpr_info = cpr_client.get_address_uuid_and_protected_status(entry.CPR)
+            # CPR lookup: address UUID + protected status
+            cpr_info = cpr_client.get_address_uuid_and_protected_status(normalized_cpr)
 
             has_changed_protected_status = False
             if cpr_info['is_protected_address'] != bool(entry.details.BESKYTTETADRESSE):  # small int value in DB
@@ -143,91 +156,106 @@ def check_and_update_district(dry_run: bool) -> None:
 
             address_info = dataforsyning_client.get_address_by_id(cpr_info['address_uuid'])
 
+            # Address + district updates
             is_new_address_set = None
-            if address_info['full_address'].strip() != entry.ADRESSE.strip():
-                is_new_address_set = True
-                entry.ADRESSE = address_info['full_address'].strip()
-                logger.info(f"Updated address for Name ID {entry.ID}")
-
-                has_valid_address = any(
-                    a.NR_LT_ETAGE.strip() == address_info['number_floor'].strip() and
-                    int(a.VEJKODE) == address_info['street_code'] and
-                    a.STEDNAVN == address_info['town_name'] and
-                    int(a.POSTNR) == address_info['postal_code'] and
-                    int(a.KOMMUNEKODE) == address_info['municipality_code'] and
-                    a.DATO_FRA.date() <= entry.date.date() and
-                    (
-                        a.DATO_TIL.date() == datetime(1753, 1, 1).date() or
-                        a.DATO_TIL.date() > entry.date.date()
-                    )
-                    for a in entry.addresses
-                )
-
-                if not has_valid_address:
-                    for a in entry.addresses:
-                        if a.DATO_TIL.date() == datetime(1753, 1, 1).date():
-                            a.DATO_TIL = entry.date
-                            a.TS_UPDD = datetime.now()
-                            a.TS_UPDT = datetime.now().strftime("%H:%M")
-                            logger.info(f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {entry.date}")
-                    new_address_entry = Address(
-                        NAVNID=entry.ID,
-                        VEJKODE=str(address_info['street_code']),
-                        KOMMUNEKODE=str(address_info['municipality_code']),
-                        POSTNR=str(address_info['postal_code']),
-                        STEDNAVN=address_info['town_name'],
-                        NR_LT_ETAGE=address_info['number_floor'],
-                        DATO_FRA=entry.date,
-                        DATO_TIL=datetime(1753, 1, 1),
-                        TS_DATE=datetime.now(),
-                        TS_TIME=datetime.now().strftime("%H:%M"),
-                        TS_UPDD=datetime.now(),
-                        TS_UPDT=datetime.now().strftime("%H:%M")
-                    )
-                    entry.addresses.append(new_address_entry)
-                    logger.info(f"Added new address for Name ID {entry.ID}")
-
-            district = district_db_client.get_district_name_for_point(x=address_info['coordinates'][0], y=address_info['coordinates'][1])
             is_new_district = None
             is_new_district_details = False
-            if district and district.strip() != entry.DISTRIKT.strip():
-                is_new_district = True
-                entry.DISTRIKT = district.strip()
-                if entry.details.TS_KOMID.strip() != district.strip():
-                    entry.details.TS_KOMID = district.strip()
-                    is_new_district_details = True
-                    logger.info(f"Updated district details for Name ID {entry.ID} to {district.strip()}")
-                logger.info(f"Updated district for Name ID {entry.ID} to {district.strip()}")
 
-                entry_date = entry.date.date()
-                has_valid_person_district = any(
-                    d.DISTRICT == district.strip() and
-                    d.DATEFROM.date() <= entry_date and
-                    (
-                        d.DATETO.date() == datetime(1753, 1, 1).date() or
-                        d.DATETO.date() > entry_date
-                    )
-                    for d in entry.person_districts
+            if address_info is None:
+                logger.warning(
+                    "Skipping address + district lookup for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
+                    entry.ID,
+                    cpr_info['address_uuid'],
                 )
-                if not has_valid_person_district:
-                    for d in entry.person_districts:
-                        if d.DATETO.date() == datetime(1753, 1, 1).date():
-                            d.DATETO = entry.date
-                            d.TS_UPDD = datetime.now()
-                            d.TS_UPDT = datetime.now().strftime("%H:%M")
-                            logger.info(f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {entry.date}")
-                    new_person_district = PersonDistrict(
-                        NAVNID=entry.ID,
-                        DISTRICT=district.strip(),
-                        DATEFROM=entry.date,
-                        TS_DATE=datetime.now(),
-                        TS_TIME=datetime.now().strftime("%H:%M"),
-                        TS_UPDD=datetime.now(),
-                        TS_UPDT=datetime.now().strftime("%H:%M")
-                    )
-                    entry.person_districts.append(new_person_district)
-                    logger.info(f"Added new person district for Name ID {entry.ID}: {district.strip()}")
+            else:
+                # Address update
+                if address_info['full_address'].strip() != entry.ADRESSE.strip():
+                    is_new_address_set = True
+                    entry.ADRESSE = address_info['full_address'].strip()
+                    logger.info(f"Updated address for Name ID {entry.ID}")
 
+                    has_valid_address = any(
+                        a.NR_LT_ETAGE.strip() == address_info['number_floor'].strip() and
+                        int(a.VEJKODE) == address_info['street_code'] and
+                        a.STEDNAVN == address_info['town_name'] and
+                        int(a.POSTNR) == address_info['postal_code'] and
+                        int(a.KOMMUNEKODE) == address_info['municipality_code'] and
+                        a.DATO_FRA.date() <= entry.date.date() and
+                        (
+                            a.DATO_TIL.date() == datetime(1753, 1, 1).date() or
+                            a.DATO_TIL.date() > entry.date.date()
+                        )
+                        for a in entry.addresses
+                    )
+
+                    if not has_valid_address:
+                        for a in entry.addresses:
+                            if a.DATO_TIL.date() == datetime(1753, 1, 1).date():
+                                a.DATO_TIL = entry.date
+                                a.TS_UPDD = datetime.now()
+                                a.TS_UPDT = datetime.now().strftime("%H:%M")
+                                logger.info(f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {entry.date}")
+                        new_address_entry = Address(
+                            NAVNID=entry.ID,
+                            VEJKODE=str(address_info['street_code']),
+                            KOMMUNEKODE=str(address_info['municipality_code']),
+                            POSTNR=str(address_info['postal_code']),
+                            STEDNAVN=address_info['town_name'],
+                            NR_LT_ETAGE=address_info['number_floor'],
+                            DATO_FRA=entry.date,
+                            DATO_TIL=datetime(1753, 1, 1),
+                            TS_DATE=datetime.now(),
+                            TS_TIME=datetime.now().strftime("%H:%M"),
+                            TS_UPDD=datetime.now(),
+                            TS_UPDT=datetime.now().strftime("%H:%M")
+                        )
+                        entry.addresses.append(new_address_entry)
+                        logger.info(f"Added new address for Name ID {entry.ID}")
+
+                # District update
+                district = district_db_client.get_district_name_for_point(
+                    x=address_info['coordinates'][0],
+                    y=address_info['coordinates'][1],
+                )
+                if district and district.strip() != entry.DISTRIKT.strip():
+                    is_new_district = True
+                    entry.DISTRIKT = district.strip()
+                    if entry.details.TS_KOMID.strip() != district.strip():
+                        entry.details.TS_KOMID = district.strip()
+                        is_new_district_details = True
+                        logger.info(f"Updated district details for Name ID {entry.ID} to {district.strip()}")
+                    logger.info(f"Updated district for Name ID {entry.ID} to {district.strip()}")
+
+                    entry_date = entry.date.date()
+                    has_valid_person_district = any(
+                        d.DISTRICT == district.strip() and
+                        d.DATEFROM.date() <= entry_date and
+                        (
+                            d.DATETO.date() == datetime(1753, 1, 1).date() or
+                            d.DATETO.date() > entry_date
+                        )
+                        for d in entry.person_districts
+                    )
+                    if not has_valid_person_district:
+                        for d in entry.person_districts:
+                            if d.DATETO.date() == datetime(1753, 1, 1).date():
+                                d.DATETO = entry.date
+                                d.TS_UPDD = datetime.now()
+                                d.TS_UPDT = datetime.now().strftime("%H:%M")
+                                logger.info(f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {entry.date}")
+                        new_person_district = PersonDistrict(
+                            NAVNID=entry.ID,
+                            DISTRICT=district.strip(),
+                            DATEFROM=entry.date,
+                            TS_DATE=datetime.now(),
+                            TS_TIME=datetime.now().strftime("%H:%M"),
+                            TS_UPDD=datetime.now(),
+                            TS_UPDT=datetime.now().strftime("%H:%M")
+                        )
+                        entry.person_districts.append(new_person_district)
+                        logger.info(f"Added new person district for Name ID {entry.ID}: {district.strip()}")
+
+            # Always-updates
             has_changed_active = False
             if entry.AKTIV is None or str(entry.AKTIV).strip() in ("", "0"):
                 entry.AKTIV = "1"
