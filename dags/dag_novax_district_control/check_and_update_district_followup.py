@@ -17,11 +17,7 @@ def check_and_update_district_followup(dry_run: bool) -> None:
     Retrieves and updates user, address and district information
     for any patients with an upcoming due date based on their addresses.
     """
-    # Initialize clients
-    dataforsyning_client = DataforsyningClient()
-    district_db_client = DistrictMapDBClient()
-    cpr_client = CPRClient()
-
+    # Determine run date and followup windows
     run_date = determine_run_date()
     windows = followup_due_date_windows(run_date=run_date, months_ahead=9)
     logger.info(
@@ -31,6 +27,12 @@ def check_and_update_district_followup(dry_run: bool) -> None:
         "; ".join([f"[{w.start}..{(w.end - datetime.timedelta(days=1))}]" for w in windows]),
     )
 
+    # Initialize clients
+    dataforsyning_client = DataforsyningClient()
+    district_db_client = DistrictMapDBClient()
+    cpr_client = CPRClient()
+
+    # Novax session
     hook = MsSqlHook(mssql_conn_id="novax_sql")
     engine = hook.get_sqlalchemy_engine()
 
@@ -49,7 +51,6 @@ def check_and_update_district_followup(dry_run: bool) -> None:
             .all()
         )
 
-        logger.info("Found %s patients with due dates in followup windows", len(entries))
         if not entries:
             logger.info("No matching due dates for this run; exiting.")
             return
@@ -61,7 +62,6 @@ def check_and_update_district_followup(dry_run: bool) -> None:
         now_time = now_dt.strftime("%H:%M")
 
         for entry in entries:
-            detected_changes: list[str] = []
 
             if entry.details is None:
                 logger.warning("Skipping Name ID %s: missing NameDetails", entry.ID)
@@ -75,7 +75,7 @@ def check_and_update_district_followup(dry_run: bool) -> None:
             if cpr_info["is_protected_address"] != prev_protected:
                 entry.details.BESKYTTETADRESSE = int(cpr_info["is_protected_address"])
                 has_changed_protected_status = True
-                detected_changes.append(f"protected: {prev_protected} -> {cpr_info['is_protected_address']}")
+                logger.info(f"Updated protected address status for Name ID {entry.ID}")
 
             address_info = dataforsyning_client.get_address_by_id(cpr_info["address_uuid"])
 
@@ -86,16 +86,16 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                 is_new_address_set = True
                 old_address = (entry.ADRESSE or "").strip() or None
                 entry.ADRESSE = new_full_address
-                detected_changes.append(f"address: {old_address} -> {new_full_address}")
+                logger.info(f"Updated address for Name ID {entry.ID}")
 
                 has_valid_address = any(
-                    (a.NR_LT_ETAGE or "").strip() == (address_info["number_floor"] or "").strip()
-                    and int((a.VEJKODE or "0").strip() or 0) == int(address_info["street_code"])
-                    and (a.STEDNAVN or None) == address_info["town_name"]
-                    and int((a.POSTNR or "0").strip() or 0) == int(address_info["postal_code"])
-                    and int((a.KOMMUNEKODE or "0").strip() or 0) == int(address_info["municipality_code"])
-                    and a.DATO_FRA.date() <= now_dt.date()
-                    and (
+                    (a.NR_LT_ETAGE or "").strip() == (address_info["number_floor"] or "").strip() and
+                    int(a.VEJKODE) == address_info['street_code'] and
+                    a.STEDNAVN == address_info['town_name'] and
+                    int(a.POSTNR) == address_info['postal_code'] and
+                    int(a.KOMMUNEKODE) == address_info['municipality_code'] and
+                    a.DATO_FRA.date() <= now_dt.date() and
+                    (
                         a.DATO_TIL.date() == sentinel_open_end.date()
                         or a.DATO_TIL.date() > now_dt.date()
                     )
@@ -132,18 +132,17 @@ def check_and_update_district_followup(dry_run: bool) -> None:
 
             is_new_district = False
             is_new_district_details = False
-            if district and district.strip() != (entry.DISTRIKT or "").strip():
+            if district and district.strip() != entry.DISTRIKT.strip():
                 is_new_district = True
-                old_district = (entry.DISTRIKT or "").strip() or None
                 entry.DISTRIKT = district.strip()
-                detected_changes.append(f"district: {old_district} -> {district.strip()}")
+                logger.info(f"Updated district for Name ID {entry.ID}")
 
-                if (entry.details.TS_KOMID or "").strip() != district.strip():
+                if entry.details.TS_KOMID.strip() != district.strip():
                     entry.details.TS_KOMID = district.strip()
                     is_new_district_details = True
 
                 has_valid_person_district = any(
-                    (d.DISTRICT or "").strip() == district.strip()
+                    d.DISTRICT.strip() == district.strip()
                     and d.DATEFROM.date() <= now_dt.date()
                     and (
                         d.DATETO.date() == sentinel_open_end.date()
@@ -174,19 +173,13 @@ def check_and_update_district_followup(dry_run: bool) -> None:
             if entry.AKTIV is None or str(entry.AKTIV).strip() in ("", "0"):
                 entry.AKTIV = "1"
                 has_changed_active = True
-                detected_changes.append("aktiv: 0/empty -> 1")
+                logger.info(f"Updated active status for Name ID {entry.ID}")
 
             has_changed_ansvarshpl = False
             if entry.AnsvarsShpl != "FIKTIV":
-                old_val = entry.AnsvarsShpl
                 entry.AnsvarsShpl = "FIKTIV"
                 has_changed_ansvarshpl = True
-                detected_changes.append(f"ansvarshpl: {old_val} -> FIKTIV")
-
-            if detected_changes:
-                logger.info("Detected changes for navnid %s: %s", entry.ID, ", ".join(detected_changes))
-            else:
-                logger.info("No changes detected for navnid %s", entry.ID)
+                logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
 
             if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl]):
                 entry.TS_UPDD = now_dt
