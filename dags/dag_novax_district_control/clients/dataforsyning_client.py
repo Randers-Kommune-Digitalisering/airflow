@@ -12,7 +12,7 @@ class DataforsyningClient:
         self.base_url = connection.host
         self.session = requests.Session()
 
-    def get_address_by_id(self, adresse_id: str) -> dict:
+    def get_address_by_id(self, adresse_id: str) -> dict | None:
         """
         Connects to Dataforsyning API to get address information by adresse_id.
 
@@ -25,9 +25,11 @@ class DataforsyningClient:
             postal_code(str),
             municipality_code(int),
             coordinates(tuple[float, float])
+            OR None if the lookup returns an unexpected number of results.
         """
         # Fails if Dataforsyning is down/broken or if the adresse_id is invalid.
-        # We want it to fail hard in those cases, so we can fix the underlying issue.
+        # NOTE: If the API returns 0 or >1 results, we do not fail the entire job.
+        # We treat that as "skip address + district lookup for this user".
         endpoint = '/adresser/autocomplete'
         params = {
             'id': adresse_id,
@@ -44,7 +46,12 @@ class DataforsyningClient:
         results.raise_for_status()
         data = results.json()
         if len(data) != 1:
-            raise ValueError(f"Expected exactly one result for adresse_id {adresse_id}, but got {len(data)}")
+            logger.error(
+                "Dataforsyning lookup for adresse_id=%s returned %s result(s); expected exactly 1. Skipping address/district lookup for this user.",
+                adresse_id,
+                len(data),
+            )
+            return None
 
         full_address = data[0].get('tekst', '')
 

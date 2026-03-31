@@ -1,11 +1,15 @@
 import requests
 import logging
+import re
 
 from airflow.hooks.base import BaseHook
 
 from utils.token_provider import BearerAuth
 
 logger = logging.getLogger(__name__)
+
+
+_CPR_10_DIGITS_RE = re.compile(r"^\d{10}$")
 
 
 class CPRClient:
@@ -20,6 +24,40 @@ class CPRClient:
 
         self.session = cpr_session
         self.base_url = cpr_hook.host
+
+    @staticmethod
+    def normalize_cpr_number(cpr_number: str | None) -> str | None:
+        """Normalize CPR input to a 10-digit string.
+
+        Returns None when the value cannot be normalized to exactly 10 digits.
+        """
+        if cpr_number is None:
+            return None
+
+        # SQL CHAR fields can be space-padded; some sources may include separators.
+        raw = str(cpr_number).strip()
+        if not raw:
+            return None
+
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if _CPR_10_DIGITS_RE.match(digits):
+            return digits
+        return None
+
+    @staticmethod
+    def mask_cpr_for_log(cpr_number: str | None) -> str:
+        """Return a CPR-safe string for logs (never returns the full CPR)."""
+        if cpr_number is None:
+            return "<empty>"
+
+        raw = str(cpr_number).strip()
+        if not raw:
+            return "<empty>"
+
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        if len(digits) >= 6:
+            return f"{digits[:6]}-XXXX"
+        return "<invalid>"
 
     def get_address_uuid_and_protected_status(self, cpr_number: str) -> dict:
         """
