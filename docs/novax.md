@@ -10,25 +10,24 @@ Formålet med jobbet er at hente og opdatere patienters adresse- og distriktsinf
 
 Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfører følgende trin:
 
-- Bestemmer datointerval automatisk baseret på sidste succesfulde scheduled DAG-run (start inklusiv, slut inklusiv)
-- Henter graviditetsjournaler fra Novax-databasen for intervallet
-- Filtrerer dubletter pr. patient (NAVNID) og beholder kun seneste journalindslag i perioden
+- Bestemmer datointerval automatisk baseret på sidste succesfulde scheduled DAG-run (kun `run_type = scheduled` og `state = success`). Intervallet beregnes fra sidste runs `data_interval_end` frem til det aktuelle runs `data_interval_end`.
+- Henter graviditetsjournaler fra Novax-databasen for intervallet ved at udvælge journalposter med emne som “Orientering - Gravid”.
+- Filtrerer dubletter pr. patient (NAVNID) og beholder kun seneste journalindslag i perioden.
 - For hver patient:
-  - Springer over hvis der mangler journaltekst (NOTE)
-  - Parser journaldata for at udtrække adresse, telefonnummer samt terminsdato
+  - Springer over hvis der ikke findes en matching graviditets-note (NOTE) for journalposten, inkl. check af tidspunkt (tillader typisk 0-1 minuts afvigelse).
+  - Parser journaldata for at udtrække telefonnummer samt terminsdato
     - Hvis terminsdato ikke findes i journalen, beregnes den fra gestationsalder og journalens dato (`calculated_due_date`)
   - Henter aktuel adresse via CPR-opslag og forsøger at bruge CPR-adressen
     - Adressens “beskyttet”-status håndteres (CPR/Novax)
   - Validerer adressen i Dataforsyningen og henter nødvendige felter til videre opslag/opdatering
     - Koordinater (x/y) bruges til distriktsopslag
-    - Vejkode bruges til historiktabellen for adresser i Novax
-    - Kommunekode bruges til opdatering i Novax
-    - Hvis adressen ikke kan findes i Dataforsyningen fejler hele jobbet
+    - Vejkode/kommunekode/postnr m.m. bruges til at vedligeholde historiktabellen for adresser i Novax
+    - Hvis adressen ikke kan findes i Dataforsyningen, logges det og patientens adresse/distrikt-opdatering springes over
   - Slår distriktsnavn op i GIS (District Map) på baggrund af koordinater
   - Udfører ekstra checks før opdatering i Novax:
     - Telefon opdateres
     - Distrikt opdateres kun hvis nyt distrikt kan bestemmes og det afviger fra nuværende
-    - Kommune opdateres
+    - Distriktsrelaterede felter opdateres (inkl. `NameDetails.TS_KOMID` når distrikt ændres)
   - Opdaterer Novax via en samlet batch
 
 **Vigtigt: “Always updates” pr. patient**
@@ -38,7 +37,7 @@ Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, udfør
 - Patienten tildeles altid til **“Gravid til fordeling”** ved at sætte `AnsvarsShpl = 'FIKTIV'` i Novax
 - Patienten sættes altid til aktiv (`AKTIV = 1`) i Novax
 
-**OBS:** Perioden for dataudtræk bestemmes automatisk ud fra sidste succesfulde scheduled run og det aktuelle runs data-interval (DAG'ens timezone). Intervaller behandles som hele dage, hvor start er inklusiv og slut er inklusiv.
+**OBS:** Perioden for dataudtræk bestemmes automatisk ud fra sidste succesfulde scheduled run og det aktuelle runs data-interval (DAG'ens timezone). Intervaller behandles som hele datoer, hvor start og slut anvendes direkte i databasefilteret (start `>=`, slut `<=`).
 
 **Dataflow:**
 - Data fra Novax DB (journal) → Adresseopslag via CPR og Dataforsyning → Distriktsopslag via District Map API → Opdatering i Novax DB
