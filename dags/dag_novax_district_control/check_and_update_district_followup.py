@@ -12,6 +12,7 @@ from dag_novax_district_control.model import Name, NameDetails, Address, PersonD
 
 logger = logging.getLogger(__name__)
 
+
 def check_and_update_district_followup(dry_run: bool) -> None:
     """
     Retrieves and updates user, address and district information
@@ -84,7 +85,6 @@ def check_and_update_district_followup(dry_run: bool) -> None:
             new_full_address = address_info["full_address"].strip()
             if new_full_address != (entry.ADRESSE or "").strip():
                 is_new_address_set = True
-                old_address = (entry.ADRESSE or "").strip() or None
                 entry.ADRESSE = new_full_address
                 logger.info(f"Updated address for Name ID {entry.ID}")
 
@@ -96,8 +96,8 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                     int(a.KOMMUNEKODE) == address_info['municipality_code'] and
                     a.DATO_FRA.date() <= now_dt.date() and
                     (
-                        a.DATO_TIL.date() == sentinel_open_end.date()
-                        or a.DATO_TIL.date() > now_dt.date()
+                        a.DATO_TIL.date() == sentinel_open_end.date() or
+                        a.DATO_TIL.date() > now_dt.date()
                     )
                     for a in entry.addresses
                 )
@@ -142,11 +142,11 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                     is_new_district_details = True
 
                 has_valid_person_district = any(
-                    d.DISTRICT.strip() == district.strip()
-                    and d.DATEFROM.date() <= now_dt.date()
-                    and (
-                        d.DATETO.date() == sentinel_open_end.date()
-                        or d.DATETO.date() > now_dt.date()
+                    d.DISTRICT.strip() == district.strip() and
+                    d.DATEFROM.date() <= now_dt.date() and
+                    (
+                        d.DATETO.date() == sentinel_open_end.date() or
+                        d.DATETO.date() > now_dt.date()
                     )
                     for d in entry.person_districts
                 )
