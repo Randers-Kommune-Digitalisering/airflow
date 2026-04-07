@@ -4,7 +4,7 @@ from pendulum import datetime, timezone
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
-from airflow.providers.http.hooks.http import BaseHook
+from airflow.hooks.base import BaseHook
 
 from utils.config import DEFAULT_DAG_ARGS
 from dag_nexus_adm_org.delta import DeltaClient

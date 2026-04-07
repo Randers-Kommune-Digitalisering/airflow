@@ -92,7 +92,7 @@ class NexusClient:
 
         return relevant_organisations
 
-    def _fetch_professional(self, primary_identifier: str) -> dict:
+    def _fetch_professional(self, primary_identifier: str) -> dict | None:
         """
         Fetches a professional from the Nexus API based on the primary identifier (user/DQ-number).
         Returns the professional dict if found, None if not found, and raises an exception if multiple professionals are found.
@@ -240,7 +240,7 @@ class NexusClient:
         res = self._session.post(professional['_links']['updateOrganizations']['href'], json=json_body)
         res.raise_for_status()
 
-    def _update_professional_supplier(self, professional: dict, supplier: dict, primary_identifier: str) -> None:
+    def _update_professional_supplier(self, professional: dict, supplier: dict) -> None:
         """
         Updates the supplier assigned to a professional.
         """
@@ -291,9 +291,9 @@ class NexusClient:
 
         if len(organisation_ids_to_assign) > 0 or len(organisation_ids_to_remove) > 0:
             self._update_professional_organisations(professional, organisation_ids_to_assign, organisation_ids_to_remove)
-            logger.info(f'Professional {employee['user']} updated with organisations')
+            logger.info(f"Professional {employee['user']} updated with organisations")
         else:
-            logger.info(f'Professional {employee['user']} already has correct organisations assigned - not updating')
+            logger.info(f"Professional {employee['user']} already has correct organisations assigned - not updating")
 
         if employee['organizations']:
             current = next((item for item in self._active_org_list if item['syncId'] == employee['organizations'][0]), {})
@@ -301,12 +301,12 @@ class NexusClient:
 
             # If it has a supplier update it
             if supplier:
-                self._update_professional_supplier(professional, supplier, employee['user'])
+                self._update_professional_supplier(professional=professional, supplier=supplier)
                 logger.info(f"Professional {employee['user']} updated with supplier")
             else:
-                logger.info(f'Top organisation for professional {employee['user']} has a  no supplier - not updating')
+                logger.info(f"Top organisation for professional {employee['user']} has a  no supplier - not updating")
 
-        logger.info(f'Professional {employee['user']} updated sucessfully')
+        logger.info(f"Professional {employee['user']} updated sucessfully")
 
     def import_to_nexus_and_set_permissions(self, employees_changed_list: list[dict]):
         """

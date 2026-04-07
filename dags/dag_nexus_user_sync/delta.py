@@ -26,7 +26,7 @@ class DeltaClient:
         :param hook: Airflow connection with creds to connect to Delta.
         :param adm_org_dict: Dictionary with administrative units (arbejdsplads) relevant for Nexus users.
         :param position_types_to_import: List of position types (stillingsbetegnelse) relevant for Nexus employees.
-        :param job_functions_to_import: List of job functions (jobfunktion) relevant for Nexus subsitutes (vikarer).
+        :param job_functions_to_import: List of job functions (jobfunktion) relevant for Nexus substitutes (vikarer).
         :param changes_date: Date to get changes for. Format: YYYY-MM-DD.
             (the day the changes are valid from (inclusive), not the day the changes were made)
         """
@@ -72,7 +72,7 @@ class DeltaClient:
             'APOS-Types-Engagement-TypeRelation-Jobfunctions'  # Jobfunctions (jobfunktion, brugt for vikarer), ekstra stillingsbetegnelse
         ]
 
-        # Enagement (employment) has changed state
+        # Engagement (employment) has changed state
         state_change = True if employee_delta_dict.get('stateBiList', []) else False
         # Engagement (employment) has gotten a relevant type added on the changes date
         added_on_date = [obj for obj in employee_delta_dict.get('typeRefBiList', []) if obj.get('validityInterval', {}).get('from', '') == changes_date.strftime("%Y-%m-%d") and obj.get('value', {}).get('userKey') in changes_to_look_for]
@@ -80,7 +80,7 @@ class DeltaClient:
         removed_on_date = [obj for obj in employee_delta_dict.get('closedTypeRefBiList', []) if obj.get('value', {}).get('userKey') in changes_to_look_for]
         return any([state_change, added_on_date, removed_on_date])
 
-    def _unpack_employee_details(self, employee_details_response: dict, requested_uuids: list[str]) -> dict:
+    def _unpack_employee_details(self, employee_details_response: dict, requested_uuids: list[str]) -> list[dict]:
         """
         Unpack employee details response from Delta graph query into a more accessible format.
         Employees / engagements without a user are filters out. Employees / engagements with multiple users will be associated with the first user found.
