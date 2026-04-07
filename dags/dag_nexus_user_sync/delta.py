@@ -9,10 +9,12 @@ from rkdigi.token_session import ManagedOAuth2Session
 logger = logging.getLogger(__name__)
 
 
-class DeltaClient():
+class DeltaClient:
+    _created = False
+
     def __init__(
         self,
-        delta_hook: BaseHook,
+        hook: BaseHook,
         adm_org_dict: dict,
         position_types_to_import: list,
         job_functions_to_import: list,
@@ -21,25 +23,29 @@ class DeltaClient():
         """
         Client for fetching employee changes from Delta and filter for changes relevant for Nexus.
 
-        :param delta_hook: Airflow connection with creds to connect to Delta.
+        :param hook: Airflow connection with creds to connect to Delta.
         :param adm_org_dict: Dictionary with administrative units (arbejdsplads) relevant for Nexus users.
         :param position_types_to_import: List of position types (stillingsbetegnelse) relevant for Nexus employees.
         :param job_functions_to_import: List of job functions (jobfunktion) relevant for Nexus subsitutes (vikarer).
         :param changes_date: Date to get changes for. Format: YYYY-MM-DD.
             (the day the changes are valid from (inclusive), not the day the changes were made)
         """
+        if DeltaClient._created:
+            raise Exception("DeltaClient can only be created once.")
+        DeltaClient._created = True
+
         self.session = ManagedOAuth2Session(
-            token_url=delta_hook.extra_dejson["token_url"],
-            client_id=delta_hook.login,
-            client_secret=delta_hook.password
+            token_url=hook.extra_dejson["token_url"],
+            client_id=hook.login,
+            client_secret=hook.password
         )
-        self.adm_org_dict = adm_org_dict
-        self.position_types_to_import = position_types_to_import
-        self.job_functions_to_import = job_functions_to_import
-        self.changes_date = changes_date
-        self.graph_query_url = f"{delta_hook.host.rstrip('/')}/api/object/graph-query"
-        self.query_url = f"{delta_hook.host.rstrip('/')}/api/object/query"
-        self.history_url = f"{delta_hook.host.rstrip('/')}/api/object/history"
+        self._adm_org_dict = adm_org_dict
+        self._position_types_to_import = position_types_to_import
+        self._job_functions_to_import = job_functions_to_import
+        self._changes_date = changes_date
+        self._graph_query_url = f"{hook.host.rstrip('/')}/api/object/graph-query"
+        self._query_url = f"{hook.host.rstrip('/')}/api/object/query"
+        self._history_url = f"{hook.host.rstrip('/')}/api/object/history"
 
     def _filter_relevant_time_or_type_of_change(self, employee_delta_dict: dict, changes_date: date) -> bool:
         """
@@ -74,19 +80,24 @@ class DeltaClient():
         removed_on_date = [obj for obj in employee_delta_dict.get('closedTypeRefBiList', []) if obj.get('value', {}).get('userKey') in changes_to_look_for]
         return any([state_change, added_on_date, removed_on_date])
 
-    def _unpack_employee_details(self, employee_details_response: dict, users_to_get: int) -> dict:
+    def _unpack_employee_details(self, employee_details_response: dict, requested_uuids: list[str]) -> dict:
         """
         Unpack employee details response from Delta graph query into a more accessible format.
         Employees / engagements without a user are filters out. Employees / engagements with multiple users will be associated with the first user found.
         :param employee_details_response: Response from Delta graph query for employee details.
+        :param requested_uuids: List of UUIDs that were requested.
         :return: List of dictionaries with employee details in a more accessible format.
         """
         instances = employee_details_response['graphQueryResult'][0]['instances']
 
-        if len(instances) != users_to_get:
+        if len(instances) != len(requested_uuids):
+            returned_uuids = {instance.get('identity', {}).get('uuid') for instance in instances}
+            requested_set = set(requested_uuids)
+            missing = requested_set - returned_uuids
+            extra = returned_uuids - requested_set
             raise ValueError(
                 'Number of returned engagements from graph query does not match number of requested engagements.\n'
-                f'Number requested: {users_to_get}, number returned: {len(instances)}.'
+                f'Number requested: {len(requested_uuids)}, number returned: {len(instances)}.\n' + (f'Missing UUIDs: {missing}\n' if missing else '') + (f'Extra UUIDs: {extra}\n' if extra else '')
             )
 
         unpacked_details = []
@@ -131,18 +142,11 @@ class DeltaClient():
                             if att.get('userKey', '') == 'APOS-Types-User-Attribute-UserPrincipalName':
                                 upn = att.get('value', None)
 
-            if not user:
-                # TODO: A lot of employees do not have a user, should they be ignored for Nexus changes or an exception be raised?
-                # NB: users not associated with Nexus are also handled here
-                # raise ValueError(f'No user found for employee: {uuid}.')
-                logger.warning(f'No user found for employee: {uuid}')
-                continue
-
             unpacked_details.append({'uuid': uuid, 'state': state, 'user': user, 'upn': upn, 'cpr': cpr, 'name': name, 'position': postion, 'org': org, 'jobs_add': jobs_add, 'jobs_remove': jobs_remove, 'aa_orgs_add': aa_orgs_add, 'aa_orgs_remove': aa_orgs_remove})
 
         return unpacked_details
 
-    def _get_engaments_details(self, engagement_uuids: list[str]) -> list[dict]:
+    def _get_engagements_details(self, engagement_uuids: list[str]) -> list[dict]:
         """
         Get details for engagements with given UUIDs.
 
@@ -251,16 +255,16 @@ class DeltaClient():
                             ]
                         }
                     },
-                    "validDate": self.changes_date.strftime("%Y-%m-%d"),
+                    "validDate": self._changes_date.strftime("%Y-%m-%d"),
                     "offset": 0,
                     "limit": len(engagement_uuids) + 1  # Engagement UUIDs plus one (for checking return length)
                 }
             ]
         }
-        res = self.session.post(self.graph_query_url, json=graph_query)
+        res = self.session.post(self._graph_query_url, json=graph_query)
         res.raise_for_status()
         data = res.json()
-        return self._unpack_employee_details(employee_details_response=data, users_to_get=len(engagement_uuids))
+        return self._unpack_employee_details(employee_details_response=data, requested_uuids=engagement_uuids)
 
     def get_employment_changes(self) -> list[dict]:
         """
@@ -282,7 +286,7 @@ class DeltaClient():
         history_query = {
             "queryList": [
                 {
-                    "validFrom": self.changes_date.strftime("%Y-%m-%d"),
+                    "validFrom": self._changes_date.strftime("%Y-%m-%d"),
                     "includeAuthor": False,
                     "objType": "APOS-Types-Engagement",
                     "scopeList": [
@@ -295,69 +299,93 @@ class DeltaClient():
             "transaction": "ALL"
         }
 
-        res_employee_changes = self.session.post(self.history_url, json=history_query, timeout=300)
-        res_employee_changes.raise_for_status()
-        data_employee_changes = res_employee_changes.json()
+        # Get changes in the past valid from changes date
+        self.session._acquire_token()
+        res_employee_changes_valid_date = self.session.post(self._history_url, json=history_query, timeout=300)
+        res_employee_changes_valid_date.raise_for_status()
+        data_employee_changes_valid_date = res_employee_changes_valid_date.json()
+
+        # Get changes made on the changes date
+        history_query['queryList'][0]['from'] = f"{history_query['queryList'][0].pop('validFrom')}T00:00:00.000Z"
+        self.session._acquire_token()
+        res_employee_changes_change_date = self.session.post(self._history_url, json=history_query, timeout=300)
+        res_employee_changes_change_date.raise_for_status()
+        data_employee_changes_change_date = res_employee_changes_change_date.json()
+
+        # Filter changes to only keep the ones valid from exactly on the changes date
         all_employee_changes = [
             reg
-            for reg in data_employee_changes['queryResultList'][0]['registrationList']
-            if reg.get('validityDate', None) == self.changes_date.strftime("%Y-%m-%d")
+            for reg in data_employee_changes_valid_date['queryResultList'][0]['registrationList']
+            if reg.get('validityDate') == self._changes_date.strftime("%Y-%m-%d")
         ]
+
+        # Filter changes made on the changes date to only keep the ones valid from before or on the changes date
+        for reg in data_employee_changes_change_date['queryResultList'][0]['registrationList']:
+            if date.fromisoformat(reg['validityDate']) <= self._changes_date:
+                all_employee_changes.append(reg)
+
+        # Filter for types of changes relevant for Nexus permissions
         employees_with_relevant_changes = [
             change['objectUuid']
             for change in all_employee_changes
-            if self._filter_relevant_time_or_type_of_change(change, self.changes_date)
+            if self._filter_relevant_time_or_type_of_change(change, self._changes_date)
         ]
 
-        employemnts_with_details = self._get_engaments_details(employees_with_relevant_changes)
+        # Remove duplicates
+        employees_with_relevant_changes = list(set(employees_with_relevant_changes))
+
+        employments_with_details = self._get_engagements_details(employees_with_relevant_changes)
         employee_orgs_dict = defaultdict(list)
         employee_detail_dict = defaultdict(dict)
-        for employee_details in employemnts_with_details:
+        for employee_details in employments_with_details:
             if employee_details['state'] == 'STATE_ACTIVE':
                 orgs = []
-                if any([job in self.job_functions_to_import for job in employee_details['jobs_add']]):
+                if any([job in self._job_functions_to_import for job in employee_details['jobs_add']]):
                     # Internal substitutes (interne vikarer) has an additional associations and job functions
                     if employee_details['aa_orgs_add']:
                         for aa_org in employee_details['aa_orgs_add']:
-                            if aa_org in self.adm_org_dict.keys():
-                                orgs = orgs + [aa_org] + self.adm_org_dict[aa_org]
+                            if aa_org in self._adm_org_dict.keys():
+                                orgs = orgs + [aa_org] + self._adm_org_dict[aa_org]
                         employee_details['set_job_title'] = True
                     # External substitutes (eksterne vikarer) has no additional associations but job functions and an organization (administrativ enhed)
-                    elif employee_details['org'] in self.adm_org_dict.keys():
-                        orgs = orgs + [employee_details['org']] + self.adm_org_dict[employee_details['org']]
+                    elif employee_details['org'] in self._adm_org_dict.keys():
+                        orgs = orgs + [employee_details['org']] + self._adm_org_dict[employee_details['org']]
                         employee_details['set_job_title'] = True
 
-                if employee_details['position'] in self.position_types_to_import:
+                if employee_details['position'] in self._position_types_to_import:
                     # Regular employees has a position and an organization (administrativ enhed), internal substitutes (interne vikarer) can be regular employees
-                    if employee_details['org'] in self.adm_org_dict.keys():
-                        orgs = orgs + [employee_details['org']] + self.adm_org_dict[employee_details['org']]
+                    if employee_details['org'] in self._adm_org_dict.keys():
+                        orgs = orgs + [employee_details['org']] + self._adm_org_dict[employee_details['org']]
 
                 # Filter if connected to Nexus (has relevant job function, position or organization (administrativ enhed))
-                if any([any([job in self.job_functions_to_import for job in employee_details['jobs_add']]),
-                        any([org in self.adm_org_dict.keys() for org in employee_details['aa_orgs_add']]),
-                        any([job in self.job_functions_to_import for job in employee_details['jobs_remove']]),
-                        any([org in self.adm_org_dict.keys() for org in employee_details['aa_orgs_remove']]),
-                        (employee_details['position'] in self.position_types_to_import and employee_details['org'] in self.adm_org_dict.keys())]):
+                if any([any([job in self._job_functions_to_import for job in employee_details['jobs_add']]),
+                        any([org in self._adm_org_dict.keys() for org in employee_details['aa_orgs_add']]),
+                        any([job in self._job_functions_to_import for job in employee_details['jobs_remove']]),
+                        any([org in self._adm_org_dict.keys() for org in employee_details['aa_orgs_remove']]),
+                        (employee_details['position'] in self._position_types_to_import and employee_details['org'] in self._adm_org_dict.keys())]):
                     employee_orgs_dict[employee_details['uuid']].extend(orgs)
                     employee_detail_dict[employee_details['uuid']].update(employee_details)
 
-            # Set relavant details/changes needed for setting Nexus information
-            employees_to_change = []
-            for e in employee_orgs_dict:
-                employee = {
-                    'upn': employee_detail_dict[e]['upn'],
-                    'user': employee_detail_dict[e]['user'],
-                    'cpr': employee_detail_dict[e]['cpr'],
-                    'name': employee_detail_dict[e]['name'],
-                    'organizations': employee_orgs_dict[e]
-                }
-                if len(employee_detail_dict[e]['jobs_add']) == 1 and employee_detail_dict[e]['set_job_title']:
-                    employee['job_title'] = employee_detail_dict[e]['jobs_add'][0]
-                employees_to_change.append(employee)
+        # Set relavant details/changes needed for setting Nexus information
+        employees_to_change = []
+        for e in employee_orgs_dict:
+            employee = {
+                'upn': employee_detail_dict[e]['upn'],
+                'user': employee_detail_dict[e]['user'],
+                'cpr': employee_detail_dict[e]['cpr'],
+                'name': employee_detail_dict[e]['name'],
+                'organizations': employee_orgs_dict[e]
+            }
+            if len(employee_detail_dict[e]['jobs_add']) == 1 and employee_detail_dict[e]['set_job_title']:
+                employee['job_title'] = employee_detail_dict[e]['jobs_add'][0]
+            employees_to_change.append(employee)
 
-            # Ensure all employees have both 'user' and 'upn' set to a value
-            for emp in employees_to_change:
-                if not emp.get('user') or not emp.get('upn'):
-                    raise Exception(f"Employee missing 'user' or 'upn': {emp}")
+        # Ensure all employees have both 'user' and 'upn' set to a value
+        for emp in employees_to_change[:]:  # shallow copy of list to allow modification while iterating
+            if not emp.get('user') or not emp.get('upn'):
+                #  TODO: How to handle employees missing user in Delta (comtains DQ-number and UPN)
+                logger.warning(f"Employee missing 'user' or 'upn', skipping employee. Employee details: {emp['name']}. Not handling!")
+                employees_to_change.remove(emp)
+                # raise ValueError(f"Employee missing 'user' or 'upn': {emp['name']}")
 
-            return employees_to_change
+        return employees_to_change
