@@ -14,7 +14,7 @@ from dag_nexus_user_sync.nexus import NexusClient
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 2
-dag_args["retry_delay"] = timedelta(minutes=1)
+dag_args["retry_delay"] = timedelta(minutes=2)
 
 
 def get_config_start_main_flow():
@@ -62,7 +62,7 @@ def get_config_start_main_flow():
 with DAG(
     dag_id="nexus_user_permission_sync",
     start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
-    # schedule="*/10 * * * *",
+    schedule="*/10 * * * *",
     schedule=None,
     default_args=dag_args,
     catchup=False,
