@@ -63,7 +63,6 @@ with DAG(
     dag_id="nexus_user_permission_sync",
     start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
     schedule="*/10 * * * *",
-    schedule=None,
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
