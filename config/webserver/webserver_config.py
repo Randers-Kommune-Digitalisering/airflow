@@ -82,8 +82,6 @@ class CustomSecurityManager(FabAirflowSecurityManagerOverride):
     authoauthview = CustomOAuthView
 
     def get_oauth_user_info(self, provider, response):
-        print(provider)
-        print(response)
         if provider == "keycloak":
             token = response["access_token"]
             try:
@@ -107,8 +105,6 @@ class CustomSecurityManager(FabAirflowSecurityManagerOverride):
             if CLIENT_ID not in aud_list:
                 log.error(f"Audience mismatch: {aud_list} does not contain {CLIENT_ID}")
                 return {}
-
-            print(me)
 
             resource_access = me.get("resource_access", {})
             log.info(f"Token resource_access: {resource_access}")
