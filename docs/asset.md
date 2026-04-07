@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at samle alt Asset data fra Randers Kommune i et samlet sted. Data hentes fra flere forskellige kilder: `Capa CMS DB, Historisk Data fra SFTP, Atea & Delta.` Alt data bliver gemt i en Postgres DB, hvor der til sidst laves en query af DB'en hvor man uploader alt relavant Asset data til Topdesk.
+Formålet med jobbet er at samle alt Asset data(Computer & Mobiler) fra Randers Kommune i et samlet sted. Data hentes fra flere forskellige kilder: `Capa CMS DB, Ivanti, Historisk Data fra SFTP, Atea & Delta.` Alt data bliver gemt i en Postgres DB, hvor der til sidst laves en query af DB'en hvor man uploader alt relavant Asset data til Topdesk.
 
 ## Beskrivelse
 
@@ -12,24 +12,27 @@ Koden består af et DAG-job, der udfører følgende trin:
 - Henter største delen af Asset data fra CAPA CMS DB (`insert_departments_data`, `insert_users_data`, `insert_computers_data`)
 - Historisk data fra tidligere leverandør hentes på en SFTP fra Comm2ig og Atea samt hentes Device License (`insert_device_license_and_historical_data`)
 - Henter Købspris, Købsdato og Garantiudløb fra Atea API (`insert_atea_data`)
+- Henter Mobilenheder data fra Ivanti API (`insert_ivanti_data`)
 - Henter Afdelings EAN fra Delta API (`insert_department_ean_from_delta`)
 - Dataen gemmes i en Postgres Database
-- Til sidst bliver relavant Asset data automatisk importeret til TopDesk Test og Prod miljø(`upload_assets_to_topdesk`)
+- Eksporterer og uploader CSV til Topdesk via `upload_assets_to_topdesk`, hvor filnavn vælges via `filename_key` i Airflow Variable `asset_config`
+  - PC-assets: eksport fra DB → upload til Topdesk Test + Prod
+  - Mobile assets: eksport fra DB → upload (pt. kun Topdesk Test)
 
 **Dataflow:**
 - Data fra forskellige kilder → Data gemmes i Postgres DB → Automatisk import til TopDesk
 
-**Airflow workflow:**
+**Airflow Task workflow:**
 
-t_create_tables
-
-t_departments
-
-Parallel: t_users og t_delta_ean
-
-Efter t_users: t_computers → t_atea → t_device_license
-
-Når både t_delta_ean og t_device_license er færdig køres: t_upload_topdesk
+- `t_create_tables`
+  - Parallel: `t_departments` og `t_fetch_ivanti_devices`
+- Efter `t_departments`:
+  - Parallel: `t_users` og `t_delta_ean`
+- Mobile upload:
+  - Når `t_users`, `t_delta_ean` og `t_fetch_ivanti_devices` er færdige → `t_upload_mobile_assets_to_topdesk`
+- Computer:
+  - `t_users` → `t_computers` → `t_atea` → `t_device_license`
+  - Når både `t_delta_ean` og `t_device_license` er færdige → `t_upload_pc_assets_to_topdesk`
 
 ## Afhængigheder
 
@@ -88,6 +91,13 @@ Bruges som `Connection id` i Airflow til at hente host, database, user, pass og 
     "token_url": x,
   }
 
+ **Ivanti API:**
+- **`ivanti_api`**
+- **Conn Type**: HTTP  
+Bruges som `Connection id` i Airflow til at hente host + credentials til Ivanti API’et (mobile devices)  
+*Required felter*:
+  - Connection id, Host, Login og Password 
+
 **Topdesk Test API:**
 - **`topdesk_api_test`**
 
@@ -115,7 +125,7 @@ Bruges som `Connection id` i Airflow til at hente host, database, user, pass og 
 
   **Key**: asset_config
 
-  Bruges til at hente hardcoded file paths. F.eks. til SFTP fil paths og TopDesk Filnavn
+  Bruges til at hente hardcoded file paths. F.eks. til SFTP fil paths og TopDesk Filnavne til Computer og Mobilenheder
 
   *Required felter*:
   - Key og Val

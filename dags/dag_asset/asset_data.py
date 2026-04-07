@@ -10,7 +10,7 @@ from airflow.providers.http.hooks.http import HttpHook
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from dateutil.relativedelta import relativedelta
 from dateutil.parser import parse
-from dag_asset.model import Base, Department, User, Computer
+from dag_asset.model import Base, Department, MobileDevice, User, Computer
 from airflow.models import Variable
 from utils.utils import df_to_csv_bytes
 from rkdigi.token_session import ManagedOAuth2Session
@@ -307,6 +307,9 @@ def insert_computers_data(capa_cms_engine: Engine, asset_engine: Engine) -> bool
 def _fetch_atea_data(http_hook: HttpHook) -> list:
     """
     Fetch asset data from Atea API
+
+    :param http_hook: Airflow HttpHook for the Atea API
+    :return: List of asset data from Atea API
     """
     logger.info("Fetching assets from Atea API ...")
 
@@ -344,6 +347,155 @@ def _fetch_atea_data(http_hook: HttpHook) -> list:
 
     logger.info(f"Successfully retrieved data from Atea API. Total records: {len(all_rows)} (pages fetched: {page})")
     return all_rows
+
+
+def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
+    """
+    Fetch mobile device data from Ivanti API
+
+    :param http_hook: Airflow HttpHook for the Ivanti API
+    :return: List of devices
+    """
+    logger.info("Fetching devices from Ivanti API ...")
+
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+
+    if not conn.login or not conn.password:
+        raise ValueError("Missing credentials for Ivanti API connection.")
+
+    http_hook.method = "GET"
+
+    # Fields needed to get the required data for the MobileDevice table
+    fields = (
+        "common.home_operator_name,android.device,ios.iPhone PRODUCT,user.display_name,"
+        "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
+        "common.manufacturer,common.model,common.imei,common.SerialNumber"
+    )
+    # Query parameters for filtering away non-mobile Samsung android devices and Apple devices that are not iPhones (iPads, Apple TVs etc.)
+    query = 'common.manufacturer contains "samsung" OR common.model does not contain "iPad" AND common.model does not contain "AppleTV"'
+    limit = 200  # can be higher but documentation specifies "no more than 200."
+    offset = 0
+
+    all_devices: list[dict] = []
+    while True:
+        logger.debug(f"Fetching Ivanti devices offset={offset} limit={limit} ...")
+
+        params = {
+            "adminDeviceSpaceId": 1,
+            "fields": fields,
+            "query": query,
+            "limit": limit,
+            "offset": offset,
+        }
+
+        res = http_hook.run(
+            endpoint="/api/v2/devices",
+            data=params,
+        )
+
+        data = res.json()
+        batch = data.get("results", []) or []
+
+        all_devices.extend(batch)
+
+        if len(batch) < limit:
+            break
+
+        offset += limit
+
+    logger.info(f"Successfully retrieved data from Ivanti API. Total records: {len(all_devices)}")
+    return all_devices
+
+
+def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
+    """
+    Fetch device data from Ivanti API and upsert into MobileDevice table.
+
+    :param http_hook: Airflow HttpHook for the Ivanti API
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: True if the update succeeded, otherwise False.
+    """
+
+    ivanti_data = _fetch_ivanti_devices(http_hook=http_hook)
+
+    if not ivanti_data:
+        logger.error("No data fetched from Ivanti API.")
+        return False
+
+    logger.debug(f"Ivanti devices: {len(ivanti_data)} records after filtering.")
+
+    device_map = {}
+
+    for item in ivanti_data:
+        serial = item.get("common.SerialNumber")
+        if not serial:
+            continue
+
+        device_map[serial] = {
+            "os_version": item.get("common.platform_name"),
+            "manufacturer": item.get("common.manufacturer"),
+            "model": item.get("common.model"),
+            "device_name": item.get("android.device") or item.get("ios.iPhone PRODUCT"),
+            "imei": item.get("common.imei"),
+            "phone_number": item.get("common.current_phone_number"),
+            "carrier": item.get("common.home_operator_name"),
+            "created_at": item.get("common.creation_date"),
+            "last_connected_at": item.get("common.last_connected_at"),
+            # Look up for User and MobileDevice Relation
+            "user_full_name": item.get("user.display_name"),
+        }
+
+    if not device_map:
+        logger.info("No Ivanti devices to upsert into MobileDevice table.")
+        return True
+
+    with Session(asset_engine) as session:
+        # Preload users by full_name
+        full_names = {
+            d["user_full_name"]
+            for d in device_map.values()
+            if d.get("user_full_name")
+        }
+
+        users_by_full_name = {
+            u.full_name: u
+            for u in session.query(User)
+            .filter(User.full_name.in_(full_names))
+            .all()
+        }
+
+        # Fetch existing devices
+        existing_devices = {
+            d.serial_number: d
+            for d in session.query(MobileDevice)
+            .filter(MobileDevice.serial_number.in_(device_map.keys()))
+            .all()
+        }
+
+        inserted = 0
+        updated = 0
+
+        for serial, data in device_map.items():
+            existing = existing_devices.get(serial)
+
+            user_full_name = data.pop("user_full_name", None)
+            user = users_by_full_name.get(user_full_name) if user_full_name else None
+            user_id = user.user_id if user else None
+
+            if existing:
+                for key, value in data.items():
+                    setattr(existing, key, value)
+                existing.user_id = user_id
+                updated += 1
+            else:
+                session.add(MobileDevice(serial_number=serial, user_id=user_id, **data))
+                inserted += 1
+
+        session.commit()
+
+        logger.info(f"Inserted: {inserted}, Updated: {updated}, Total: {len(device_map)} from Ivanti API data into MobileDevice table.")
+
+    return True
 
 
 def insert_atea_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
@@ -716,7 +868,200 @@ def insert_department_ean_from_delta(
         return False
 
 
-def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
+def _delta_get_all_emails(
+    token_session: ManagedOAuth2Session,
+    base_url: str,
+) -> list[dict]:
+    """
+    Query Delta system for all persons with active engagements and extract their names and emails.
+
+    :param token_session: ManagedOAuth2Session that handles OAuth2 token acquisition automatically.
+    :param base_url: Base URL for the Delta API.
+    :return: list of dicts with keys: name, email
+    """
+    url = f"{base_url.rstrip('/')}/api/object/graph-query"
+
+    offset = 0
+    limit = 1000
+    results: list[dict] = []
+
+    while True:
+        graph_query = {
+            "graphQueries": [
+                {
+                    "computeAvailablePages": True,
+                    "graphQuery": {
+                        "structure": {
+                            "alias": "person",
+                            "userKey": "APOS-Types-Person",
+                            "relations": [
+                                {
+                                    "alias": "emp",
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "typeUserKey": "APOS-Types-Engagement",
+                                    "direction": "IN",
+                                    "attributes": [
+                                        {
+                                            "alias": "email",
+                                            "userKey": "APOS-Types-Engagement-Attribute-Email",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                        "criteria": {
+                            "type": "AND",
+                            "criteria": [
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {"source": "DEFINITION", "alias": "person.$state"},
+                                    "right": {"source": "STATIC", "value": "STATE_ACTIVE"},
+                                },
+                                {
+                                    "type": "MATCH",
+                                    "operator": "LIKE",
+                                    "left": {"source": "DEFINITION", "alias": "person.emp.email"},
+                                    "right": {"source": "STATIC", "value": "%@%"},
+                                },
+                            ],
+                        },
+                        "projection": {
+                            "identity": True,
+                            "state": True,
+                            "incomingTypeRelations": [
+                                {
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "projection": {
+                                        "identity": True,
+                                        "state": True,
+                                        "attributes": ["APOS-Types-Engagement-Attribute-Email"],
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                    "validDate": "NOW",
+                    "offset": offset,
+                    "limit": limit,
+                }
+            ]
+        }
+
+        res = token_session.post(url=url, json=graph_query, timeout=30)
+        res.raise_for_status()
+        payload = res.json()
+
+        graph_results = payload.get("graphQueryResult") or []
+        if not graph_results:
+            break
+
+        graph0 = graph_results[0] or {}
+        instances = graph0.get("instances") or []
+        if not instances:
+            break
+
+        for inst in instances:
+            name = (inst.get("identity") or {}).get("name")
+
+            for ref in inst.get("inTypeRefs", []) or []:
+                if ref.get("userKey") != "APOS-Types-Engagement-TypeRelation-Person":
+                    continue
+
+                target = ref.get("targetObject") or {}
+                if target.get("state") != "STATE_ACTIVE":
+                    continue
+
+                email = None
+                for attr in target.get("attributes", []) or []:
+                    if attr.get("userKey") == "APOS-Types-Engagement-Attribute-Email":
+                        email = attr.get("value")
+                        break
+
+                if not email:
+                    continue
+
+                logger.debug(f"Found person: name={name}, email={email}")
+                results.append({"name": name, "email": email})
+
+        if len(instances) < limit:
+            break
+
+        offset += limit
+
+    return results
+
+
+def insert_email_from_delta(
+    token_session: ManagedOAuth2Session,
+    asset_engine: Engine,
+    delta_base_url: str,
+) -> bool:
+    """
+    Update User email in the asset database using data from Delta.
+
+    :param token_session: ManagedOAuth2Session used to call Delta API (handles OAuth2 tokens automatically).
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :param delta_base_url: Base URL for the Delta API
+    :return: True if the update succeeded, otherwise False.
+    """
+    try:
+        logger.info("Fetching user emails from Delta...")
+        delta_data = _delta_get_all_emails(
+            token_session=token_session,
+            base_url=delta_base_url,
+        )
+
+        if not delta_data:
+            logger.error("No user emails fetched from Delta.")
+            return False
+
+        first_email_by_name: dict[str, str] = {}
+
+        for person in delta_data:
+            name = person.get("name")
+            email = person.get("email")
+            if not name or not email:
+                continue
+
+            name = str(name).strip()
+            email = str(email).strip()
+            if not name or not email:
+                continue
+
+            if name not in first_email_by_name:
+                first_email_by_name[name] = email
+
+        with Session(asset_engine) as session:
+            users = session.query(User).all()
+            updated = 0
+
+            for user in users:
+                if not user.full_name:
+                    continue
+
+                full_name = str(user.full_name).strip()
+                email_from_delta = first_email_by_name.get(full_name)
+                if not email_from_delta:
+                    continue
+
+                if (user.email or "").strip() == email_from_delta:
+                    continue
+
+                user.email = email_from_delta
+                updated += 1
+
+            session.commit()
+            logger.info(f"Updated email for {updated} users from Delta.")
+
+        return True
+
+    except Exception as e:
+        logger.exception(f"Error updating user email from Delta: {e}")
+        return False
+
+
+def export_pc_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     """
     Export asset data from the Asset DB as a CSV payload (bytes).
 
@@ -809,24 +1154,104 @@ def export_assets_from_db(asset_engine: Engine) -> io.BytesIO:
     return df_to_csv_bytes(df, sep=';', encoding='UTF-8')
 
 
+def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
+    """
+    Export mobile device data from the Asset DB as a CSV payload (bytes).
+
+    :param asset_engine: SQLAlchemy Engine for the Asset DB.
+    :return: CSV content as an io.BytesIO buffer
+    """
+    sql_command = """
+        SELECT
+        STRING_AGG(DISTINCT d."name", ', ') AS department,
+        STRING_AGG(DISTINCT d."ean", ', ') AS department_ean,
+        md."serial_number",
+        md."os_version",
+        md."manufacturer",
+        md."model",
+        md."device_name",
+        md."imei",
+        md."phone_number",
+        md."carrier",
+        md."created_at",
+        md."last_connected_at",
+        u."primary_user",
+        u."full_name",
+        u."email"
+    FROM public."mobile_device" md
+    LEFT JOIN public."user" u
+        ON md."user_id" = u."user_id"
+    LEFT JOIN public."user_department" ud
+        ON ud."user_id" = u."user_id"
+    LEFT JOIN public."department" d
+        ON d."department_id" = ud."department_id"
+    GROUP BY
+        md."serial_number",
+        md."os_version",
+        md."manufacturer",
+        md."model",
+        md."device_name",
+        md."imei",
+        md."phone_number",
+        md."carrier",
+        md."created_at",
+        md."last_connected_at",
+        u."primary_user",
+        u."full_name",
+        u."email";
+    """
+
+    logger.debug(f"Executing mobile device SQL command: {sql_command}")
+
+    with asset_engine.connect() as conn:
+        result = conn.execute(text(sql_command)).mappings().all()
+
+    if not result:
+        raise ValueError("No data found in MobileDevice table")
+
+    df = pd.DataFrame(result)
+
+    # Transform datetime columns to TopDesk format
+    for col in ["created_at", "last_connected_at"]:
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda val: "" if pd.isnull(val) else pd.to_datetime(val).strftime("%Y-%m-%dT%H:%M:%S.00")
+                if str(val).strip() else str(val)
+            )
+
+    return df_to_csv_bytes(df, sep=';', encoding='UTF-8')
+
+
 def upload_assets_to_topdesk(
     http_hook: HttpHook,
     csv_bytes: io.BytesIO,
+    filename_key: str,
 ) -> bool:
     """
     Upload a CSV payload to Topdesk as a source file.
 
     :param http_hook: Airflow HttpHook configured for the Topdesk API.
     :param csv_bytes: CSV content as an io.BytesIO buffer to be uploaded.
+    :param filename_key: Key in Airflow Variable 'asset_config' containing the Topdesk file name.
     :return: True if upload succeeded, otherwise False.
     """
+    # Get configuration from Airflow Variable
+    asset_config = Variable.get("asset_config", default_var={}, deserialize_json=True)
 
-    topdesk_asset_filename = Variable.get("asset_config", default_var=None, deserialize_json=True)["topdesk_file_path"]
-    logger.info(f"File name: {topdesk_asset_filename}")
+    if not isinstance(asset_config, dict):
+        logger.error("Airflow Variable 'asset_config' must be a JSON object (dict).")
+        return False
 
+    topdesk_asset_filename = asset_config.get(filename_key)
+
+    if not topdesk_asset_filename:
+        logger.error(f"No Topdesk file name found for key '{filename_key}' in asset_config")
+        return False
+
+    logger.info(f"Uploading file to Topdesk: {topdesk_asset_filename}")
+
+    # Topdesk endpoint
     upload_path = f"/services/import-to-api-v1/api/sourceFiles?filename={topdesk_asset_filename}"
-
-    logger.info(f"Uploading {topdesk_asset_filename} to Topdesk using connection: {http_hook.http_conn_id}")
 
     http_hook.method = "PUT"
     res = http_hook.run(
