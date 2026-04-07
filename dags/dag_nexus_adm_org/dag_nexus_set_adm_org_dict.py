@@ -27,7 +27,7 @@ def set_adm_org_var():
 
 
 with DAG(
-    dag_id="dag_nexus_set_adm_org_dict",
+    dag_id="nexus_set_adm_org_dict",
     start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
     schedule="@daily",
     default_args=dag_args,
