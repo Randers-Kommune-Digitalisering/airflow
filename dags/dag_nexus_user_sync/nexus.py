@@ -280,14 +280,14 @@ class NexusClient:
             item['id'] for item in self._active_org_list
             if item['syncId'] in employee['organizations'] and item['syncId'] not in assigned_sync_ids
         ]
-        logger.info(f"Organisation ids to assign: {organisation_ids_to_assign}")
+        # logger.info(f"Organisation ids to assign: {organisation_ids_to_assign}")
 
         to_remove_sync_ids = assigned_sync_ids - set(employee['organizations'])
         organisation_ids_to_remove = [
             item['id'] for item in self._active_org_list
             if item['syncId'] in to_remove_sync_ids
         ]
-        logger.info(f"Organisation ids to remove: {organisation_ids_to_remove}")
+        # logger.info(f"Organisation ids to remove: {organisation_ids_to_remove}")
 
         if len(organisation_ids_to_assign) > 0 or len(organisation_ids_to_remove) > 0:
             self._update_professional_organisations(professional, organisation_ids_to_assign, organisation_ids_to_remove)
