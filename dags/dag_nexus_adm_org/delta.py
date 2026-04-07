@@ -1,4 +1,4 @@
-from airflow.providers.http.hooks.http import BaseHook
+from airflow.hooks.base import BaseHook
 
 from rkdigi.token_session import ManagedOAuth2Session
 
