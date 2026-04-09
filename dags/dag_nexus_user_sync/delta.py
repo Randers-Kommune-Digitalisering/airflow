@@ -335,10 +335,12 @@ class DeltaClient:
         employees_with_relevant_changes = list(set(employees_with_relevant_changes))
 
         employments_with_details = self._get_engagements_details(employees_with_relevant_changes)
+
         employee_orgs_dict = defaultdict(list)
         employee_detail_dict = defaultdict(dict)
         for employee_details in employments_with_details:
             if employee_details['state'] == 'STATE_ACTIVE':
+                employee_details['set_job_title'] = False
                 orgs = []
                 if any([job in self._job_functions_to_import for job in employee_details['jobs_add']]):
                     # Internal substitutes (interne vikarer) has an additional associations and job functions
@@ -374,7 +376,8 @@ class DeltaClient:
                 'user': employee_detail_dict[e]['user'],
                 'cpr': employee_detail_dict[e]['cpr'],
                 'name': employee_detail_dict[e]['name'],
-                'organizations': employee_orgs_dict[e]
+                'organizations': employee_orgs_dict[e],
+                'job_title': None
             }
             if len(employee_detail_dict[e]['jobs_add']) == 1 and employee_detail_dict[e]['set_job_title']:
                 employee['job_title'] = employee_detail_dict[e]['jobs_add'][0]
@@ -384,7 +387,7 @@ class DeltaClient:
         for emp in employees_to_change[:]:  # shallow copy of list to allow modification while iterating
             if not emp.get('user') or not emp.get('upn'):
                 #  TODO: How to handle employees missing user in Delta (comtains DQ-number and UPN)
-                logger.warning(f"Employee missing 'user' or 'upn', skipping employee. Employee details: {emp['name']}. Not handling!")
+                logger.error(f"Employee missing 'user' or 'upn', skipping employee. Employee details: {emp['name']}. Not handling!")
                 employees_to_change.remove(emp)
                 # raise ValueError(f"Employee missing 'user' or 'upn': {emp['name']}")
 
