@@ -25,14 +25,25 @@ Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfø
     - Hvis adressen ikke kan findes i Dataforsyningen, logges det og patientens adresse/distrikt-opdatering springes over
   - Slår distriktsnavn op i GIS (District Map) på baggrund af koordinater
   - Udfører ekstra checks før opdatering i Novax:
-    - Telefon opdateres
-    - Distrikt opdateres kun hvis nyt distrikt kan bestemmes og det afviger fra nuværende
-    - Distriktsrelaterede felter opdateres (inkl. `NameDetails.TS_KOMID` når distrikt ændres)
+    - Terminsdato opdateres kun hvis der findes en ny terminsdato i journalen (eller beregnet `calculated_due_date`) og den afviger fra eksisterende (`NameDetails.TERMIN`)
+    - Telefon opdateres ud fra journalen ved at vedligeholde telefon-tabellen (`TELEFON`)
+      - Primær telefon markeres via `Phone.PRIMAER` (eksisterende primær kan nedgraderes til `0`, og en eksisterende sekundær kan promoveres til `1`)
+      - Hvis nummeret ikke findes, oprettes en ny række med `Phone.TELEFONNUMMER` og `Phone.PRIMAER = 1`
+      - Ved opdatering/indsættelse opdateres relevante tidsstempler (`Phone.TS_DATE`, `Phone.TS_TIME`, `Phone.TS_UPDD`, `Phone.TS_UPDT`)
+    - Beskyttet adresse-status synkroniseres fra CPR hvis den afviger (`NameDetails.BESKYTTETADRESSE`)
+    - Adresse opdateres kun hvis Dataforsyningen giver en anden fuld adresse (`Name.ADRESSE`)
+      - Samtidig vedligeholdes adressens historiktabel (`adrs`): åbne rækker lukkes via `Address.DATO_TIL`, og der indsættes evt. en ny række med bl.a. `Address.VEJKODE`, `Address.KOMMUNEKODE`, `Address.POSTNR`, `Address.STEDNAVN`, `Address.NR_LT_ETAGE`, `Address.DATO_FRA`, `Address.DATO_TIL`
+      - Historikrækker timestamps vedligeholdes via `Address.TS_DATE`, `Address.TS_TIME`, `Address.TS_UPDD`, `Address.TS_UPDT`
+    - Distrikt opdateres kun hvis nyt distrikt kan bestemmes og det afviger fra nuværende (`Name.DISTRIKT`)
+      - Distriktsrelaterede felter opdateres (inkl. `NameDetails.TS_KOMID` når distrikt ændres)
+      - Historik for distrikter vedligeholdes i `PERSONDISTRICT`: åbne rækker lukkes via `PersonDistrict.DATETO`, og der indsættes evt. en ny række med `PersonDistrict.DISTRICT`, `PersonDistrict.DATEFROM`, `PersonDistrict.DATETO`
+      - Historikrækker timestamps vedligeholdes via `PersonDistrict.TS_DATE`, `PersonDistrict.TS_TIME`, `PersonDistrict.TS_UPDD`, `PersonDistrict.TS_UPDT`
+    - Tidsstempler opdateres ved ændringer (fx `Name.TS_UPDD`, `Name.TS_UPDT`, `NameDetails.TS_UPDD`, `NameDetails.TS_UPDT`)
   - Opdaterer Novax via en samlet batch
 
 **Vigtigt: “Always updates” pr. patient**
 
-Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, udfører batch-opdateringen altid disse opdateringer pr. patient:
+Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsøger jobkørslen altid at sikre disse værdier pr. patient (dvs. felterne skrives hvis de ikke allerede har den ønskede værdi):
 
 - Patienten tildeles altid til **“Gravid til fordeling”** ved at sætte `AnsvarsShpl = 'FIKTIV'` i Novax
 - Patienten sættes altid til aktiv (`AKTIV = 1`) i Novax
