@@ -87,5 +87,5 @@ Funktionen beregner derfor et sæt dato-vinduer, som bruges til at filtrere i da
 
 1. Den tager udgangspunkt i “næste uge” (kørselsdato + 7 dage) og finder hvilken uge-blok i måneden den dato ligger i.
 2. Den laver derefter månedlige vinduer for den samme uge-blok i den måned samt de næste måneder frem (standard 9 måneder).
-3. Den tilføjer et ekstra vindue for terminsdatoer mellem 14 og 21 dage fra kørselsdatoen (start inklusiv, slut eksklusiv).
+3. Den tilføjer et ekstra vindue for terminsdatoer mellem 14 og 20 dage fra kørselsdatoen.
 4. Hvis vinduer overlapper eller ligger lige op ad hinanden, bliver de lagt sammen til færre og større vinduer.

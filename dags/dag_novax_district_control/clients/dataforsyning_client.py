@@ -22,7 +22,7 @@ class DataforsyningClient:
             number_floor(str),
             street_code(int),
             town_name(str|None),
-            postal_code(str),
+            postal_code(int),
             municipality_code(int),
             coordinates(tuple[float, float])
             OR None if the lookup returns an unexpected number of results.

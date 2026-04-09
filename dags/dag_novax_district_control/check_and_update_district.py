@@ -219,12 +219,14 @@ def check_and_update_district(dry_run: bool) -> None:
                 )
                 if district and district.strip() != entry.DISTRIKT.strip():
                     is_new_district = True
-                    entry.DISTRIKT = district.strip()
-                    if entry.details.TS_KOMID.strip() != district.strip():
-                        entry.details.TS_KOMID = district.strip()
+                    new_district = district.strip()
+                    entry.DISTRIKT = new_district
+                    current_ts_komid = (entry.details.TS_KOMID or "").strip()
+                    if current_ts_komid != new_district:
+                        entry.details.TS_KOMID = new_district
                         is_new_district_details = True
-                        logger.info(f"Updated district details for Name ID {entry.ID} to {district.strip()}")
-                    logger.info(f"Updated district for Name ID {entry.ID} to {district.strip()}")
+                        logger.info(f"Updated district details for Name ID {entry.ID} to {new_district}")
+                    logger.info(f"Updated district for Name ID {entry.ID} to {new_district}")
 
                     entry_date = entry.date.date()
                     has_valid_person_district = any(

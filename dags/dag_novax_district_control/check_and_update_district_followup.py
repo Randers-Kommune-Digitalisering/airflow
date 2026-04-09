@@ -158,7 +158,7 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                     entry.DISTRIKT = district.strip()
                     logger.info(f"Updated district for Name ID {entry.ID}")
 
-                    if entry.details.TS_KOMID.strip() != district.strip():
+                    if (entry.details.TS_KOMID or "").strip() != district.strip():
                         entry.details.TS_KOMID = district.strip()
                         is_new_district_details = True
 
