@@ -340,7 +340,7 @@ class NexusClient:
             if supplier:
                 self._update_professional_supplier(employee=employee, professional=professional, supplier=supplier)
             else:
-                logger.info(f"Top organisation for professional {employee['user']} has a no supplier - not updating")
+                logger.info(f"Top organisation for professional {employee['user']} has no supplier - not updating")
 
         if employee['job_title']:
             job_title_obj = next((item for item in self._all_job_titles if item.get('name', '').lower() == employee['job_title'].lower() and item.get('active')), None)
