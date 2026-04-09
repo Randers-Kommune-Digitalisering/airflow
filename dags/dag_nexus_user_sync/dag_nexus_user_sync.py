@@ -68,7 +68,6 @@ def get_config_start_main_flow(**context):
 
     nexus_hook = BaseHook.get_hook("nexus_review")
     nexus_client = NexusClient(hook=nexus_hook, **nexus_client_params)
-    
     nexus_client.import_to_nexus_and_set_permissions(employees_changed_list=employment_changes)
 
 
