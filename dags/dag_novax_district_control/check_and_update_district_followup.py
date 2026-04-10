@@ -66,11 +66,6 @@ def check_and_update_district_followup(dry_run: bool) -> None:
         now_time = now_dt.strftime("%H:%M")
 
         for entry in entries:
-
-            if entry.details is None:
-                logger.warning("Skipping Name ID %s: missing NameDetails", entry.ID)
-                continue
-
             # CPR validation and normalization
             normalized_cpr = CPRClient.normalize_cpr_number(entry.CPR)
             if not normalized_cpr:
