@@ -172,14 +172,14 @@ def check_and_update_district(dry_run: bool) -> None:
                     cpr_info['address_uuid'],
                 )
             else:
+                entry_date = _to_date(entry.date)
+
                 # Address update
                 new_full_address = _s(address_info.get('full_address'))
                 if new_full_address != _s(entry.ADRESSE):
                     is_new_address_set = True
                     entry.ADRESSE = new_full_address
                     logger.info(f"Updated address for Name ID {entry.ID}")
-
-                    entry_date = _to_date(entry.date)
                     has_valid_address = any(
                         _s(a.NR_LT_ETAGE) == _s(address_info.get('number_floor')) and
                         _i(a.VEJKODE) == address_info.get('street_code') and
