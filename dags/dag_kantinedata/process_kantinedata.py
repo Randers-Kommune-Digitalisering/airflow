@@ -32,15 +32,13 @@ def process_kantinedata(imap_hook: ImapHook, sftp_hook: SFTPHook) -> None:
         conn.select("INBOX")
         status, data = conn.search(None, "UNSEEN")
 
-        # TODO: If someone or something else uses the mailbox, we might want to process all emails.
-        # status, data = conn.search(None, "ALL")
-
         if status != "OK":
             logger.warning(f"IMAP search failed with status: {status}")
             return
 
         msg_ids = data[0].split()
         logger.info(f"{len(msg_ids)} email(s) found")
+        found_emails_without_xml_attachment = False
 
         for msg_id in msg_ids:
             status, msg_data = conn.fetch(msg_id, "(BODY.PEEK[])")  # Get the email without marking it as read
@@ -74,8 +72,9 @@ def process_kantinedata(imap_hook: ImapHook, sftp_hook: SFTPHook) -> None:
             if xml_found and all_uploaded:
                 # Only mark the email as seen if we found at least one XML attachment and all were uploaded successfully.
                 conn.store(msg_id, "+FLAGS", "\\Seen")
+            elif not xml_found:
+                found_emails_without_xml_attachment = True
 
-                # TODO: If processing all emails, we might want to delete or move processed emails to avoid reprocessing.
-                # conn.copy(msg_id, "Slettet post")
-                # conn.store(msg_id, "+FLAGS", "\\Deleted")
-                # conn.expunge()
+        if found_emails_without_xml_attachment:
+            # If we encountered any emails that were missing valid XML attachments, raise an error at the end.
+            raise RuntimeError("Found one or more emails without valid XML attachments. Please check the email contents.")
