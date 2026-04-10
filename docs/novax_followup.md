@@ -14,7 +14,7 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
 
 - Bestemmer kørselsdatoen (DAG’ens logical date som lokal dato i DAG-timezone). Koden bruger `data_interval_end` fra Airflow-context, og falder tilbage til “i dag” ved lokal kørsel.
 - Beregner et sæt dato-vinduer for kommende terminsdatoer (se afsnittet [Dato-vinduer](#dato-vinduer)). Vinduerne behandles som hele dage med start inklusiv og slut eksklusiv.
-- Slår patienter op i Novax DB ved at filtrere på terminsdato (`NameDetails.TERMIN`) der ligger i et af vinduerne.
+- Slår patienter op i Novax DB blandt patienter med tilknyttet `NameDetails` ved at filtrere på terminsdato (`NameDetails.TERMIN`), der ligger i et af vinduerne.
 - For hver patient:
   - Springer over hvis der mangler `NameDetails`.
   - Validerer/normaliserer CPR-nummer.
