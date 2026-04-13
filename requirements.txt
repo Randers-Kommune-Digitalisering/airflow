@@ -7,4 +7,4 @@ requests==2.32.5
 pyproj==3.7.2
 geoalchemy2==0.18.1
 shapely==2.1.0
-rk-digi==2.0.0
+rk-digi==2.1.0
