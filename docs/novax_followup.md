@@ -16,7 +16,6 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
 - Beregner et sæt dato-vinduer for kommende terminsdatoer (se afsnittet [Dato-vinduer](#dato-vinduer)). Vinduerne behandles som hele dage med start inklusiv og slut eksklusiv.
 - Slår patienter op i Novax DB blandt patienter med tilknyttet `NameDetails` ved at filtrere på terminsdato (`NameDetails.TERMIN`), der ligger i et af vinduerne.
 - For hver patient:
-  - Springer over hvis der mangler `NameDetails`.
   - Validerer/normaliserer CPR-nummer.
   - Slår CPR op for at hente:
     - Adresse UUID (til Dataforsyningen)
@@ -34,10 +33,9 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
 
 **Vigtigt: “Always updates” pr. patient**
 
-Uanset om der er detekteret ændringer i adresse/distrikt, udfører jobbet altid disse opdateringer pr. patient (for at matche logikken i hovedjobbet):
+Uanset om der er detekteret ændringer i adresse/distrikt, udfører jobbet altid følgende opdatering pr. patient:
 
 - Patienten sættes altid til aktiv (`AKTIV = 1`) hvis den er tom/0.
-- Patienten tildeles altid til **“Gravid til fordeling”** ved at sætte `AnsvarsShpl = 'FIKTIV'`.
 
 **Drift / sikkerhed**
 

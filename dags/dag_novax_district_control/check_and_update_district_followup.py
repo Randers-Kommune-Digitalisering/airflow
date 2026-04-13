@@ -192,20 +192,14 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                         )
                         entry.person_districts.append(new_person_district)
 
-            # Always-updates to match main job
+            # Always update active status
             has_changed_active = False
             if _s(entry.AKTIV) in ("", "0"):
                 entry.AKTIV = "1"
                 has_changed_active = True
                 logger.info(f"Updated active status for Name ID {entry.ID}")
 
-            has_changed_ansvarshpl = False
-            if entry.AnsvarsShpl != "FIKTIV":
-                entry.AnsvarsShpl = "FIKTIV"
-                has_changed_ansvarshpl = True
-                logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
-
-            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl]):
+            if any([is_new_district, is_new_address_set, has_changed_active]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 
