@@ -1,259 +1,80 @@
-from __future__ import annotations
-
+import email
 import logging
-import io
-import errno
-from typing import TYPE_CHECKING, Any, cast
-from airflow.hooks.base import BaseHook
+import xml.etree.ElementTree as ET
+from email.message import Message
+from io import BytesIO
 
-try:
-    from airflow.providers.sftp.hooks.sftp import SFTPHook
-    from airflow.models import Variable
-except ModuleNotFoundError as e:
-    if e.name == "airflow.models":  # For pytest environment without Airflow installed
-        SFTPHook = cast(Any, object)
-        Variable = None
-    else:
-        raise
-
-from rkdigi.email_handling import EmailReader
-from dag_kantinedata.mail_utils import extract_attachments, decode_mime_word
-
-if TYPE_CHECKING:
-    from paramiko import SFTPClient
+from airflow.providers.imap.hooks.imap import ImapHook
+from airflow.providers.sftp.hooks.sftp import SFTPHook
 
 logger = logging.getLogger(__name__)
 
-_KANTINEDATA_FILE_COUNTER_VAR_KEY = "kantinedata_file_counter"
-_KANTINEDATA_FILE_COUNTER_MAX = 10
+_FILE_PREFIX = "EksporteredeOrdrer_"
+_FILE_SLOTS = 10
 
 
-def _get_email_reader() -> EmailReader:
-    imap_conn = BaseHook.get_connection("kantinedata_imap")
-    return EmailReader(
-        email=imap_conn.login,
-        password=imap_conn.password,
-        imap_server=imap_conn.host,
-        imap_port=imap_conn.port,
-    )
-
-
-def _sftp_path_exists(sftp_client: "SFTPClient", remote_path: str) -> bool:
-    """
-    Check if a remote path exists on the SFTP server.
-
-    :param sftp_client: An active SFTP client connection.
-    :param remote_path: The remote path to check (e.g. "/EksportedeOrdrer_1.xml").
-    :return: True if the path exists, False otherwise.
-    """
-    try:
-        sftp_client.stat(remote_path)
-        return True
-    except FileNotFoundError:
-        return False
-    except OSError as e:
-        if getattr(e, "errno", None) in {errno.ENOENT, 2}:
-            return False
-        raise
-
-
-def _allocate_next_filename(sftp_client: "SFTPClient") -> str:
-    """Allocate the next Kantinedata filename (1..10, wrapping).
-
-    Uses an Airflow Variable as the source of truth and increments it (wrapping after 10).
-    Also checks the SFTP destination for collisions (e.g. if the variable was reset).
-
-    :param sftp_client: An active SFTP client connection.
-    :return: The allocated filename (e.g. "EksportedeOrdrer_1.xml").
-    """
-    if Variable is None:
-        raise RuntimeError(
-            "Airflow Variable is not available."
-        )
-
-    current_raw = Variable.get(_KANTINEDATA_FILE_COUNTER_VAR_KEY, default_var="0")
-    current_number = 0
-    try:
-        current_number = int(current_raw)
-    except (TypeError, ValueError):
-        logger.warning(
-            "Invalid value for Airflow Variable '%s': %s. Defaulting to 0.",
-            _KANTINEDATA_FILE_COUNTER_VAR_KEY,
-            current_raw,
-        )
-
-    candidate = (current_number % _KANTINEDATA_FILE_COUNTER_MAX) + 1
-    for _ in range(_KANTINEDATA_FILE_COUNTER_MAX):
-        remote_path = f"/EksporteredeOrdrer_{candidate}.xml"
-        if not _sftp_path_exists(sftp_client, remote_path):
-            Variable.set(_KANTINEDATA_FILE_COUNTER_VAR_KEY, str(candidate))
-            return remote_path.lstrip("/")
-        candidate = (candidate % _KANTINEDATA_FILE_COUNTER_MAX) + 1
-
+def _allocate_filename(sftp_client) -> str:
+    """Allocate the next available filename on the SFTP server in the format "EksporteredeOrdrer_XX.xml"."""
+    existing = set(sftp_client.listdir("."))
+    for i in range(1, _FILE_SLOTS + 1):
+        filename = f"{_FILE_PREFIX}{i:02d}.xml"
+        if filename not in existing:
+            return filename
     raise RuntimeError(
-        f"No available Kantinedata filename slots on SFTP (1-{_KANTINEDATA_FILE_COUNTER_MAX})."
+        f"All {_FILE_SLOTS} filename slots are occupied on the SFTP server."
     )
 
 
-def process_kantinedata() -> None:
-    """
-    Main function to process Kantinedata emails from the INBOX.
-    - Fetches flagged emails (from previous failed runs) and unseen emails (new).
-    - Flags unseen emails while processing.
-    - Extracts attachments and uploads XML files to SFTP.
-    - Unflags successfully processed emails, and logs any failures for retry.
-    - Uses Airflow Variable to maintain a counter for filenames, with collision checks against SFTP.
-    - Logs detailed information about processing steps and errors.
-    - Raises an exception if any email fails to process, which triggers retries.
-    """
-    # Fetch emails from the kantinedata INBOX
-    email_reader = _get_email_reader()
-    try:
-        # First, fetch flagged mails that have not finished processing (from failed runs)
-        flagged_emails, flagged_failed_email_ids = email_reader.get_emails(
-            mailbox="INBOX",
-            criteria="FLAGGED",
-        )
-        # Then, fetch unseen mails and flag them for processing
-        unseen_emails, unseen_failed_email_ids = email_reader.get_emails(
-            mailbox="INBOX",
-            criteria="UNSEEN",
-            set_flags="\\Flagged",  # Flag while processing
-        )
+def process_kantinedata(imap_hook: ImapHook, sftp_hook: SFTPHook) -> None:
+    """Main function to process Kantinedata: fetch unseen emails, extract XML attachments, validate and upload to SFTP."""
+    imap_hook.get_conn()
+    with imap_hook.mail_client as conn, sftp_hook.get_conn() as sftp_client:
+        conn.select("INBOX")
+        status, data = conn.search(None, "UNSEEN")
 
-    except Exception:
-        logger.exception("Error fetching emails")
-        raise
+        if status != "OK":
+            logger.warning(f"IMAP search failed with status: {status}")
+            return
 
-    # Combine flagged and unseen emails for processing while avoiding duplicates
-    emails = []
-    seen_uids = set()
-    for mail in flagged_emails + unseen_emails:
-        uid = int(mail.uid)
-        if uid in seen_uids:
-            continue
-        seen_uids.add(uid)
-        emails.append((uid, mail))
+        msg_ids = data[0].split()
+        logger.info(f"{len(msg_ids)} email(s) found")
+        found_emails_without_xml_attachment = False
 
-    failed_email_ids = []
-    seen_failed_email_ids = set()
-    for email_id in flagged_failed_email_ids + unseen_failed_email_ids:
-        if email_id in seen_failed_email_ids:
-            continue
-        seen_failed_email_ids.add(email_id)
-        failed_email_ids.append(email_id)
+        for msg_id in msg_ids:
+            status, msg_data = conn.fetch(msg_id, "(BODY.PEEK[])")  # Get the email without marking it as read
+            if status != "OK":
+                logger.warning(f"Failed to fetch email with ID {msg_id}: {status}")
+                continue
+            message: Message = email.message_from_bytes(msg_data[0][1])
 
-    if failed_email_ids:
-        logger.warning(
-            "Failed to fetch emails with IMAP sequence IDs: %s",
-            failed_email_ids,
-        )
-
-    if not emails:
-        logger.info("No new emails found in the INBOX.")
-        return
-
-    # Process each email
-    successful_mail_ids: list[str] = []
-    failed_mail_ids: list[str] = []
-    sftp_hook: SFTPHook | None = None
-    sftp_client: SFTPClient | None = None
-    try:
-        for uid, mail in emails:
-            try:
-                message_id = mail.get("Message-ID") if hasattr(mail, "get") else None
-                subject = mail.get("Subject") if hasattr(mail, "get") else None
-                logger.info(
-                    "Processing email UID: %s (Message-ID=%s) with subject: %s",
-                    uid,
-                    message_id,
-                    decode_mime_word(subject) if isinstance(subject, str) else subject,
-                )
-
-                attachments = extract_attachments(mail)
-
-                # Mark as processed if no attachments, to avoid reprocessing
-                if not attachments:
-                    logger.info("No attachments found for email UID: %s", uid)
-                    successful_mail_ids.append(str(uid))
+            all_uploaded = True
+            xml_found = False
+            for part in message.walk():
+                if part.get_content_disposition() != "attachment":
+                    continue
+                if part.get_content_type() not in ("application/xml", "text/xml"):
                     continue
 
-                # Process attachments
-                for attachment in attachments:
-                    logger.info(
-                        "Found attachment: %s (type=%s, bytes=%s) for email ID: %s",
-                        attachment.get("filename"),
-                        attachment.get("content_type"),
-                        len(attachment.get("content_bytes") or b""),
-                        message_id,
-                    )
+                xml_found = True
+                payload = part.get_payload(decode=True)
+                try:
+                    # Verify that the payload is valid XML before uploading
+                    ET.parse(BytesIO(payload))
+                except ET.ParseError as e:
+                    logger.warning(f"Skipping invalid XML in msg {msg_id}: {e}")
+                    all_uploaded = False
+                    continue
 
-                    # Upload attachment to SFTP if XML
-                    if attachment.get("content_type") in ["application/xml", "text/xml"]:
-                        if sftp_hook is None:
-                            try:
-                                sftp_hook = SFTPHook(ssh_conn_id="kantinedata_sftp")
-                            except TypeError:
-                                sftp_hook = SFTPHook("kantinedata_sftp")
-                        if sftp_client is None:
-                            sftp_client = sftp_hook.get_conn()
+                filename = _allocate_filename(sftp_client)
+                sftp_client.putfo(BytesIO(payload), filename)
+                logger.info(f"Uploaded {filename} to SFTP")
 
-                        filename = _allocate_next_filename(sftp_client)
-                        remote_path = f"/{filename}"
-                        sftp_client.putfo(io.BytesIO(attachment["content_bytes"]), remote_path)
-                        logger.info("Uploaded attachment to SFTP: %s", remote_path)
+            if xml_found and all_uploaded:
+                # Only mark the email as seen if we found at least one XML attachment and all were uploaded successfully.
+                conn.store(msg_id, "+FLAGS", "\\Seen")
+            elif not xml_found:
+                found_emails_without_xml_attachment = True
 
-                    # Skip non-XML attachments
-                    else:
-                        logger.info(
-                            "Skipping non-XML attachment: %s (type=%s) for email ID: %s",
-                            attachment.get("filename"),
-                            attachment.get("content_type"),
-                            message_id,
-                        )
-
-                # Mark email as successfully processed
-                successful_mail_ids.append(str(uid))
-
-            except Exception as e:
-                logger.error(
-                    "Error processing email (UID=%s, Message-ID=%s): %s",
-                    uid,
-                    getattr(mail, "get", lambda *_: None)("Message-ID"),
-                    e,
-                    exc_info=True,
-                )
-                failed_mail_ids.append(str(uid))
-
-    finally:
-        if sftp_client is not None:
-            try:
-                sftp_client.close()
-            except Exception:
-                logger.warning("Failed to close SFTP connection", exc_info=True)
-
-    # Unflag successfully processed emails, and log errors for failures
-    if successful_mail_ids:
-        uid_set = ",".join(sorted(set(successful_mail_ids), key=int))
-        _, failed_to_unflag_ids = email_reader.get_emails(
-            mailbox="INBOX",
-            criteria=f"UID {uid_set}",
-            del_flags="\\Flagged",  # Unflag
-        )
-
-        if failed_to_unflag_ids:
-            logger.error("Failed to unflag email sequence IDs: %s", failed_to_unflag_ids)
-
-    # Log failed email IDs and throw error to trigger retry
-    if failed_mail_ids:
-        failed_uids_str = ",".join(sorted(set(failed_mail_ids), key=int))
-        logger.warning(
-            "Failed to process %s email(s). UIDs: %s",
-            len(failed_mail_ids),
-            failed_uids_str,
-        )
-        raise RuntimeError(
-            f"Failed to process {len(failed_mail_ids)} email(s). UIDs: {failed_uids_str}"
-        )
-
-    return
+        if found_emails_without_xml_attachment:
+            # If we encountered any emails that were missing valid XML attachments, raise an error at the end.
+            raise RuntimeError("Found one or more emails without valid XML attachments. Please check the email contents.")
