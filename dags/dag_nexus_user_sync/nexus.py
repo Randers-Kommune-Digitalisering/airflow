@@ -289,7 +289,7 @@ class NexusClient:
             return professional_self
         else:
             professional_config['professionalJob'] = job_title
-            res = self._session.put(professional_self['_links']['update']['href'], json=professional_config)
+            res = self._session.put(professional_config['_links']['update']['href'], json=professional_config)
             res.raise_for_status()
             logger.info(f"Professional {employee['user']} updated with job title")
             return res.json()
