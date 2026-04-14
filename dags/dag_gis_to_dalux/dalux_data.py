@@ -133,7 +133,7 @@ def dalux_update_building(
         headers = _get_dalux_headers(http_hook)
         http_hook.method = "PATCH"
         http_hook.run(
-            endpoint=f"/api/2.0/buildings/{building_id}", headers=headers, json=payload
+            endpoint=f"/api/3.0/buildings/{building_id}", headers=headers, json=payload
         )
         logger.info(
             f"Updated building {building_id} data_fields: {data_fields}, userFields: {user_fields}"
