@@ -114,6 +114,7 @@ def send_sms_for_hjaelpemiddelhuset_orders(nexus_hook: BaseHook, sms_hook: HttpH
                 message = MSG_PREFIX + "Intet navn tilknyttet ordren" + MSG_SUFFIX
         # Updating the order with a message in the delivery note
         res = nexus_session.put(order['_links']['update']['href'], json={"phones": order['phones'], "requestedDeliveryDate": delivery_date, "deliveryNote": delivery_note + message})
+    nexus_session.get(nexus_conn.extra_dejson.get("logout_url"))
     return True
 
 

@@ -14,6 +14,7 @@ class NexusClient:
             raise Exception("NexusClient can only be created once.")
         NexusClient._created = True
         self._base_url: str = hook.get_connection(hook.http_conn_id).host.strip('/')
+        self._logout_url: str = hook.get_connection(hook.http_conn_id).extra_dejson.get("logout_url")
         self._session: ManagedOAuth2Session = self._set_session(hook)
         self._home: dict = self._set_home()
         self._active_org_list: list[dict] = self._fetch_all_active_organisations(delta_orgs=adm_org_dict, supplier_list=supplier_list)
@@ -97,6 +98,13 @@ class NexusClient:
         res = self._session.get(self._home['_links']['professionalJobs']['href'])
         res.raise_for_status()
         return res.json()
+
+    def logout(self) -> None:
+        """
+        Logs out of the Nexus API session.
+        """
+        res = self._session.get(self._logout_url)
+        res.raise_for_status()
 
     def _fetch_professional(self, primary_identifier: str) -> dict | None:
         """
@@ -294,11 +302,13 @@ class NexusClient:
             logger.info(f"Professional {employee['user']} updated with job title")
             return res.json()
 
-    def _execute_brugerauth(self, employee: dict) -> None:
+    def _execute_brugerauth(self, employee: dict, report_list: list | None = None) -> None:
         """
         Executes the main flow for an employee / professional:
         fetches the professional from Nexus, imports it if it doesn't exist, updates organizations and supplier as needed.
         """
+        if report_list is not None:
+            report_list.append(f"{employee['name']} ({employee['user']})")
         professional = self._fetch_professional(employee['user'])
 
         if not professional:
@@ -308,6 +318,8 @@ class NexusClient:
                 professional = external_professional
             else:
                 logger.error(f"Failed to import professional, skipping employee {employee['user']} - not handling!")
+                if report_list is not None:
+                    report_list.append(f"{employee['name']} ({employee['user']}) - kunne ikke importeres til Nexus")
                 return
 
         professional_org_list = self._fetch_professional_org_syncIds(professional)
@@ -341,6 +353,8 @@ class NexusClient:
                 self._update_professional_supplier(employee=employee, professional=professional, supplier=supplier)
             else:
                 logger.info(f"Top organisation for professional {employee['user']} has no supplier - not updating")
+                if report_list is not None:
+                    report_list.append(f"{employee['name']} ({employee['user']}) - ingen standardleverandør fundet")
 
         if employee['job_title']:
             job_title_obj = next((item for item in self._all_job_titles if item.get('name', '').lower() == employee['job_title'].lower() and item.get('active')), None)
@@ -355,10 +369,12 @@ class NexusClient:
 
         logger.info(f"Professional {employee['user']} updated sucessfully")
 
-    def import_to_nexus_and_set_permissions(self, employees_changed_list: list[dict]):
+    def import_to_nexus_and_set_permissions(self, employees_changed_list: list[dict], report_list: list | None = None) -> None:
         """
         Main method to import/update professionals in Nexus and set their permissions based on the employee data from Delta.
         """
+        if report_list is not None:
+            report_list.append(f"Processing {len(employees_changed_list)} employees with changes")
         for index, employee in enumerate(employees_changed_list):
             logger.info(f"Processing employee {employee['user']} - {index + 1}/{len(employees_changed_list)}")
-            self._execute_brugerauth(employee=employee)
+            self._execute_brugerauth(employee=employee, report_list=report_list)

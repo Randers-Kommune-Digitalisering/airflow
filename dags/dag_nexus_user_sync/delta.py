@@ -266,7 +266,7 @@ class DeltaClient:
         data = res.json()
         return self._unpack_employee_details(employee_details_response=data, requested_uuids=engagement_uuids)
 
-    def get_employment_changes(self) -> list[dict]:
+    def get_employment_changes(self, report_list: list | None = None) -> list[dict]:
         """
         Get employee changes from Delta, filter for changes relevant for Nexus and return relevant details for those changes.
 
@@ -388,6 +388,8 @@ class DeltaClient:
             if not emp.get('user') or not emp.get('upn'):
                 #  TODO: How to handle employees missing user in Delta (comtains DQ-number and UPN)
                 logger.error(f"Employee missing 'user' or 'upn', skipping employee. Employee details: {emp['name']}. Not handling!")
+                if report_list is not None:
+                    report_list.append(f"{emp['name']} - kunne ikke finde bruger, ikke importeret til Nexus")
                 employees_to_change.remove(emp)
                 # raise ValueError(f"Employee missing 'user' or 'upn': {emp['name']}")
 
