@@ -37,4 +37,4 @@ Jobbet henter selvhentningsordre fra Nexus, sender SMS(er) og opdaterer ordre me
 ## Schedule
 Schedule er sat op til at køre automatisk på følgende tidspunkter:
 
-- **Tidspunkt:** */5 * * * * (hvert 5. minut)
+- **Tidspunkt:** */10 * * * * (hvert 10. minut)
