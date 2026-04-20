@@ -7,6 +7,7 @@ from pendulum import datetime, timezone
 from airflow import DAG
 from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
+from airflow.operators.email import EmailOperator
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
 
@@ -15,9 +16,8 @@ from dag_nexus_user_sync.delta import DeltaClient
 from dag_nexus_user_sync.nexus import NexusClient
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args['email'] = ["digitalisering@randers.dk", "Jane.Scharling.Andersen@randers.dk"]
-dag_args["retries"] = 2
-dag_args["retry_delay"] = timedelta(minutes=2)
+dag_args["retries"] = 1
+dag_args["retry_delay"] = timedelta(minutes=30)
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +27,11 @@ def get_config_start_main_flow(**context):
     if changes_date_string:
         changes_date = pendulum.parse(changes_date_string, exact=True)
     else:
-        changes_date = pendulum.DateTime.now(timezone("Europe/Copenhagen")).date()
+        changes_date = pendulum.DateTime.now(timezone("Europe/Copenhagen")).subtract(days=1).date()
 
     logger.info(f"Starting '{context['dag'].dag_id}' with the changes_date set to: {changes_date}")
+
+    report_list = []
 
     # Airflow Variables to import and pass to DeltaClient
     delta_var_ids_to_import = ["nexus_adm_org_dict", "nexus_job_functions_to_import", "nexus_position_types_to_import"]
@@ -50,7 +52,7 @@ def get_config_start_main_flow(**context):
 
     delta_hook = BaseHook.get_connection('delta_prod')
     delta_client = DeltaClient(hook=delta_hook, **delta_client_params)
-    employment_changes = delta_client.get_employment_changes()
+    employment_changes = delta_client.get_employment_changes(report_list=report_list)
 
     nexus_var_ids_to_import = ["nexus_adm_org_dict", "nexus_supplier_list"]
     nexus_client_params = {}
@@ -70,15 +72,28 @@ def get_config_start_main_flow(**context):
     nexus_hook = BaseHook.get_hook("nexus_review")
     nexus_client = NexusClient(hook=nexus_hook, **nexus_client_params)
     try:
-        nexus_client.import_to_nexus_and_set_permissions(employees_changed_list=employment_changes)
+        nexus_client.import_to_nexus_and_set_permissions(employees_changed_list=employment_changes, report_list=report_list)
     finally:
         nexus_client.logout()
 
+    return report_list
+
+
+def report_list_to_html(**context):
+    ti = context['ti']
+    report_list = ti.xcom_pull(task_ids='check_and_update_users_task')
+    if not report_list:
+        html_content = '<p>Ingen problemer blev fundet under synkroniseringen.</p>'
+    else:
+        html_content = '<ul>' + ''.join(f'<li>{item}</li>' for item in report_list) + '</ul>'
+    print(html_content)  # Log the HTML content for debugging
+    return html_content
+
 
 with DAG(
-    dag_id="nexus_user_permission_sync",
+    dag_id="nexus_report_user_permission_sync",
     start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
-    schedule="*/10 * * * *",
+    schedule="0 6 * * *",
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
@@ -93,10 +108,25 @@ with DAG(
             )
         ),
     },
-    description="Check Delta for employment changes and update users in Nexus accordingly",
-    tags=['nexus', 'delta', 'permission', 'sync', 'user']
+    description="Check Delta for employment changes and update users in Nexus accordingly - send report email with issues found during the sync",
+    tags=['nexus', 'delta', 'report', 'permission', 'sync', 'user']
 ) as dag:
     task = PythonOperator(
         task_id="check_and_update_users_task",
         python_callable=get_config_start_main_flow
     )
+
+    html_task = PythonOperator(
+        task_id="make_report_html",
+        python_callable=report_list_to_html,
+        provide_context=True
+    )
+
+    send_email = EmailOperator(
+        task_id="send_email",
+        to="rune.aagaard.keena@randers.dk",
+        subject="Nexus Delta Synkronisering Report",
+        html_content="{{ ti.xcom_pull(task_ids='make_report_html') }}",
+    )
+
+    task >> html_task >> send_email
