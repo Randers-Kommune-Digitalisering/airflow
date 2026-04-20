@@ -307,8 +307,6 @@ class NexusClient:
         Executes the main flow for an employee / professional:
         fetches the professional from Nexus, imports it if it doesn't exist, updates organizations and supplier as needed.
         """
-        if report_list is not None:
-            report_list.append(f"{employee['name']} ({employee['user']})")
         professional = self._fetch_professional(employee['user'])
 
         if not professional:
@@ -373,8 +371,6 @@ class NexusClient:
         """
         Main method to import/update professionals in Nexus and set their permissions based on the employee data from Delta.
         """
-        if report_list is not None:
-            report_list.append(f"Processing {len(employees_changed_list)} employees with changes")
         for index, employee in enumerate(employees_changed_list):
             logger.info(f"Processing employee {employee['user']} - {index + 1}/{len(employees_changed_list)}")
             self._execute_brugerauth(employee=employee, report_list=report_list)
