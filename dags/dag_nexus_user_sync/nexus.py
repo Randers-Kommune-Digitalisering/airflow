@@ -268,7 +268,7 @@ class NexusClient:
 
         current_supplier = professional_config.get('defaultOrganizationSupplier')
         if current_supplier and current_supplier.get('id') == supplier.get('id'):
-            logger.info(f'Professional {employee["user"]} already has correct supplier assigned - not updating')
+            # logger.info(f'Professional {employee["user"]} already has correct supplier assigned - not updating')
             return professional_config
 
         professional_config['defaultOrganizationSupplier'] = supplier
@@ -293,7 +293,7 @@ class NexusClient:
         professional_config = res.json()
 
         if professional_config['professionalJob'] == job_title:
-            logger.info(f'Professional {employee["user"]} already has correct job title assigned - not updating')
+            # logger.info(f'Professional {employee["user"]} already has correct job title assigned - not updating')
             return professional_self
         else:
             professional_config['professionalJob'] = job_title
@@ -339,8 +339,8 @@ class NexusClient:
         if len(organisation_ids_to_assign) > 0 or len(organisation_ids_to_remove) > 0:
             self._update_professional_organisations(professional, organisation_ids_to_assign, organisation_ids_to_remove)
             logger.info(f"Professional {employee['user']} updated with organisations")
-        else:
-            logger.info(f"Professional {employee['user']} already has correct organisations assigned - not updating")
+        # else:
+        #     logger.info(f"Professional {employee['user']} already has correct organisations assigned - not updating")
 
         if employee['organizations']:
             current = next((item for item in self._active_org_list if item['syncId'] == employee['organizations'][0]), {})
@@ -350,7 +350,7 @@ class NexusClient:
             if supplier:
                 self._update_professional_supplier(employee=employee, professional=professional, supplier=supplier)
             else:
-                logger.info(f"Top organisation for professional {employee['user']} has no supplier - not updating")
+                logger.warning(f"Top organisation for professional {employee['user']} has no supplier - not updating")
                 if report_list is not None:
                     report_list.append(f"{employee['name']} ({employee['user']}) - ingen standardleverandør fundet")
 
@@ -365,7 +365,7 @@ class NexusClient:
             else:
                 logger.warning(f"Job title '{employee['job_title']}' not found in Nexus - not updating")
 
-        logger.info(f"Professional {employee['user']} updated sucessfully")
+        # logger.info(f"Professional {employee['user']} updated sucessfully")
 
     def import_to_nexus_and_set_permissions(self, employees_changed_list: list[dict], report_list: list | None = None) -> None:
         """
