@@ -160,7 +160,8 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                         TS_UPDT=now_time,
                         OPRETTET=now_dt
                     )
-                    logger.info(f"Added reminder to {entry.AnsvarsShpl} for Name ID {entry.ID} with note: {new_reminder.BEMAERK}")
+                    session.add(new_reminder)
+                    logger.info(f"Added reminder to {entry.AnsvarsShpl.strip()} for Name ID {entry.ID}")
 
                 # District update
                 district = district_db_client.get_district_name_for_point(
