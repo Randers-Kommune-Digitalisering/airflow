@@ -8,7 +8,7 @@ from dag_novax_district_control.run_utils_followup import determine_run_date, fo
 from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
 from dag_novax_district_control.clients.district_map_client import DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
-from dag_novax_district_control.model import Name, NameDetails, Address, PersonDistrict
+from dag_novax_district_control.model import Name, NameDetails, Address, PersonDistrict, Remind
 from dag_novax_district_control.utils import _i, _s, _to_date
 
 logger = logging.getLogger(__name__)
@@ -147,6 +147,20 @@ def check_and_update_district_followup(dry_run: bool) -> None:
                         )
                         entry.addresses.append(new_address_entry)
                         logger.info(f"Added new address for Name ID {entry.ID}")
+
+                    # Notify ansvarShpl if address has changed
+                    new_reminder = Remind(
+                        NAVNID=entry.ID,
+                        KODE='FLYTTET',
+                        BEMAERK=f"Er flyttet til ny adresse: {new_full_address}",
+                        BRUGER=entry.AnsvarsShpl,
+                        TS_DATE=now_dt,
+                        TS_TIME=now_time,
+                        TS_UPDD=now_dt,
+                        TS_UPDT=now_time,
+                        OPRETTET=now_dt
+                    )
+                    logger.info(f"Added reminder to {entry.AnsvarsShpl} for Name ID {entry.ID} with note: {new_reminder.BEMAERK}")
 
                 # District update
                 district = district_db_client.get_district_name_for_point(
