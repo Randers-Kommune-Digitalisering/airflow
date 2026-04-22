@@ -34,7 +34,6 @@ def process_sbsys_luk() -> None:
         result = (
             session.query(Sag)
             .filter(
-                Sag.SkabelonID.in_(SAGSSKABELON_IDS),
                 Sag.SagsStatus.has(or_(Sagsstatus.Navn == 'Aktiv', Sagsstatus.Navn == 'Opstået')),
                 Sag.SagsPart.has(
                     and_(

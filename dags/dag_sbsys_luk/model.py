@@ -1,6 +1,7 @@
 from typing import Optional
 
-from sqlalchemy import ForeignKeyConstraint, Identity, Integer, PrimaryKeyConstraint, Unicode
+from sqlalchemy import DateTime, ForeignKeyConstraint, Identity, Integer, PrimaryKeyConstraint, Unicode
+from sqlalchemy.dialects.mssql import BIT, TINYINT
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -24,6 +25,8 @@ class Sag(Base):
 
     SagsStatus: Mapped[Optional['Sagsstatus']] = relationship('Sagsstatus')
     SagsPart: Mapped[Optional['Sagspart']] = relationship('Sagspart')
+    Erindring: Mapped[list['Erindring']] = relationship('Erindring', back_populates='Sag')
+    Kladde: Mapped[list['KladdeRegistrering']] = relationship('KladdeRegistrering', back_populates='Sag')
 
 
 class Sagsstatus(Base):
@@ -78,3 +81,37 @@ class CivilstandOpslag(Base):
     Navn: Mapped[str] = mapped_column(Unicode(100, 'SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
 
     Person: Mapped[list['Person']] = relationship('Person', back_populates='Civilstand')
+
+
+class Erindring(Base):
+    __tablename__ = 'Erindring'
+    __table_args__ = (
+        PrimaryKeyConstraint('ID', name='PK_Erindring'),
+        {"schema": "SbsysNetDrift.dbo"}
+    )
+
+    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
+    SagID: Mapped[int] = mapped_column(Integer)
+
+    ErAfsluttet: Mapped[Optional[bool]] = mapped_column(BIT, nullable=False)
+    AfsluttetAfID: Mapped[Optional[int]] = mapped_column(Integer)
+    Afsluttet: Mapped[Optional[str]] = mapped_column(DateTime)
+    AfsluttetNotat: Mapped[Optional[str]] = mapped_column(Unicode(500, 'SQL_Danish_Pref_CP1_CI_AS'))
+
+
+class KladdeRegistrering(Base):
+    __tablename__ = 'Kladde'
+    __table_args__ = (
+        PrimaryKeyConstraint('ID', name='PK_KladdeRegistrering'),
+        {"schema": "SbsysNetDrift.dbo"}
+    )
+
+    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
+    SagID: Mapped[int] = mapped_column(Integer)
+
+    DeletedState: Mapped[Optional[int]] = mapped_column(TINYINT)
+    DeletedDate: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    DeletedByID: Mapped[Optional[int]] = mapped_column(Integer)
+    DeletedReason: Mapped[Optional[str]] = mapped_column(Unicode(500, 'SQL_Danish_Pref_CP1_CI_AS'))
+    DeleteConfirmed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    DeleteConfirmedByID: Mapped[Optional[int]] = mapped_column(Integer)
