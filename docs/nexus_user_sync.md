@@ -7,7 +7,7 @@ Sæt under-organisationer, Standardleverandør, unik id (dq-bruger), upn og stil
 ## Dataflow
 Tjekker Delta for ændringer der træder i kræft på dato DAG kører og ændringer lavet på datoen men træder i kræft på en tidligere dato. Ændringer filtrers efter administrative organisationer og stillingstyper.
 
-Brugerne fremsøges / importeres / oprettes i Nexus. herefter sættes organisationer, standardleverandør, unik id (dq-bruger), upn og stillingsbetegnelse (kune vikarer) i Nexus.
+Brugerne fremsøges / importeres / oprettes i Nexus. herefter sættes organisationer, standardleverandør, unik id (dq-bruger), upn og stillingsbetegnelse (kun vikarer) i Nexus.
 
 ## Afhængigheder
 
