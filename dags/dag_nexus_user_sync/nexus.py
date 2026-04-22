@@ -317,7 +317,7 @@ class NexusClient:
             if external_professional:
                 professional = external_professional
             else:
-                logger.error(f"Failed to import professional, skipping employee {employee['user']} - not handling!")
+                logger.error(f"Failed to import professional, skipping employee {employee['name']} ({employee['user']}) - not handling!")
                 if report_list is not None:
                     report_list.append(f"{employee['name']} ({employee['user']}) - kunne ikke importeres til Nexus")
                 return
@@ -352,7 +352,7 @@ class NexusClient:
             if supplier:
                 self._update_professional_supplier(employee=employee, professional=professional, supplier=supplier)
             else:
-                logger.warning(f"Top organisation for professional {employee['user']} has no supplier - not updating")
+                logger.warning(f"Top organisation for professional {employee['name']} ({employee['user']})  has no supplier - not updating")
                 if report_list is not None:
                     report_list.append(f"{employee['name']} ({employee['user']}) - ingen standardleverandør fundet")
 
@@ -374,5 +374,5 @@ class NexusClient:
         Main method to import/update professionals in Nexus and set their permissions based on the employee data from Delta.
         """
         for index, employee in enumerate(employees_changed_list):
-            logger.info(f"Processing employee {employee['user']} - {index + 1}/{len(employees_changed_list)}")
+            logger.info(f"Processing employee {employee['name']} ({employee['user']}) - {index + 1}/{len(employees_changed_list)}")
             self._execute_brugerauth(employee=employee, report_list=report_list)
