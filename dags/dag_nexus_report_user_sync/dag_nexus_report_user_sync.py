@@ -76,26 +76,28 @@ def get_config_start_main_flow(**context):
     finally:
         nexus_client.logout()
 
-    return report_list
+    return report_list, changes_date
 
 
 def report_list_to_html(**context):
     ti = context['ti']
-    report_list = ti.xcom_pull(task_ids='check_and_update_users_task')
+    report_list, changes_date = ti.xcom_pull(task_ids='check_and_update_users_task')
     if not report_list:
         html_content = '<p>Ingen problemer blev fundet under synkroniseringen.</p>'
     else:
         html_content = '<ul>' + ''.join(f'<li>{item}</li>' for item in report_list) + '</ul>'
-    print(html_content)  # Log the HTML content for debugging
-    return html_content
+    changes_date_string = changes_date.format("YYYY-MM-DD")
+    logger.info("### The report ###")
+    logger.info(html_content)
+    return html_content, changes_date_string
 
 
 with DAG(
     dag_id="nexus_report_user_permission_sync",
-    start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=4, day=22, tz=timezone("Europe/Copenhagen")),
     schedule="0 6 * * *",
     default_args=dag_args,
-    catchup=False,
+    catchup=True,
     max_active_runs=1,
     params={
         "changes_date": Param(
@@ -125,8 +127,8 @@ with DAG(
     send_email = EmailOperator(
         task_id="send_email",
         to=["digitalisering@randers.dk", "Jane.Scharling.Andersen@randers.dk"],
-        subject="Nexus Delta Synkronisering Report - {{ params.changes_date if params.changes_date else (execution_date.subtract(days=1).date() if execution_date else 'ukendt') }}",
-        html_content="{{ ti.xcom_pull(task_ids='make_report_html') }}",
+        subject="Nexus Delta Synkronisering Report - {{ ti.xcom_pull(task_ids='make_report_html')[1] }}",
+        html_content="{{ ti.xcom_pull(task_ids='make_report_html')[0] }}",
     )
 
     task >> html_task >> send_email
