@@ -22,6 +22,8 @@ class Sag(Base):
     SkabelonID: Mapped[Optional[int]] = mapped_column(Integer)
     SagsStatusID: Mapped[Optional[int]] = mapped_column(Integer)
     SagsPartID: Mapped[Optional[int]] = mapped_column(Integer)
+    LastStatusChange: Mapped[Optional[DateTime]] = mapped_column(DateTime)
+    LastStatusChangeComment: Mapped[Optional[str]] = mapped_column(Unicode(500, 'SQL_Danish_Pref_CP1_CI_AS'))
 
     SagsStatus: Mapped[Optional['Sagsstatus']] = relationship('Sagsstatus')
     SagsPart: Mapped[Optional['Sagspart']] = relationship('Sagspart')
