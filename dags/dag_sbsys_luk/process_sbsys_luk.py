@@ -71,7 +71,7 @@ def process_sbsys_luk() -> None:
     with Session(engine) as session:
         for sag in sager_to_close:
             logger.info(f"Closing case ID {sag.ID} with SkabelonID {sag.SkabelonID}")
-            
+
             # Complete all Erindring records associated with the case
             for erindring in sag.Erindring:
                 erindring.ErAfsluttet = 1
@@ -99,5 +99,8 @@ def process_sbsys_luk() -> None:
         # Commit all changes to the database
         if not DRY_RUN:
             session.commit()
-        else: 
+            logger.info("All identified cases have been closed and changes committed to the database.")
+        else:
             logger.info("DRY_RUN is enabled. No changes have been committed to the database.")
+
+    return None
