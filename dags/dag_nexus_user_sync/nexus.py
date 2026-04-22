@@ -118,7 +118,7 @@ class NexusClient:
             # raise Exception(
             #     f"Expected to find exactly one professional with primary identifier: {primary_identifier}, but found {len(professionals)}"
             # )
-            logger.error(Expected to find exactly one professional with primary identifier: {primary_identifier}, but found {len(professionals)}")
+            logger.error(f"Expected to find exactly one professional with primary identifier: {primary_identifier}, but found {len(professionals)}")
             return None
         elif len(professionals) == 0:
             logger.info(f"No professional found with primary identifier: {primary_identifier}")
