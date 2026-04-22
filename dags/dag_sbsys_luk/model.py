@@ -1,12 +1,9 @@
-from typing import Optional
-
-from sqlalchemy import DateTime, ForeignKeyConstraint, Identity, Integer, PrimaryKeyConstraint, Unicode
+from sqlalchemy import Column, DateTime, ForeignKeyConstraint, Identity, Integer, PrimaryKeyConstraint, Unicode
 from sqlalchemy.dialects.mssql import BIT, TINYINT
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import declarative_base, relationship
 
 
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
 
 
 class Sag(Base):
@@ -18,17 +15,17 @@ class Sag(Base):
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    SkabelonID: Mapped[Optional[int]] = mapped_column(Integer)
-    SagsStatusID: Mapped[Optional[int]] = mapped_column(Integer)
-    SagsPartID: Mapped[Optional[int]] = mapped_column(Integer)
-    LastStatusChange: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    LastStatusChangeComment: Mapped[Optional[str]] = mapped_column(Unicode(500, 'SQL_Danish_Pref_CP1_CI_AS'))
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    SkabelonID = Column(Integer)
+    SagsStatusID = Column(Integer)
+    SagsPartID = Column(Integer)
+    LastStatusChange = Column(DateTime)
+    LastStatusChangeComment = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
 
-    SagsStatus: Mapped[Optional['Sagsstatus']] = relationship('Sagsstatus')
-    SagsPart: Mapped[Optional['Sagspart']] = relationship('Sagspart')
-    Erindring: Mapped[list['Erindring']] = relationship('Erindring', back_populates='Sag')
-    Kladde: Mapped[list['KladdeRegistrering']] = relationship('KladdeRegistrering', back_populates='Sag')
+    SagsStatus = relationship('Sagsstatus')
+    SagsPart = relationship('Sagspart')
+    Erindring = relationship('Erindring', back_populates='Sag')
+    Kladde = relationship('KladdeRegistrering', back_populates='Sag')
 
 
 class Sagsstatus(Base):
@@ -38,8 +35,8 @@ class Sagsstatus(Base):
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    Navn: Mapped[str] = mapped_column(Unicode(100, 'SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    Navn = Column(Unicode(100, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
 
 
 class Sagspart(Base):
@@ -50,11 +47,11 @@ class Sagspart(Base):
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    PartID: Mapped[Optional[int]] = mapped_column(Integer)
-    PartType: Mapped[Optional[int]] = mapped_column(Integer)
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    PartID = Column(Integer)
+    PartType = Column(Integer)
 
-    Person: Mapped[Optional['Person']] = relationship('Person', back_populates='Sagspart')
+    Person = relationship('Person', back_populates='Sagspart')
 
 
 class Person(Base):
@@ -65,11 +62,11 @@ class Person(Base):
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    CivilstandID: Mapped[Optional[int]] = mapped_column(Integer)
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    CivilstandID = Column(Integer)
 
-    Civilstand: Mapped[Optional['CivilstandOpslag']] = relationship('CivilstandOpslag', back_populates='Person')
-    Sagspart: Mapped[list['Sagspart']] = relationship('Sagspart', back_populates='Person')
+    Civilstand = relationship('CivilstandOpslag', back_populates='Person')
+    Sagspart = relationship('Sagspart', back_populates='Person')
 
 
 class CivilstandOpslag(Base):
@@ -79,41 +76,47 @@ class CivilstandOpslag(Base):
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    Navn: Mapped[str] = mapped_column(Unicode(100, 'SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    Navn = Column(Unicode(100, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
 
-    Person: Mapped[list['Person']] = relationship('Person', back_populates='Civilstand')
+    Person = relationship('Person', back_populates='Civilstand')
 
 
 class Erindring(Base):
     __tablename__ = 'Erindring'
     __table_args__ = (
+        ForeignKeyConstraint(['SagID'], ['SbsysNetDrift.dbo.Sag.ID'], name='Erindring_Sag'),
         PrimaryKeyConstraint('ID', name='PK_Erindring'),
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    SagID: Mapped[int] = mapped_column(Integer)
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    SagID = Column(Integer)
 
-    ErAfsluttet: Mapped[Optional[bool]] = mapped_column(BIT, nullable=False)
-    AfsluttetAfID: Mapped[Optional[int]] = mapped_column(Integer)
-    Afsluttet: Mapped[Optional[str]] = mapped_column(DateTime)
-    AfsluttetNotat: Mapped[Optional[str]] = mapped_column(Unicode(500, 'SQL_Danish_Pref_CP1_CI_AS'))
+    ErAfsluttet = Column(BIT, nullable=False)
+    AfsluttetAfID = Column(Integer)
+    Afsluttet = Column(DateTime)
+    AfsluttetNotat = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
+
+    Sag = relationship('Sag', back_populates='Erindring')
 
 
 class KladdeRegistrering(Base):
     __tablename__ = 'Kladde'
     __table_args__ = (
+        ForeignKeyConstraint(['SagID'], ['SbsysNetDrift.dbo.Sag.ID'], name='Kladde_Sag'),
         PrimaryKeyConstraint('ID', name='PK_KladdeRegistrering'),
         {"schema": "SbsysNetDrift.dbo"}
     )
 
-    ID: Mapped[int] = mapped_column(Integer, Identity(start=1, increment=1), primary_key=True)
-    SagID: Mapped[int] = mapped_column(Integer)
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    SagID = Column(Integer)
 
-    DeletedState: Mapped[Optional[int]] = mapped_column(TINYINT)
-    DeletedDate: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    DeletedByID: Mapped[Optional[int]] = mapped_column(Integer)
-    DeletedReason: Mapped[Optional[str]] = mapped_column(Unicode(500, 'SQL_Danish_Pref_CP1_CI_AS'))
-    DeleteConfirmed: Mapped[Optional[DateTime]] = mapped_column(DateTime)
-    DeleteConfirmedByID: Mapped[Optional[int]] = mapped_column(Integer)
+    DeletedState = Column(TINYINT)
+    DeletedDate = Column(DateTime)
+    DeletedByID = Column(Integer)
+    DeletedReason = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
+    DeleteConfirmed = Column(DateTime)
+    DeleteConfirmedByID = Column(Integer)
+
+    Sag = relationship('Sag', back_populates='Kladde')

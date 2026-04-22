@@ -5,21 +5,19 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
-from dags.dag_sbsys_luk.model import CivilstandOpslag, Person, Sag, Sagspart, Sagsstatus
+from dag_sbsys_luk.model import CivilstandOpslag, Person, Sag, Sagspart, Sagsstatus
 
 logger = logging.getLogger(__name__)
 
 USER_ID = 9999  # Placeholder for the user ID performing the closure
-SAGSSKABELON_IDS = [5133]
 SAG_STATUS_CLOSED_PROD = 5
-DRY_RUN = True
 
 
-def process_sbsys_luk() -> None:
+def process_sbsys_luk(sagsskabelon_ids: list, dry_run: bool) -> None:
     """
     Fetch and close SBSYS cases based on specific criteria using SQL.
     """
-    hook = MsSqlHook(mssql_conn_id="your_mssql_connection_id")
+    hook = MsSqlHook(mssql_conn_id="sbsys_luk_prod")
     engine = hook.get_sqlalchemy_engine()
 
     seen_sag_ids = set()
@@ -30,12 +28,12 @@ def process_sbsys_luk() -> None:
         result = (
             session.query(Sag)
             .filter(
-                Sag.SkabelonID.in_(SAGSSKABELON_IDS)
+                Sag.SkabelonID.in_(sagsskabelon_ids)
             )
             .all()
         )
 
-        logger.info(f"Fetched {len(result)} cases with SkabelonID in {SAGSSKABELON_IDS}")
+        logger.info(f"Fetched {len(result)} cases with SkabelonID in {sagsskabelon_ids}")
         for sag in result:
             if sag.ID not in seen_sag_ids:
                 seen_sag_ids.add(sag.ID)
@@ -97,7 +95,7 @@ def process_sbsys_luk() -> None:
             session.add(sag)
 
         # Commit all changes to the database
-        if not DRY_RUN:
+        if not dry_run:
             session.commit()
             logger.info("All identified cases have been closed and changes committed to the database.")
         else:
