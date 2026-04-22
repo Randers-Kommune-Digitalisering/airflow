@@ -1,8 +1,10 @@
-import datetime
 import logging
+
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
+from sqlalchemy.orm import selectinload
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
 from dag_sbsys_luk.model import CivilstandOpslag, Person, Sag, Sagspart, Sagsstatus
@@ -20,53 +22,54 @@ def process_sbsys_luk(sagsskabelon_ids: list, dry_run: bool) -> None:
     hook = MsSqlHook(mssql_conn_id="sbsys_luk_prod")
     engine = hook.get_sqlalchemy_engine()
 
-    seen_sag_ids = set()
-    sager_to_close = []
-
-    # Query to fetch cases that match the specified SkabelonIDs
     with Session(engine) as session:
-        result = (
-            session.query(Sag)
-            .filter(
-                Sag.SkabelonID.in_(sagsskabelon_ids)
-            )
+        sag_ids_to_close: set[int] = set()
+
+        # Query to fetch cases that match the specified SkabelonIDs
+        skabelon_sag_ids = (
+            session.query(Sag.ID)
+            .filter(Sag.SkabelonID.in_(sagsskabelon_ids))
             .all()
         )
+        sag_ids_to_close.update(sag_id for (sag_id,) in skabelon_sag_ids)
+        logger.info(
+            "Fetched %s cases with SkabelonID in %s",
+            len(skabelon_sag_ids),
+            sagsskabelon_ids,
+        )
 
-        logger.info(f"Fetched {len(result)} cases with SkabelonID in {sagsskabelon_ids}")
-        for sag in result:
-            if sag.ID not in seen_sag_ids:
-                seen_sag_ids.add(sag.ID)
-                sager_to_close.append(sag)
-
-    # Query to fetch cases where primary part has deceased
-    with Session(engine) as session:
-        result = (
-            session.query(Sag)
+        # Query to fetch cases where primary part has deceased
+        deceased_sag_ids = (
+            session.query(Sag.ID)
             .filter(
-                Sag.SagsStatus.has(or_(Sagsstatus.Navn == 'Aktiv', Sagsstatus.Navn == 'Opstået')),
+                Sag.SagsStatus.has(or_(Sagsstatus.Navn == "Aktiv", Sagsstatus.Navn == "Opstået")),
                 Sag.SagsPart.has(
                     and_(
                         Sagspart.PartType == 1,
                         Sagspart.Person.has(
-                            Person.Civilstand.has(CivilstandOpslag.Navn == 'Død')
+                            Person.Civilstand.has(CivilstandOpslag.Navn == "Død")
                         ),
                     )
                 ),
             )
             .all()
         )
+        sag_ids_to_close.update(sag_id for (sag_id,) in deceased_sag_ids)
+        logger.info("Found %s cases with deceased primary part.", len(deceased_sag_ids))
 
-        logger.info(f"Found {len(result)} cases with deceased primary part.")
-        for sag in result:
-            if sag.ID not in seen_sag_ids:
-                seen_sag_ids.add(sag.ID)
-                sager_to_close.append(sag)
+        logger.info("Total cases identified for closure: %s", len(sag_ids_to_close))
+        if not sag_ids_to_close:
+            return None
 
-    logger.info(f"Total cases identified for closure: {len(sager_to_close)}")
+        # Re-load the cases inside this same session with relationships eagerly loaded.
+        # This avoids DetachedInstanceError when accessing sag.Erindring / sag.Kladde.
+        sager_to_close = (
+            session.query(Sag)
+            .options(selectinload(Sag.Erindring), selectinload(Sag.Kladde))
+            .filter(Sag.ID.in_(sorted(sag_ids_to_close)))
+            .all()
+        )
 
-    # Close the cases that were identified
-    with Session(engine) as session:
         for sag in sager_to_close:
             logger.info(f"Closing case ID {sag.ID} with SkabelonID {sag.SkabelonID}")
 

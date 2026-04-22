@@ -20,7 +20,7 @@ class Sag(Base):
     SagsStatusID = Column(Integer)
     SagsPartID = Column(Integer)
     LastStatusChange = Column(DateTime)
-    LastStatusChangeComment = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
+    LastStatusChangeComments = Column(Unicode(400, collation='SQL_Danish_Pref_CP1_CI_AS'))
 
     SagsStatus = relationship('Sagsstatus')
     SagsPart = relationship('Sagspart')
@@ -102,7 +102,7 @@ class Erindring(Base):
 
 
 class KladdeRegistrering(Base):
-    __tablename__ = 'Kladde'
+    __tablename__ = 'KladdeRegistrering'
     __table_args__ = (
         ForeignKeyConstraint(['SagID'], ['SbsysNetDrift.dbo.Sag.ID'], name='Kladde_Sag'),
         PrimaryKeyConstraint('ID', name='PK_KladdeRegistrering'),
