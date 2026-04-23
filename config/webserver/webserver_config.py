@@ -26,7 +26,7 @@ AUTH_ROLES_MAPPING = {
     "User": ["User"],
     "Viewer": ["Viewer"],
     "Public": ["Public"],
-    "Nexus": ["Nexus"]
+    "Nexus": ["Nexus"],
 }
 
 PROVIDER_NAME = "keycloak"
