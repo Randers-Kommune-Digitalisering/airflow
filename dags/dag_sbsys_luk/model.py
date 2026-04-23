@@ -24,8 +24,8 @@ class Sag(Base):
 
     SagsStatus = relationship('Sagsstatus')
     SagsPart = relationship('Sagspart')
-    Erindring = relationship('Erindring', back_populates='Sag')
-    Kladde = relationship('KladdeRegistrering', back_populates='Sag')
+    Erindring = relationship('Erindring')
+    Kladde = relationship('KladdeRegistrering')
 
 
 class Sagsstatus(Base):
@@ -51,7 +51,7 @@ class Sagspart(Base):
     PartID = Column(Integer)
     PartType = Column(Integer)
 
-    Person = relationship('Person', back_populates='Sagspart')
+    Person = relationship('Person')
 
 
 class Person(Base):
@@ -65,8 +65,7 @@ class Person(Base):
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     CivilstandID = Column(Integer)
 
-    Civilstand = relationship('CivilstandOpslag', back_populates='Person')
-    Sagspart = relationship('Sagspart', back_populates='Person')
+    Civilstand = relationship('CivilstandOpslag')
 
 
 class CivilstandOpslag(Base):
@@ -78,8 +77,6 @@ class CivilstandOpslag(Base):
 
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     Navn = Column(Unicode(100, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
-
-    Person = relationship('Person', back_populates='Civilstand')
 
 
 class Erindring(Base):
@@ -97,8 +94,6 @@ class Erindring(Base):
     AfsluttetAfID = Column(Integer)
     Afsluttet = Column(DateTime)
     AfsluttetNotat = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
-
-    Sag = relationship('Sag', back_populates='Erindring')
 
 
 class KladdeRegistrering(Base):
@@ -118,5 +113,30 @@ class KladdeRegistrering(Base):
     DeletedReason = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
     DeleteConfirmed = Column(DateTime)
     DeleteConfirmedByID = Column(Integer)
+    Bilag = relationship('Bilag')
 
-    Sag = relationship('Sag', back_populates='Kladde')
+
+class Bilag(Base):
+    __tablename__ = 'Bilag'
+    __table_args__ = (
+        ForeignKeyConstraint(['KladdeRegistreringID'], ['SbsysNetDrift.dbo.KladdeRegistrering.ID'], name='Bilag_KladdeRegistrering'),
+        ForeignKeyConstraint(['DokumentRegistreringID'], ['SbsysNetDrift.dbo.DokumentRegistrering.ID'], name='Bilag_DokumentRegistrering'),
+        PrimaryKeyConstraint('ID', name='PK_Bilag'),
+        {"schema": "SbsysNetDrift.dbo"}
+    )
+
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    KladdeRegistreringID = Column(Integer)
+    DokumentRegistreringID = Column(Integer)
+
+    DokumentRegistrering = relationship('DokumentRegistrering')
+
+
+class DokumentRegistrering(Base):
+    __tablename__ = 'DokumentRegistrering'
+    __table_args__ = (
+        PrimaryKeyConstraint('ID', name='PK_DokumentRegistrering'),
+        {"schema": "SbsysNetDrift.dbo"}
+    )
+
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)

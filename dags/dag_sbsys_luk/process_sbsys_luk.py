@@ -52,7 +52,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
             # Complete all Erindring records associated with the case
             for erindring in sag.Erindring:
                 erindring.ErAfsluttet = 1
-                erindring.AfsluttetDato = datetime.now()
+                erindring.Afsluttet = datetime.now()
                 erindring.AfsluttetAfID = USER_ID
                 erindring.AfsluttetNotat = "Erindring afsluttet ifm. automatisk sagslukning af robot (Digitalisering)."
                 session.add(erindring)
@@ -71,7 +71,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
             # Update the case status to 'Lukket'
             sag.SagsStatusID = SAG_STATUS_CLOSED_PROD
             sag.LastStatusChange = datetime.now()
-            sag.LastStatusChangeComment = "Sagsstatus ændret til 'Lukket' ifm. automatisk sagslukning af robot (Digitalisering)."
+            sag.LastStatusChangeComments = "Sagsstatus ændret til 'Lukket' ifm. automatisk sagslukning af robot (Digitalisering)."
             session.add(sag)
 
         # Commit all changes to the database
