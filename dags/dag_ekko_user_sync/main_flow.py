@@ -16,7 +16,7 @@ from airflow.providers.ftp.hooks.ftp import FTPHook
 logger = logging.getLogger(__name__)
 
 
-def get_ekko_sd_departments(ekko_sd_departments_str: str, sd_http_hook: HttpHook) -> list[tuple[str, str]]:
+def get_ekko_sd_departments(ekko_sd_departments_str: str, sd_http_hook: HttpHook) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
     """
     Fetches department identifiers and names from the Silkeborg Data API
     and filters them based on a predefined list of department identifiers.
@@ -48,15 +48,8 @@ def get_ekko_sd_departments(ekko_sd_departments_str: str, sd_http_hook: HttpHook
 def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, **context) -> pd.DataFrame:
     """
     Get user data DataFrame from SD client.
-
-    :param departments: List of department tuples (id, name)
-    :type departments: list[tuple[str, str]]
-    :param institution_id: Institution identifier
-    :type institution_id: str
-    :param all_deparments_df: DataFrame containing all departments
-    :type all_deparments_df: pd.DataFrame
-    :return: DataFrame containing user data
-    :rtype: pd.DataFrame
+    The function retrieves department data from a previous task, then for each department,
+    it fetches employment and person data from the SD API and returns a DataFrame with relevant information for Ekko user synchronization.
     """
     all_sd_departments_df, ekko_sd_departments_df = context['ti'].xcom_pull(task_ids=sd_departments_task_id)
 
