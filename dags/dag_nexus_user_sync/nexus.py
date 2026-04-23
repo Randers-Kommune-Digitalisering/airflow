@@ -83,14 +83,14 @@ class NexusClient:
         active_suppliers = [supplier for supplier in all_suppliers_res if supplier.get('active')]
 
         # Build lookups
-        org_to_supplier_lookup: dict = {entry['delta_id']: entry['nexus_id'] for entry in supplier_list}
-        supplier_by_id = {str(supplier['id']): supplier for supplier in active_suppliers}
+        org_to_supplier_lookup: dict = {entry['delta_id'].strip(): entry['nexus_name'].strip() for entry in supplier_list}
+        supplier_by_id = {str(supplier['name']).strip(): supplier for supplier in active_suppliers}
 
         # Add supplier info to the relevant orgs
         for org in relevant_organisations:
             supplier_id = org_to_supplier_lookup.get(org['syncId'])
             if supplier_id:
-                org['supplier'] = supplier_by_id.get(str(supplier_id))
+                org['supplier'] = supplier_by_id.get(str(supplier_id).strip())
 
         return relevant_organisations
 
