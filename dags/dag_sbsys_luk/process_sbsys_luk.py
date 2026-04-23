@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_  # , or_
 from sqlalchemy.orm import selectinload
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
@@ -15,7 +15,7 @@ USER_ID = 9999  # Placeholder for the user ID performing the closure
 SAG_STATUS_CLOSED_PROD = 5
 
 
-def process_sbsys_luk(sagsskabelon_ids: list, dry_run: bool) -> None:
+def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list, ignore_sagsskabelon_ids: list, dry_run: bool) -> None:
     """
     Fetch and close SBSYS cases based on specific criteria using SQL.
     """
@@ -23,52 +23,28 @@ def process_sbsys_luk(sagsskabelon_ids: list, dry_run: bool) -> None:
     engine = hook.get_sqlalchemy_engine()
 
     with Session(engine) as session:
-        sag_ids_to_close: set[int] = set()
-
-        # Query to fetch cases that match the specified SkabelonIDs
-        skabelon_sag_ids = (
-            session.query(Sag.ID)
-            .filter(Sag.SkabelonID.in_(sagsskabelon_ids))
-            .all()
-        )
-        sag_ids_to_close.update(sag_id for (sag_id,) in skabelon_sag_ids)
-        logger.info(
-            "Fetched %s cases with SkabelonID in %s",
-            len(skabelon_sag_ids),
-            sagsskabelon_ids,
-        )
-
-        # Query to fetch cases where primary part has deceased
-        deceased_sag_ids = (
-            session.query(Sag.ID)
+        # Query to fetch cases that match the criteria
+        query = (
+            session.query(Sag)
+            .options(selectinload(Sag.Erindring), selectinload(Sag.Kladde))
             .filter(
-                Sag.SagsStatus.has(or_(Sagsstatus.Navn == "Aktiv", Sagsstatus.Navn == "Opstået")),
+                Sag.SagsStatus.has(Sagsstatus.Navn.in_(required_sagsstatus)),
+                Sag.SkabelonID.notin_(ignore_sagsskabelon_ids),
                 Sag.SagsPart.has(
                     and_(
                         Sagspart.PartType == 1,
-                        Sagspart.Person.has(
-                            Person.Civilstand.has(CivilstandOpslag.Navn == "Død")
-                        ),
+                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),
                     )
                 ),
             )
-            .all()
         )
-        sag_ids_to_close.update(sag_id for (sag_id,) in deceased_sag_ids)
-        logger.info("Found %s cases with deceased primary part.", len(deceased_sag_ids))
 
-        logger.info("Total cases identified for closure: %s", len(sag_ids_to_close))
-        if not sag_ids_to_close:
-            return None
+        # Apply additional filter for required SkabelonIDs if provided
+        if required_sagsskabelon_ids:
+            query = query.filter(Sag.SkabelonID.in_(required_sagsskabelon_ids))
 
-        # Re-load the cases inside this same session with relationships eagerly loaded.
-        # This avoids DetachedInstanceError when accessing sag.Erindring / sag.Kladde.
-        sager_to_close = (
-            session.query(Sag)
-            .options(selectinload(Sag.Erindring), selectinload(Sag.Kladde))
-            .filter(Sag.ID.in_(sorted(sag_ids_to_close)))
-            .all()
-        )
+        sager_to_close = query.all()
+        logger.info(f"Found {len(sager_to_close)} cases to close based on the specified criteria.")
 
         for sag in sager_to_close:
             logger.info(f"Closing case ID {sag.ID} with SkabelonID {sag.SkabelonID}")
@@ -82,6 +58,7 @@ def process_sbsys_luk(sagsskabelon_ids: list, dry_run: bool) -> None:
                 session.add(erindring)
 
             # Delete all KladdeRegistrering records associated with the case
+            # # TODO: SKAL JOURNALISERES I STEDET FOR!
             for kladde in sag.Kladde:
                 kladde.DeletedState = 1
                 kladde.DeletedDate = datetime.now()

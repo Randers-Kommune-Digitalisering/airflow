@@ -10,14 +10,18 @@ dag_args["retries"] = 0
 
 # DRY_RUN: set to True to log intended updates without making changes, False to perform updates
 DRY_RUN = Variable.get("SBSYS_LUK_DRY_RUN", default_var="True").lower() == "true"
-SBSYS_LUK_SAGSSKABELON_IDS = Variable.get("SBSYS_LUK_SAGSSKABELON_IDS", default_var="5133")
-SAGSSKABELON_IDS = [int(id.strip()) for id in SBSYS_LUK_SAGSSKABELON_IDS.split(",") if id.strip().isdigit()]
 
+# Filters for querying cases to close (set via Airflow Variables)
+SBSYS_LUK_SAGSSKABELON_IDS = Variable.get("SBSYS_LUK_SAGSSKABELON_IDS", "")
+SBSYS_LUK_SAGSSKABELON_IGNORE_IDS = Variable.get("SBSYS_LUK_SAGSSKABELON_IGNORE_IDS", "")
+REQUIRED_SAGSSKABELON_IDS = [int(id.strip()) for id in SBSYS_LUK_SAGSSKABELON_IDS.split(",") if id.strip().isdigit()]
+IGNORE_SAGSSKABELON_IDS = [int(id.strip()) for id in SBSYS_LUK_SAGSSKABELON_IGNORE_IDS.split(",") if id.strip().isdigit()]
+REQUIRED_SAGSSTATUS = Variable.get("SBSYS_LUK_SAGSSTATUS", "Aktiv").split(",")  # Default to "Aktiv" if not set
 
 with DAG(
     dag_id="dag_sbsys_luk",
     start_date=datetime(year=2026, month=3, day=9, tz=timezone("Europe/Copenhagen")),
-    schedule="@monthly",
+    schedule="@weekly",
     catchup=False,
     default_args=dag_args,
     description="Fetch and close SBSYS cases based on specific criteria using SQL",
@@ -28,7 +32,9 @@ with DAG(
         task_id="process_sbsys_luk_task",
         python_callable=process_sbsys_luk,
         op_kwargs={
-            "sagsskabelon_ids": SAGSSKABELON_IDS,
+            "required_sagsstatus": REQUIRED_SAGSSTATUS,
+            "required_sagsskabelon_ids": REQUIRED_SAGSSKABELON_IDS,
+            "ignore_sagsskabelon_ids": IGNORE_SAGSSKABELON_IDS,
             "dry_run": DRY_RUN
         },
     )
