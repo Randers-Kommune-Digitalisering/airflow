@@ -76,7 +76,7 @@ def get_config_start_main_flow(**context):
     finally:
         nexus_client.logout()
 
-    return report_list, changes_date
+    return report_list, changes_date.format("YYYY-MM-DD")
 
 
 def report_list_to_html(**context):
@@ -86,10 +86,9 @@ def report_list_to_html(**context):
         html_content = '<p>Ingen problemer blev fundet under synkroniseringen.</p>'
     else:
         html_content = '<ul>' + ''.join(f'<li>{item}</li>' for item in report_list) + '</ul>'
-    changes_date_string = changes_date.format("YYYY-MM-DD")
-    logger.info("### The report ###")
+    logger.info(f"### The report for {changes_date} ###")
     logger.info(html_content)
-    return html_content, changes_date_string
+    return html_content, changes_date
 
 
 with DAG(
