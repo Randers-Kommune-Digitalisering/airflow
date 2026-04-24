@@ -128,7 +128,7 @@ class Note(Base):
 
 
 class Remind(Base):
-    __tablename__ = 'Haend'
+    __tablename__ = 'Remind'
     __table_args__ = {'schema': 'dbo'}
     RECNUM = Column(Integer, primary_key=True)
     KODE = Column(CHAR(10))
