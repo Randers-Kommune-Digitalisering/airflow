@@ -81,14 +81,11 @@ def check_and_update_district(dry_run: bool) -> None:
         sentinel_open_end_date = sentinel_open_end.date()
 
         for entry in entries:
-
-            # CPR validation and normalization
-            normalized_cpr = CPRClient.normalize_cpr_number(entry.CPR)
-            if not normalized_cpr:
+            # CPR validation
+            if not (entry.CPR.isdigit() and len(entry.CPR) == 10):
                 logger.warning(
-                    "Skipping Name ID %s: invalid CPR value (%s)",
-                    entry.ID,
-                    CPRClient.mask_cpr_for_log(entry.CPR),
+                    "Skipping Name ID %s: invalid CPR value",
+                    entry.ID
                 )
                 continue
 
@@ -149,7 +146,7 @@ def check_and_update_district(dry_run: bool) -> None:
                         logger.info(f"Added new phone number for Name ID {entry.ID}: {journal_phone}")
 
             # CPR lookup: address UUID + protected status
-            cpr_info = cpr_client.get_address_uuid_and_protected_status(normalized_cpr)
+            cpr_info = cpr_client.get_address_uuid_and_protected_status(entry.CPR)
 
             has_changed_protected_status = False
             if cpr_info['is_protected_address'] != bool(entry.details.BESKYTTETADRESSE):  # small int value in DB

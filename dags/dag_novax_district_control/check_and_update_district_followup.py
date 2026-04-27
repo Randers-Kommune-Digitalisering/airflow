@@ -65,18 +65,16 @@ def check_and_update_district_followup(dry_run: bool) -> None:
         now_time = now_dt.strftime("%H:%M")
 
         for entry in entries:
-            # CPR validation and normalization
-            normalized_cpr = CPRClient.normalize_cpr_number(entry.CPR)
-            if not normalized_cpr:
+            # CPR validation
+            if not (entry.CPR.isdigit() and len(entry.CPR) == 10):
                 logger.warning(
-                    "Skipping Name ID %s: invalid CPR value (%s)",
-                    entry.ID,
-                    CPRClient.mask_cpr_for_log(entry.CPR),
+                    "Skipping Name ID %s: invalid CPR value",
+                    entry.ID
                 )
                 continue
 
             # CPR lookup: address UUID + protected status
-            cpr_info = cpr_client.get_address_uuid_and_protected_status(normalized_cpr)
+            cpr_info = cpr_client.get_address_uuid_and_protected_status(entry.CPR)
 
             has_changed_protected_status = False
             prev_protected = bool(entry.details.BESKYTTETADRESSE)
