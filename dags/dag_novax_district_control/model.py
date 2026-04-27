@@ -130,13 +130,13 @@ class Note(Base):
 class Remind(Base):
     __tablename__ = 'Remind'
     __table_args__ = {'schema': 'dbo'}
-    RECNUM = Column(Integer, primary_key=True)
-    KODE = Column(CHAR(10))
-    BEMAERK = Column(TEXT(16))
-    BRUGER = Column(CHAR(8))
-    TS_DATE = Column(DATETIME)
-    TS_TIME = Column(CHAR(5))
-    TS_UPDD = Column(DATETIME)
-    TS_UPDT = Column(CHAR(5))
-    OPRETTET = Column(DATETIME)
-    NAVNID = Column(CHAR(36))
+    RECNUM = Column(Integer, nullable=False, primary_key=True)
+    KODE = Column(CHAR(10), nullable=False, default='')
+    BEMAERK = Column(TEXT(16), nullable=False, default='')
+    BRUGER = Column(CHAR(8), nullable=False, default='')
+    TS_DATE = Column(DATETIME, nullable=False, default='1753-01-01')
+    TS_TIME = Column(CHAR(5), nullable=False, default='')
+    TS_UPDD = Column(DATETIME, nullable=False, default='1753-01-01')
+    TS_UPDT = Column(CHAR(5), nullable=False, default='')
+    OPRETTET = Column(DATETIME, nullable=False, default='1753-01-01')
+    NAVNID = Column(CHAR(36), nullable=False, default='')
