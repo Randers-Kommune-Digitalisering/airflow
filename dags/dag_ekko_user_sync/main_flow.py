@@ -288,7 +288,7 @@ def _get_mobile_number_from_person(person: dict) -> str | None:
     Attempt to retrieve a mobile number from the provided person dict.
     Prioritizes employment phone numbers over personal phone numbers.
 
-    :param person: Dictionary containing employment and personal phone numbers. Keys 'employment_phones' and 'person_phones' should contain lists.
+    :param person: Dict with person data. Must have at least the keys 'employment_phones' and 'person_phones', which must be lists.
     :type person: dict
     :return: Mobile phone number if found, otherwise None
     :rtype: str | None
