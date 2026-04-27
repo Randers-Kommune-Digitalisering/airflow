@@ -6,17 +6,16 @@
 
 Formålet med followup-jobbet er at sikre, at patienter med kommende terminsdatoer (TERMIN) fortsat har korrekte adresse- og distriktsoplysninger i Novax. Jobbet kører periodisk og laver genopfølgning frem mod termin ved at genopslå CPR-adresse (inkl. beskyttet status), validere/normalisere adressen via Dataforsyningen og beregne distrikt via District Map.
 
-Jobbet er designet som et supplement til det primære Novax-job: hvor hovedjobbet primært reagerer på nye/ændrede journaldata, er followup-jobbet terminsdrevet og genbesøger borgere i planlagte dato-vinduer frem mod termin.
+Jobbet er designet som et supplement til det primære Novax-job: hvor hovedjobbet primært reagerer på nye/ændrede journaldata, er followup-jobbet terminsdrevet og genbesøger borgere med kommende terminsdatoer.
 
 ## Beskrivelse
 
 Koden består af et DAG-job, der ved hvert run udfører følgende trin:
 
-- Bestemmer kørselsdatoen (DAG’ens logical date som lokal dato i DAG-timezone). Koden bruger `data_interval_end` fra Airflow-context, og falder tilbage til “i dag” ved lokal kørsel.
-- Beregner et sæt dato-vinduer for kommende terminsdatoer (se afsnittet [Dato-vinduer](#dato-vinduer)). Vinduerne behandles som hele dage med start inklusiv og slut eksklusiv.
-- Slår patienter op i Novax DB blandt patienter med tilknyttet `NameDetails` ved at filtrere på terminsdato (`NameDetails.TERMIN`), der ligger i et af vinduerne.
+- Bestemmer "i dag" ved runtime (lokal dato på den worker, der afvikler tasken).
+- Slår patienter op i Novax DB blandt patienter med tilknyttet `NameDetails` ved at filtrere på terminsdato (`NameDetails.TERMIN`) fra og med i dag (inkl.).
 - For hver patient:
-  - Validerer/normaliserer CPR-nummer.
+  - Validerer CPR-nummer.
   - Slår CPR op for at hente:
     - Adresse UUID (til Dataforsyningen)
     - “beskyttet adresse”-status
@@ -74,16 +73,10 @@ Jobbet er sat op til at køre automatisk på følgende tidspunkter:
 - **Catchup:** `False`
 - **Concurrency:** `max_active_runs = 1`, retries sat til `0`
 
-## Dato-vinduer
+## Udvælgelse af patienter (TERMIN)
 
-Formålet med dato-vinduerne er at fremsøge borgerne én gang hver måned op til termin, samt ~2 uger før termin:
+Jobbet behandler alle patienter med terminsdatoer fra og med dags dato (inkl.), dvs.:
 
-- Én gang om måneden i samme “uge-blok” som deres terminsdato (uge 1 = d. 1–7, uge 2 = d. 8–14, uge 3 = d. 15–21, uge 4 = d. 22–28, uge 5 = månedens sidste 7 dage).
-- Ca. 2 uger før terminsdato (14–20 dage før).
+- `NameDetails.TERMIN >= i dag kl. 00:00` (lokal tid på worker).
 
-Funktionen beregner derfor et sæt dato-vinduer, som bruges til at filtrere i databasen:
-
-1. Den tager udgangspunkt i “næste uge” (kørselsdato + 7 dage) og finder hvilken uge-blok i måneden den dato ligger i.
-2. Den laver derefter månedlige vinduer for den samme uge-blok i den måned samt de næste måneder frem (standard 9 måneder).
-3. Den tilføjer et ekstra vindue for terminsdatoer mellem 14 og 20 dage fra kørselsdatoen.
-4. Hvis vinduer overlapper eller ligger lige op ad hinanden, bliver de lagt sammen til færre og større vinduer.
+Der anvendes ikke længere planlagte dato-vinduer eller afgrænsning relativt til sidste DAG-run.
