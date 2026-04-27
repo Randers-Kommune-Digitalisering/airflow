@@ -1,10 +1,8 @@
 import logging
 import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
-from dag_novax_district_control.run_utils_followup import determine_run_date, followup_due_date_windows
 from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
 from dag_novax_district_control.clients.district_map_client import DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
@@ -13,20 +11,15 @@ from dag_novax_district_control.model import Name, NameDetails, Address, PersonD
 logger = logging.getLogger(__name__)
 
 
-def check_and_update_district_followup(dry_run: bool) -> None:
+def check_and_update_district_followup(dry_run: bool, **context) -> None:
     """
     Retrieves and updates user, address and district information
     for any patients with an upcoming due date based on their addresses.
     """
-    # Determine run date and followup windows
-    run_date = determine_run_date()
-    windows = followup_due_date_windows(run_date=run_date, months_ahead=9)
-    logger.info(
-        "Followup run_date=%s; querying due dates in %s window(s): %s",
-        run_date,
-        len(windows),
-        "; ".join([f"[{w.start}..{(w.end - datetime.timedelta(days=1))}]" for w in windows]),
-    )
+    now_dt = datetime.datetime.now()
+    today = now_dt.date()
+    run_dt = datetime.datetime.combine(today, datetime.time.min)
+    logger.info("Querying all upcoming due dates from today (TERMIN >= %s)", today)
 
     # Initialize clients
     dataforsyning_client = DataforsyningClient()
@@ -37,17 +30,12 @@ def check_and_update_district_followup(dry_run: bool) -> None:
     hook = MsSqlHook(mssql_conn_id="novax_sql")
     engine = hook.get_sqlalchemy_engine()
 
-    # Query patients with due dates in any of the windows (end is exclusive)
-    window_predicates = [
-        and_(NameDetails.TERMIN >= w.start, NameDetails.TERMIN < w.end)
-        for w in windows
-    ]
-
+    # Query patients with upcoming due dates
     with Session(engine) as session:
         entries: list[Name] = (
             session.query(Name)
             .join(NameDetails, NameDetails.NAVNID == Name.ID)
-            .filter(or_(*window_predicates))
+            .filter(NameDetails.TERMIN >= run_dt)
             .order_by(Name.ID)
             .all()
         )
@@ -60,8 +48,7 @@ def check_and_update_district_followup(dry_run: bool) -> None:
 
         sentinel_open_end = datetime.datetime(1753, 1, 1)
         sentinel_open_end_date = sentinel_open_end.date()
-        now_dt = datetime.datetime.now()
-        today = now_dt.date()
+        # now_dt and today already computed above
         now_time = now_dt.strftime("%H:%M")
 
         for entry in entries:
