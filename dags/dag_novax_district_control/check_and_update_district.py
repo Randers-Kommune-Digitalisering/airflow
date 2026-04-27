@@ -11,7 +11,6 @@ from dag_novax_district_control.clients.dataforsyning_client import Dataforsynin
 from dag_novax_district_control.novax_utils import parse_journal_data, get_allowed_journal_times
 from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.model import Name, Godkommu, Note, Phone, PersonDistrict, Address
-from dag_novax_district_control.utils import _i, _s, _to_date
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +64,7 @@ def check_and_update_district(dry_run: bool) -> None:
             assigned = False
             if note_obj and godkommu_obj.JOURNALTID:
                 allowed_times = get_allowed_journal_times(godkommu_obj.JOURNALTID)
-                note_time = _s(note_obj.TIDSPUNKT)
+                note_time = note_obj.TIDSPUNKT
                 if note_time in allowed_times:
                     name_obj.date = note_obj.DATO
                     name_obj.journal = parse_journal_data(note_obj.NOTE)
@@ -172,37 +171,37 @@ def check_and_update_district(dry_run: bool) -> None:
                     cpr_info['address_uuid'],
                 )
             else:
-                entry_date = _to_date(entry.date)
+                entry_date = entry.date
 
                 # Address update
-                new_full_address = _s(address_info.get('full_address'))
-                if new_full_address != _s(entry.ADRESSE):
+                new_full_address = address_info.get('full_address')
+                if new_full_address != entry.ADRESSE:
                     is_new_address_set = True
                     entry.ADRESSE = new_full_address
                     logger.info(f"Updated address for Name ID {entry.ID}")
                     has_valid_address = any(
-                        _s(a.NR_LT_ETAGE) == _s(address_info.get('number_floor')) and
-                        _i(a.VEJKODE) == address_info.get('street_code') and
-                        _s(a.STEDNAVN) == _s(address_info.get('town_name')) and
-                        _i(a.POSTNR) == address_info.get('postal_code') and
-                        _i(a.KOMMUNEKODE) == address_info.get('municipality_code') and
-                        (entry_date is not None and _to_date(a.DATO_FRA) is not None and _to_date(a.DATO_FRA) <= entry_date) and
+                        a.NR_LT_ETAGE == address_info.get('number_floor') and
+                        a.VEJKODE == address_info.get('street_code') and
+                        a.STEDNAVN == address_info.get('town_name') and
+                        a.POSTNR == address_info.get('postal_code') and
+                        a.KOMMUNEKODE == address_info.get('municipality_code') and
+                        (entry_date is not None and a.DATO_FRA is not None and a.DATO_FRA <= entry_date) and
                         (
-                            _to_date(a.DATO_TIL) is None or
-                            _to_date(a.DATO_TIL) == sentinel_open_end_date or
-                            (entry_date is not None and _to_date(a.DATO_TIL) > entry_date)
+                            a.DATO_TIL is None or
+                            a.DATO_TIL == sentinel_open_end_date or
+                            (entry_date is not None and a.DATO_TIL > entry_date)
                         )
                         for a in entry.addresses
                     )
 
                     if not has_valid_address:
                         for a in entry.addresses:
-                            if _to_date(a.DATO_TIL) is None or _to_date(a.DATO_TIL) == sentinel_open_end_date:
+                            if a.DATO_TIL is None or a.DATO_TIL == sentinel_open_end_date:
                                 a.DATO_TIL = entry.date
                                 a.TS_UPDD = datetime.now()
                                 a.TS_UPDT = datetime.now().strftime("%H:%M")
                                 logger.info(
-                                    f"Closed existing address {_s(a.VEJKODE)} {_s(a.NR_LT_ETAGE)} for Name ID {entry.ID} with end date {entry.date}"
+                                    f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {entry.date}"
                                 )
                         new_address_entry = Address(
                             NAVNID=entry.ID,
@@ -226,11 +225,11 @@ def check_and_update_district(dry_run: bool) -> None:
                     x=address_info['coordinates'][0],
                     y=address_info['coordinates'][1],
                 )
-                new_district = _s(district)
-                if new_district and new_district != _s(entry.DISTRIKT):
+                new_district = district
+                if new_district and new_district != entry.DISTRIKT:
                     is_new_district = True
                     entry.DISTRIKT = new_district
-                    current_ts_komid = _s(entry.details.TS_KOMID)
+                    current_ts_komid = entry.details.TS_KOMID
                     if current_ts_komid != new_district:
                         entry.details.TS_KOMID = new_district
                         is_new_district_details = True
@@ -238,18 +237,18 @@ def check_and_update_district(dry_run: bool) -> None:
                     logger.info(f"Updated district for Name ID {entry.ID} to {new_district}")
 
                     has_valid_person_district = any(
-                        _s(d.DISTRICT) == new_district and
-                        (entry_date is not None and _to_date(d.DATEFROM) is not None and _to_date(d.DATEFROM) <= entry_date) and
+                        d.DISTRICT == new_district and
+                        (entry_date is not None and d.DATEFROM is not None and d.DATEFROM <= entry_date) and
                         (
-                            _to_date(d.DATETO) is None or
-                            _to_date(d.DATETO) == sentinel_open_end_date or
-                            (entry_date is not None and _to_date(d.DATETO) > entry_date)
+                            d.DATETO is None or
+                            d.DATETO == sentinel_open_end_date or
+                            (entry_date is not None and d.DATETO > entry_date)
                         )
                         for d in entry.person_districts
                     )
                     if not has_valid_person_district:
                         for d in entry.person_districts:
-                            if _to_date(d.DATETO) is None or _to_date(d.DATETO) == sentinel_open_end_date:
+                            if d.DATETO is None or d.DATETO == sentinel_open_end_date:
                                 d.DATETO = entry.date
                                 d.TS_UPDD = datetime.now()
                                 d.TS_UPDT = datetime.now().strftime("%H:%M")
@@ -269,7 +268,7 @@ def check_and_update_district(dry_run: bool) -> None:
 
             # Always-updates
             has_changed_active = False
-            if _s(entry.AKTIV) in ("", "0"):
+            if entry.AKTIV in ("", "0"):
                 entry.AKTIV = "1"
                 has_changed_active = True
                 logger.info(f"Set AKTIV to 1 for Name ID {entry.ID}")
