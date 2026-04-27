@@ -22,7 +22,7 @@ def get_ekko_sd_departments(ekko_sd_departments_str: str, sd_http_hook: HttpHook
     and filters them based on a predefined list of department identifiers.
     Returns:
     - A pandas DataFrame containing all department identifiers and names.
-    - A list of tuples containing filtered department identifiers and names for Ekko SD sync.
+    - A list of tuples containing filtered department identifiers (strings) and names (strings) for Ekko SD sync. e.g. [("<id>", "<name>"), ...]
     """
     if not ekko_sd_departments_str:
         raise ValueError("Variable 'ekko_sd_departments' is not set or is empty")
@@ -41,8 +41,8 @@ def get_ekko_sd_departments(ekko_sd_departments_str: str, sd_http_hook: HttpHook
     res.raise_for_status()
 
     all_sd_departments_df = pd.read_xml(res.text, xpath='.//Department')
-    ekko_sd_departments_df = all_sd_departments_df[all_sd_departments_df['DepartmentIdentifier'].isin(ekko_sd_department_ids)][['DepartmentIdentifier', 'DepartmentName']].apply(tuple, axis=1).tolist()
-    return all_sd_departments_df, ekko_sd_departments_df
+    ekko_sd_departments_list = all_sd_departments_df[all_sd_departments_df['DepartmentIdentifier'].isin(ekko_sd_department_ids)][['DepartmentIdentifier', 'DepartmentName']].apply(tuple, axis=1).tolist()
+    return all_sd_departments_df, ekko_sd_departments_list
 
 
 def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, **context) -> pd.DataFrame:
@@ -51,7 +51,7 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
     The function retrieves department data from a previous task, then for each department,
     it fetches employment and person data from the SD API and returns a DataFrame with relevant information for Ekko user synchronization.
     """
-    all_sd_departments_df, ekko_sd_departments_df = context['ti'].xcom_pull(task_ids=sd_departments_task_id)
+    all_sd_departments_df, ekko_sd_departments_list = context['ti'].xcom_pull(task_ids=sd_departments_task_id)
 
     ekko_employees_df = pd.DataFrame(columns=['Navn', 'Personalenr.', 'Email', 'MasterGroup', 'UserGroup', 'Titel', 'Fødselsdag', 'Ansættelsesdato', 'Mobiltelefonnr.', 'occupation_rate'])
 
@@ -73,7 +73,7 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
             for dept_elem in institution.findall('Department'):
                 org.append(_parse_department(dept_elem))
 
-    for sd_department in ekko_sd_departments_df:
+    for sd_department in ekko_sd_departments_list:
         sd_id = sd_department[0]
         sd_name = sd_department[1]
 
@@ -157,22 +157,24 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
             }
             persons.append(person_dict)
 
-        for emp in employees:
-            person_phones = next((p for p in persons if emp['cpr'] in p['cpr']), None)
+        for employment_dict in employees:
+            person_dict = next((p for p in persons if employment_dict['cpr'] in p['cpr']), None)
+            if not person_dict:
+                raise ValueError(f"No person found for employment based on CPR - employment id: {employment_dict['employment_id']}")
 
-            name = next((p['name'] for p in persons if emp['cpr'] in p['cpr']), None)
-            employment_id = emp['employment_id']
-            email = next((p['email'] for p in persons if emp['cpr'] in p['cpr']), None)
+            name = person_dict['name']
+            employment_id = employment_dict['employment_id']
+            email = person_dict['email']
 
             master_group_id = _find_level3_parent_code(org=org, child_code=sd_id)
             master_group = all_sd_departments_df.loc[all_sd_departments_df['DepartmentIdentifier'] == master_group_id, 'DepartmentName'].squeeze() if master_group_id else None
 
             user_group = sd_name
-            profession = emp['profession']
-            birth_day = _get_birth_date_from_cpr(emp['cpr'])
-            employment_date = emp['employment_date']
-            mobile_phone = _get_mobile_number(person_phones)
-            occupation_rate = emp['occupation_rate']
+            profession = employment_dict['profession']
+            birth_day = _get_birth_date_from_cpr(employment_dict['cpr'])
+            employment_date = employment_dict['employment_date']
+            mobile_phone = _get_mobile_number_from_person(person_dict)
+            occupation_rate = employment_dict['occupation_rate']
 
             ekko_employees_df.loc[len(ekko_employees_df)] = [name, employment_id, email, master_group, user_group, profession, birth_day, employment_date, mobile_phone, occupation_rate]
 
@@ -188,7 +190,13 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
     return ekko_employees_df
 
 
-def upload_ekko_users(sd_user_data_task_id: str, ekko_ftps_hook: FTPHook, **context):
+def upload_ekko_users(sd_user_data_task_id: str, ekko_ftps_hook: FTPHook, **context) -> bool:
+    """"
+    Upload the Ekko user data CSV file to the Ekko FTPS server using pycurl for secure upload.
+    The function retrieves the user data DataFrame from a previous task, converts it to CSV format, and uploads it to the FTPS server (from FTPHook).
+
+    Using pycurl because the standard FTPHook does not support implicit FTPS which is required by the Ekko FTPS server.
+    """
     ekko_users_df = context['ti'].xcom_pull(task_ids=sd_user_data_task_id)
 
     csv_file = io.BytesIO()
@@ -223,7 +231,8 @@ def upload_ekko_users(sd_user_data_task_id: str, ekko_ftps_hook: FTPHook, **cont
     return True
 
 
-def _parse_department(dept_elem):
+def _parse_department(dept_elem: etree._Element) -> dict:
+    """Recursively parse department XML element into a dictionary with sub-departments."""
     dept = {
         'DepartmentCode': dept_elem.findtext('DepartmentCode'),
         'DepartmentLevel': dept_elem.findtext('DepartmentLevel'),
@@ -274,23 +283,23 @@ def _contains_department(dept: dict, target_code: str) -> bool:
     return any(_contains_department(sub, target_code) for sub in dept.get('Departments', []))
 
 
-def _get_mobile_number(person_phones: dict) -> str | None:
+def _get_mobile_number_from_person(person: dict) -> str | None:
     """
-    Attempt to retrieve a mobile number from the provided phone data.
-    Prioritizes employment phones over personal phones.
+    Attempt to retrieve a mobile number from the provided person dict.
+    Prioritizes employment phone numbers over personal phone numbers.
 
-    :param person_phones: Dictionary containing employment and personal phone numbers. List under keys 'employment_phones' and 'person_phones'.
-    :type person_phones: dict
+    :param person: Dictionary containing employment and personal phone numbers. Keys 'employment_phones' and 'person_phones' should contain lists.
+    :type person: dict
     :return: Mobile phone number if found, otherwise None
     :rtype: str | None
     """
     mobile_number = None
-    for num in person_phones['employment_phones']:
+    for num in person['employment_phones']:
         mobile_number = _check_if_mobile_number_and_clean(num)
         if mobile_number:
             break
     if not mobile_number:
-        for num in person_phones['person_phones']:
+        for num in person['person_phones']:
             mobile_number = _check_if_mobile_number_and_clean(num)
             if mobile_number:
                 break

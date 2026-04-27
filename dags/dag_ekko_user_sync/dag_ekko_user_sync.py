@@ -9,7 +9,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_ekko_user_sync.main_flow import get_ekko_sd_departments, get_ekko_sd_user_data, upload_ekko_users
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 2
 
 ekko_sd_departments = Variable.get("ekko_sd_departments", default_var=None)
 sd_http_hook = HttpHook(method="POST", http_conn_id="sd_silkeborgdata")

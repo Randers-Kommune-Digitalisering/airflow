@@ -13,7 +13,7 @@ Læser ansættelsesdata og persondata for ansatte i Ejendomsservice (baseret på
 
 :key: | **Airflow Connections**
 
-**Delta API:**
+**SD API:**
 - **`sd_silkeborgdata`**
 
 **Conn Type**: HTTP
@@ -30,7 +30,7 @@ Auth til SD API
 **Conn Type**: FTP
 
 *Påkrævede felter*:
-  - Connection ID, Host, Login, Password, Port
+  - Connection ID, Host, Login, Password
 
 ### Airflow Variables
 **Ekko SD-afdelinger**
