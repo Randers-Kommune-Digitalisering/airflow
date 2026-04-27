@@ -64,7 +64,7 @@ def check_and_update_district(dry_run: bool) -> None:
             assigned = False
             if note_obj and godkommu_obj.JOURNALTID:
                 allowed_times = get_allowed_journal_times(godkommu_obj.JOURNALTID)
-                note_time = note_obj.TIDSPUNKT
+                note_time = note_obj.TIDSPUNKT.strip()
                 if note_time in allowed_times:
                     name_obj.date = note_obj.DATO
                     name_obj.journal = parse_journal_data(note_obj.NOTE)
