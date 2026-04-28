@@ -5,10 +5,9 @@ from typing import Any, Sequence
 from dag_affald.affald_config import SHEET_SPECS, GENBRUGSPLADSEN_CUSTOMER_NAMES
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
-
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 logger = logging.getLogger(__name__)
@@ -313,6 +312,8 @@ def _pivot_material(
     row_label_mode: str = "legacy",  # "legacy" or "generic"
     sort_mode: str = "year_then_material",  # "year_then_material" or "material_then_year"
     group_by_carrier: bool = False,
+    customer_order: Sequence[str] | None = None,
+    material_order: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """
     Pivot monthly weights into 12 month-columns + YearTotal for Excel tables.
@@ -321,6 +322,8 @@ def _pivot_material(
     :param row_label_mode: 'legacy' or 'generic' formatting for RowLabel.
     :param sort_mode: 'year_then_material' or 'material_then_year'.
     :param group_by_carrier: If True, include CarrierKey in pivot index/output.
+    :param customer_order: Optional explicit order for CustomerKey (list of customer names).
+                           Customers not listed will be appended after the listed ones.
     :return: Pivoted DataFrame with columns for months 1..12 and YearTotal.
     """
     base_cols = ["CustomerKey", "year", "MaterialKey"]
@@ -341,7 +344,6 @@ def _pivot_material(
     if "MaterialKey" not in tmp.columns:
         tmp["MaterialKey"] = tmp["ArticleNumber"].astype(str)
     if group_by_carrier and "CarrierKey" not in tmp.columns:
-
         if "CarrierName" in tmp.columns:
             tmp["CarrierKey"] = tmp["CarrierName"].astype(str)
         else:
@@ -363,6 +365,42 @@ def _pivot_material(
     pivot = pivot[[m for m in range(1, 13)]]
     pivot["YearTotal"] = pivot.sum(axis=1)
     pivot = pivot.reset_index()
+
+    # Apply customer ordering
+    if customer_order:
+        order = [_normalize_name(x) for x in customer_order]
+        order = [x for x in order if x]
+
+        present = pivot["CustomerKey"].astype(str).tolist()
+        present_unique = list(dict.fromkeys(present))  # keep first-seen order
+        present_set = set(present_unique)
+
+        known = [x for x in order if x in present_set]
+        known_set = set(known)
+        unknown = [x for x in present_unique if x not in known_set]
+        cats = known + unknown
+
+        pivot["CustomerKey"] = pd.Categorical(pivot["CustomerKey"], categories=cats, ordered=True)
+
+    # Apply material ordering
+    if material_order:
+        order = [_normalize_name(x) for x in material_order]
+        order = [x for x in order if x]
+
+        present = pivot["MaterialKey"].astype(str).tolist()
+        present_unique = list(dict.fromkeys(present))
+        present_set = set(present_unique)
+
+        known = [x for x in order if x in present_set]
+        known_set = set(known)
+        unknown = [x for x in present_unique if x not in known_set]
+        cats = known + unknown
+
+        pivot["MaterialKey"] = pd.Categorical(
+            pivot["MaterialKey"],
+            categories=cats,
+            ordered=True
+        )
 
     if group_by_carrier:
         if sort_mode == "material_then_year":
@@ -403,26 +441,37 @@ def _write_sheet(
     ton_label_mode: str = "legacy",
     blank_between: str = "customer",
     group_by_carrier: bool = False,
+    material_order: Sequence[str] | None = None,
+    ytd_year: int | None = None,
+    ytd_end_month: int | None = None,
 ) -> None:
     """
     Write a pivoted table (from ``_pivot_material``) into an Excel worksheet.
 
-    :param ws: openpyxl worksheet to write into.
-    :param table: Pivoted DataFrame from ``_pivot_material``.
-    :param title: Sheet title written in the header.
-    :param ton_label_mode: Label mode for the tons section ('legacy' or 'generic').
-    :param blank_between: Insert blank rows between groups ('customer', 'material', 'customer_and_material', 'none').
-    :param group_by_carrier: If True, include CarrierKey in grouping/labels.
-    :return: None.
+    Adds an extra YTD % column for the newest year (e.g. 2026), comparing Jan..M vs same Jan..M last year.
+    Keeps the existing annual % column unchanged.
     """
-    # A..O (1 label + 12 months + 1 year total + 1 pct)
-    ws.merge_cells("A1:O1")
+    end_m: int | None = None
+    if ytd_end_month is not None:
+        try:
+            end_m = int(ytd_end_month)
+        except Exception:
+            end_m = None
+    if end_m is not None:
+        end_m = max(1, min(12, end_m))
+
+    ytd_caption = "YTD"
+    if end_m is not None:
+        ytd_caption = f"YTD (Jan-{MONTH_NAMES[end_m - 1]})"
+
+    # A..P (1 label + 12 months + 1 year total + 1 pct + 1 ytd pct)
+    ws.merge_cells("A1:P1")
     c = ws["A1"]
     c.value = title
     c.font = Font(bold=True, size=14)
     c.alignment = Alignment(horizontal="left", vertical="center")
 
-    ws.merge_cells("N2:O2")
+    ws.merge_cells("N2:P2")
     ws["N2"].value = "Årssummer"
     ws["N2"].font = Font(bold=True)
 
@@ -433,6 +482,8 @@ def _write_sheet(
     ws["N3"].font = Font(bold=True)
     ws["O3"].value = "i %"
     ws["O3"].font = Font(bold=True)
+    ws["P3"].value = "i %"
+    ws["P3"].font = Font(bold=True)
 
     # Header (row 4)
     for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
@@ -448,14 +499,18 @@ def _write_sheet(
     ws["O4"].font = Font(bold=True)
     ws["O4"].alignment = Alignment(horizontal="center")
 
+    ws["P4"].value = ytd_caption
+    ws["P4"].font = Font(bold=True)
+    ws["P4"].alignment = Alignment(horizontal="center")
+
     num_fmt_kg = "#,##0"
     num_fmt_ton = "#,##0.00"
-    # num_fmt_ton = "#,##0.0"
     num_fmt_pct = "+0.0%;-0.0%;0.0%"
+    current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
 
     if table is None or table.empty:
         ws.column_dimensions["A"].width = 67
-        for col in range(2, 16):  # B..O
+        for col in range(2, 17):  # B..P
             ws.column_dimensions[get_column_letter(col)].width = 20
         return
 
@@ -465,12 +520,36 @@ def _write_sheet(
     prev_customer: str | None = None
     prev_material: str | None = None
 
-    # pct change pr. key
+    # pct change pr. key (annual)
     prev_year_total_by_key: dict[tuple[str, str, str] | tuple[str, str], float] = {}
 
     records = table.to_dict(orient="records")
 
+    # Precompute YTD totals per (key, year) for KG section
+    ytd_total_by_key_year: dict[tuple[Any, int], float] = {}
+    if ytd_year is not None and end_m is not None:
+        for rec in records:
+            year_val = rec.get("year", None)
+            if year_val is None:
+                continue
+            year_int = int(year_val)
+
+            customer = str(rec.get("CustomerKey", ""))
+            material = str(rec.get("MaterialKey", ""))
+            carrier = str(rec.get("CarrierKey", "")) if group_by_carrier else ""
+            key = (customer, material, carrier) if group_by_carrier else (customer, material)
+
+            ytd_sum = 0.0
+            for m in range(1, end_m + 1):
+                v = rec.get(m, 0.0)
+                if v is None or (isinstance(v, float) and pd.isna(v)):
+                    v = 0.0
+                ytd_sum += float(v)
+            ytd_total_by_key_year[(key, year_int)] = float(ytd_sum)
+
     for rec in records:
+        year_val = rec.get("year", None)
+        year_int = int(year_val) if year_val is not None else None
         customer = str(rec.get("CustomerKey", ""))
         material = str(rec.get("MaterialKey", ""))
         carrier = str(rec.get("CarrierKey", "")) if group_by_carrier else ""
@@ -484,7 +563,6 @@ def _write_sheet(
             if prev_material is not None and material != prev_material:
                 insert_blank = True
         if group_by_carrier and blank_between in ("material", "customer_and_material", "none"):
-            # carrier blanking styres ikke eksplicit af config; men vi indsætter ikke ekstra ved carrier-skift
             pass
 
         if insert_blank:
@@ -499,25 +577,45 @@ def _write_sheet(
             cell = ws.cell(row=excel_row, column=1 + m, value=float(val))
             cell.number_format = num_fmt_kg
 
+            if ytd_year is not None and year_int == int(ytd_year):
+                cell.fill = current_year_fill
+
         y_val = rec.get("YearTotal", 0.0)
         if pd.isna(y_val):
             y_val = 0.0
         y_total = float(y_val)
 
-        y = ws.cell(row=excel_row, column=14, value=y_total)
+        y = ws.cell(row=excel_row, column=14, value=y_total)  # N
         y.number_format = num_fmt_kg
         y.font = Font(bold=True)
 
         key = (customer, material, carrier) if group_by_carrier else (customer, material)
+
+        # Annual % (existing behavior) -> O
         prev_total = prev_year_total_by_key.get(key)
         if prev_total is None or prev_total == 0:
-            ws.cell(row=excel_row, column=15, value=None)
+            ws.cell(row=excel_row, column=15, value=None)  # O
         else:
             pct = (y_total - prev_total) / prev_total
             cell_pct = ws.cell(row=excel_row, column=15, value=float(pct))
             cell_pct.number_format = num_fmt_pct
 
         prev_year_total_by_key[key] = y_total
+
+        # YTD % (only for newest year) -> P
+        ytd_cell = ws.cell(row=excel_row, column=16, value=None)  # P
+        if ytd_year is not None and end_m is not None:
+            year_val = rec.get("year", None)
+            if year_val is not None and int(year_val) == int(ytd_year):
+                curr_ytd = ytd_total_by_key_year.get((key, int(ytd_year)))
+                prev_ytd = ytd_total_by_key_year.get((key, int(ytd_year) - 1))
+                if prev_ytd is None or prev_ytd == 0 or curr_ytd is None:
+                    ytd_cell.value = None
+                else:
+                    ytd_pct = (float(curr_ytd) - float(prev_ytd)) / float(prev_ytd)
+                    ytd_cell.value = float(ytd_pct)
+                    ytd_cell.number_format = num_fmt_pct
+
         prev_customer = customer
         prev_material = material
         excel_row += 1
@@ -557,14 +655,43 @@ def _write_sheet(
 
         ton_df[months + ["YearTotal"]] = ton_df[months + ["YearTotal"]] / 1000.0
 
-        # pct change year-over-year
+        # Apply material ordering for TON-section
+        if material_order:
+            order = [_normalize_name(x) for x in material_order]
+            order = [x for x in order if x]
+
+            present = ton_df["MaterialKey"].astype(str).tolist()
+            present_unique = list(dict.fromkeys(present))
+            present_set = set(present_unique)
+
+            known = [x for x in order if x in present_set]
+            known_set = set(known)
+            unknown = [x for x in present_unique if x not in known_set]
+            cats = known + unknown
+
+            ton_df["MaterialKey"] = pd.Categorical(
+                ton_df["MaterialKey"],
+                categories=cats,
+                ordered=True,
+            )
+
+        # Compute YTD totals (tons)
+        if end_m is not None:
+            ytd_month_cols = [m for m in range(1, end_m + 1)]
+            ton_df["YTDTotal"] = ton_df[ytd_month_cols].sum(axis=1)
+        else:
+            ton_df["YTDTotal"] = 0.0
+
+        # pct change year-over-year (annual + ytd)
         if group_by_carrier:
             ton_df = ton_df.sort_values(["MaterialKey", "CarrierKey", "year"], kind="stable")
             ton_df["PctChange"] = ton_df.groupby(["MaterialKey", "CarrierKey"])["YearTotal"].pct_change()
+            ton_df["YTDChange"] = ton_df.groupby(["MaterialKey", "CarrierKey"])["YTDTotal"].pct_change()
             ton_df = ton_df.sort_values(["year", "MaterialKey", "CarrierKey"], kind="stable")
         else:
             ton_df = ton_df.sort_values(["MaterialKey", "year"], kind="stable")
             ton_df["PctChange"] = ton_df.groupby("MaterialKey")["YearTotal"].pct_change()
+            ton_df["YTDChange"] = ton_df.groupby("MaterialKey")["YTDTotal"].pct_change()
             ton_df = ton_df.sort_values(["year", "MaterialKey"], kind="stable")
 
         def _ton_label(r: pd.Series) -> str:
@@ -593,6 +720,9 @@ def _write_sheet(
         ws.cell(row=ton_unit_row, column=15, value="i %")
         ws.cell(row=ton_unit_row, column=15).font = Font(bold=True)
 
+        ws.cell(row=ton_unit_row, column=16, value="i %")
+        ws.cell(row=ton_unit_row, column=16).font = Font(bold=True)
+
         for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
             cell = ws.cell(row=ton_header_row, column=i, value=name)
             cell.font = Font(bold=True)
@@ -605,6 +735,10 @@ def _write_sheet(
         o_cell = ws.cell(row=ton_header_row, column=15, value="Stigning = +/Fald = -")
         o_cell.font = Font(bold=True)
         o_cell.alignment = Alignment(horizontal="center")
+
+        p_cell = ws.cell(row=ton_header_row, column=16, value=ytd_caption)
+        p_cell.font = Font(bold=True)
+        p_cell.alignment = Alignment(horizontal="center")
 
         r = ton_data_row
         prev_year: int | None = None
@@ -622,6 +756,9 @@ def _write_sheet(
                 cell = ws.cell(row=r, column=1 + m, value=float(val))
                 cell.number_format = num_fmt_ton
 
+                if ytd_year is not None and year_int == int(ytd_year):
+                    cell.fill = current_year_fill
+
             y_val = rec.get("YearTotal", 0.0)
             if pd.isna(y_val):
                 y_val = 0.0
@@ -636,11 +773,22 @@ def _write_sheet(
                 cell_pct = ws.cell(row=r, column=15, value=float(pct_val))
                 cell_pct.number_format = num_fmt_pct
 
+            # YTD % only for newest year
+            ytd_val = rec.get("YTDChange", None)
+            if ytd_year is None or year_int != int(ytd_year):
+                ws.cell(row=r, column=16, value=None)
+            else:
+                if ytd_val is None or (isinstance(ytd_val, float) and pd.isna(ytd_val)):
+                    ws.cell(row=r, column=16, value=None)
+                else:
+                    cell_ytd = ws.cell(row=r, column=16, value=float(ytd_val))
+                    cell_ytd.number_format = num_fmt_pct
+
             prev_year = year_int
             r += 1
 
     ws.column_dimensions["A"].width = 67
-    for col in range(2, 16):  # B..O
+    for col in range(2, 17):  # B..P
         ws.column_dimensions[get_column_letter(col)].width = 20
 
 
@@ -775,11 +923,32 @@ def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
             drop_unmapped_group_rows=drop_unmapped_group_rows,
         )
 
+        ytd_year: int | None = None
+        ytd_end_month: int | None = None
+        if subset is not None and (not subset.empty) and ("year_month" in subset.columns):
+            ym = subset["year_month"].astype(str)
+            years = ym.str.slice(0, 4).astype(int)
+            months = ym.str.slice(5, 7).astype(int)
+
+            if not years.empty:
+                ytd_year = int(years.max())
+                months_in_ytd_year = months[years == ytd_year]
+                if not months_in_ytd_year.empty:
+                    ytd_end_month = int(months_in_ytd_year.max())
+
+        customer_order = spec.get("customer_order")
+        if customer_order is None:
+            customer_order = spec.get("customer_names")
+
+        material_order = spec.get("material_order")
+
         table = _pivot_material(
             df=subset,
             row_label_mode=row_label_mode,
             sort_mode=sort_mode,
             group_by_carrier=group_by_carrier,
+            customer_order=customer_order,
+            material_order=material_order,
         )
         _write_sheet(
             ws=ws,
@@ -788,6 +957,9 @@ def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
             ton_label_mode=ton_label_mode,
             blank_between=blank_between,
             group_by_carrier=group_by_carrier,
+            material_order=material_order,
+            ytd_year=ytd_year,
+            ytd_end_month=ytd_end_month,
         )
 
     return wb
