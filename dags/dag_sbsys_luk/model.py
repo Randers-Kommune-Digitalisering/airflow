@@ -1,5 +1,5 @@
 from sqlalchemy import Column, DateTime, ForeignKeyConstraint, Identity, Integer, LargeBinary, PrimaryKeyConstraint, Unicode
-from sqlalchemy.dialects.mssql import BIT, TINYINT
+from sqlalchemy.dialects.mssql import BIT
 from sqlalchemy.orm import declarative_base, relationship
 
 
@@ -8,6 +8,7 @@ Base = declarative_base()
 # Placeholder "schema" key that we will translate at execution time.
 DOKUMENTDATA_SHARD_SCHEMA = "DOKUMENTDATA_SHARD"
 KLADDEDATA_SHARD_SCHEMA = "KLADDEDATA_SHARD"
+
 
 class Sag(Base):
     __tablename__ = 'Sag'
@@ -28,7 +29,7 @@ class Sag(Base):
     SagsStatus = relationship('Sagsstatus')
     SagsPart = relationship('Sagspart')
     Erindring = relationship('Erindring')
-    Kladde = relationship('KladdeRegistrering')
+    KladdeRegistrering = relationship('KladdeRegistrering')
 
 
 class Sagsstatus(Base):
@@ -109,13 +110,10 @@ class KladdeRegistrering(Base):
 
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     SagID = Column(Integer)
+    Navn = Column(Unicode(200, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
 
-    DeletedState = Column(TINYINT)
-    DeletedDate = Column(DateTime)
-    DeletedByID = Column(Integer)
-    DeletedReason = Column(Unicode(500, collation='SQL_Danish_Pref_CP1_CI_AS'))
-    DeleteConfirmed = Column(DateTime)
-    DeleteConfirmedByID = Column(Integer)
+    Kladde = relationship('Kladde', uselist=False, back_populates='KladdeRegistrering')
     # Bilag = relationship('Bilag')
 
 
@@ -129,6 +127,12 @@ class Kladde(Base):
 
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     KladdeRegistreringID = Column(Integer)
+    Navn = Column(Unicode(200, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
+    Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    IsArchived = Column(BIT, nullable=False)
+
+    KladdeRegistrering = relationship('KladdeRegistrering', uselist=False, back_populates='Kladde')
+    KladdeData = relationship('KladdeData', uselist=False, back_populates='Kladde')
 
 
 class KladdeData(Base):
@@ -142,6 +146,8 @@ class KladdeData(Base):
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     KladdeID = Column(Integer)
     Data = Column(LargeBinary, nullable=True)
+
+    Kladde = relationship('Kladde', uselist=False, back_populates='KladdeData')
 
 
 # class Bilag(Base):
@@ -168,18 +174,30 @@ class DokumentRegistrering(Base):
     )
 
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    SagID = Column(Integer, nullable=False)
+    DokumentID = Column(Integer, nullable=False)
+    Navn = Column(Unicode(200, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+
+    Dokument = relationship('Dokument', uselist=False, back_populates='DokumentRegistrering')
 
 
 class Dokument(Base):
     __tablename__ = 'Dokument'
     __table_args__ = (
         ForeignKeyConstraint(['DokumentRegistreringID'], ['SbsysNetDrift.dbo.DokumentRegistrering.ID'], name='Dokument_DokumentRegistrering'),
+        ForeignKeyConstraint(['FraKladdeID'], ['SbsysNetDrift.dbo.Kladde.ID'], name='Dokument_Kladde', ondelete='SET NULL'),
         PrimaryKeyConstraint('ID', name='PK_Dokument'),
         {"schema": "SbsysNetDrift.dbo"}
     )
 
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     DokumentRegistreringID = Column(Integer)
+    Navn = Column(Unicode(200, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
+    Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    FraKladdeID = Column(Integer, nullable=True)
+
+    DokumentData = relationship('DokumentData', uselist=False, back_populates='Dokument')
 
 
 class DokumentData(Base):
@@ -193,3 +211,5 @@ class DokumentData(Base):
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     DokumentID = Column(Integer)
     Data = Column(LargeBinary, nullable=True)
+
+    Dokument = relationship('Dokument', uselist=False, back_populates='DokumentData')
