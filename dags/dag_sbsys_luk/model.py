@@ -118,7 +118,24 @@ class KladdeRegistrering(Base):
     Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
 
     Kladde = relationship('Kladde', uselist=False, back_populates='KladdeRegistrering')
+    DelforloebKladdeRegistrering = relationship('DelforloebKladdeRegistrering', back_populates='KladdeRegistrering')
     # Bilag = relationship('Bilag')
+
+
+class DelforloebKladdeRegistrering(Base):
+    __tablename__ = 'DelforloebKladdeRegistrering'
+    __table_args__ = (
+        ForeignKeyConstraint(['DelforloebID'], [f'SbsysNet{ENV}.dbo.Delforloeb.ID'], name='DelforloebKladdeRegistrering_Delforloeb'),
+        ForeignKeyConstraint(['KladdeRegistreringID'], [f'SbsysNet{ENV}.dbo.KladdeRegistrering.ID'], name='DelforloebKladdeRegistrering_KladdeRegistrering'),
+        PrimaryKeyConstraint('ID', name='PK_DelforloebKladdeRegistrering'),
+        {"schema": f"SbsysNet{ENV}.dbo"}
+    )
+
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    DelforloebID = Column(Integer, nullable=False)
+    KladdeRegistreringID = Column(Integer, nullable=False)
+
+    KladdeRegistrering = relationship('KladdeRegistrering', back_populates='DelforloebKladdeRegistrering')
 
 
 class Kladde(Base):
@@ -187,7 +204,24 @@ class DokumentRegistrering(Base):
     Registreret = Column(DateTime, nullable=False)
     RegistreretAfID = Column(Integer, nullable=False)
 
+    DelforloebDokumentRegistrering = relationship('DelforloebDokumentRegistrering', back_populates='DokumentRegistrering')
     Dokument = relationship('Dokument', uselist=False, back_populates='DokumentRegistrering')
+
+
+class DelforloebDokumentRegistrering(Base):
+    __tablename__ = 'DelforloebDokumentRegistrering'
+    __table_args__ = (
+        ForeignKeyConstraint(['DelforloebID'], [f'SbsysNet{ENV}.dbo.Delforloeb.ID'], name='DelforloebDokumentRegistrering_Delforloeb'),
+        ForeignKeyConstraint(['DokumentRegistreringID'], [f'SbsysNet{ENV}.dbo.DokumentRegistrering.ID'], name='DelforloebDokumentRegistrering_DokumentRegistrering'),
+        PrimaryKeyConstraint('ID', name='PK_DelforloebDokumentRegistrering'),
+        {"schema": f"SbsysNet{ENV}.dbo"}
+    )
+
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    DelforloebID = Column(Integer, nullable=False)
+    DokumentRegistreringID = Column(Integer, nullable=False)
+
+    DokumentRegistrering = relationship('DokumentRegistrering', back_populates='DelforloebDokumentRegistrering')
 
 
 class Dokument(Base):
@@ -246,3 +280,13 @@ class DokumentDataInfo(Base):
     FileExtension = Column(Unicode(30, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
 
     Dokument = relationship('Dokument', uselist=False, back_populates='DokumentDataInfo')
+
+
+class Delforloeb(Base):
+    __tablename__ = 'Delforloeb'
+    __table_args__ = (
+        PrimaryKeyConstraint('ID', name='PK_Delforloeb'),
+        {"schema": f"SbsysNet{ENV}.dbo"}
+    )
+
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)

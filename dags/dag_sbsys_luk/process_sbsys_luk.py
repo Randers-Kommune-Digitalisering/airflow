@@ -14,6 +14,7 @@ from dag_sbsys_luk.model import (
     Dokument,
     DokumentRegistrering,
     DokumentDataInfo,
+    DelforloebDokumentRegistrering,
     KladdeRegistrering,
     Person,
     Sag,
@@ -161,6 +162,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
             .options(
                 selectinload(Sag.Erindring),
                 selectinload(Sag.KladdeRegistrering).selectinload(KladdeRegistrering.Kladde),
+                selectinload(Sag.KladdeRegistrering).selectinload(KladdeRegistrering.DelforloebKladdeRegistrering),
             )
             .filter(
                 Sag.SagsStatus.has(Sagsstatus.Navn.in_(required_sagsstatus)),
@@ -241,6 +243,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     RegistreretAfID=USER_ID
                 )
                 session.add(dokument_reg)
+                session.flush()  # ensure dokument_reg.ID is available for FK usage below
 
                 dokument_data_info = DokumentDataInfo(
                     DokumentID=dokument.ID,
@@ -251,6 +254,23 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     FileSize=len(kladde_blob) if kladde_blob else 0,
                 )
                 session.add(dokument_data_info)
+
+                delforloeb_links = kladde_reg.DelforloebKladdeRegistrering
+                if delforloeb_links:
+                    if hasattr(delforloeb_links, "DelforloebID"):
+                        delforloeb_ids = [getattr(delforloeb_links, "DelforloebID", None)]
+                    else:
+                        delforloeb_ids = [
+                            getattr(link, "DelforloebID", None)
+                            for link in delforloeb_links
+                        ]
+
+                    for delforloeb_id in sorted({i for i in delforloeb_ids if i is not None}):
+                        dokument_delforloeb_reg = DelforloebDokumentRegistrering(
+                            DokumentRegistreringID=dokument_reg.ID,
+                            DelforloebID=delforloeb_id,
+                        )
+                        session.add(dokument_delforloeb_reg)
                 session.flush()
 
                 dokument.PrimaryDokumentDataInfoID = dokument_data_info.ID
