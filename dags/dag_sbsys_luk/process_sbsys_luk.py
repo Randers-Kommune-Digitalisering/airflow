@@ -200,7 +200,6 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     continue
 
                 if kladde.IsArchived:
-                    logger.info(f"Kladde ID {kladde.ID} already archived; skipping")
                     continue
 
                 logger.info(f"Journalizing KladdeRegistrering ID {kladde_reg.ID} (Kladde ID {kladde.ID}) for case ID {sag.ID}")
