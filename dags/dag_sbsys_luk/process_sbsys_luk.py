@@ -254,6 +254,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     FileSize=len(kladde_blob) if kladde_blob else 0,
                 )
                 session.add(dokument_data_info)
+                session.flush()  # ensure dokument_data_info.ID is available for FK usage below
 
                 delforloeb_links = kladde_reg.DelforloebKladdeRegistrering
                 if delforloeb_links:
@@ -271,11 +272,10 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                             DelforloebID=delforloeb_id,
                         )
                         session.add(dokument_delforloeb_reg)
-                session.flush()
 
                 dokument.PrimaryDokumentDataInfoID = dokument_data_info.ID
                 session.add(dokument)
-                session.flush()
+                session.flush()  # ensure dokument.PrimaryDokumentDataInfoID is set before inserting DokumentData
 
                 _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, dokument_data_info.ID, kladde_blob)
 
