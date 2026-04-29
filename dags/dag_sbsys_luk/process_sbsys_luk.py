@@ -29,7 +29,7 @@ USER_ID = 202653  # User: "Autoafslutsag"
 SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in production, 8 in test
 DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
 DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
-DOKUMENT_DATA_INFO_TYPE_ID = 2 # Data type info 2: "Unspecified"
+DOKUMENT_DATA_INFO_TYPE_ID = 2  # Data type info 2: "Unspecified"
 
 
 def _get_dokument_data_type(fileExtension: str) -> int:
@@ -57,10 +57,10 @@ def _get_dokument_data_type(fileExtension: str) -> int:
         ".avi": 8,  # Video
         ".mp3": 9,  # Audio
         ".wav": 9,  # Audio
-        ".html": 10, # HTML Document
+        ".html": 10,  # HTML Document
         ".htm": 10,  # HTML Document
-        ".msg": 11, # Email
-        ".eml": 11, # Email
+        ".msg": 11,  # Email
+        ".eml": 11,  # Email
         # Add more mappings as necessary
     }
     return extension_mapping.get(fileExtension.lower(), 0)  # Default to 'Ukendt' (0) if extension is not recognized
@@ -165,19 +165,18 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
             .filter(
                 Sag.SagsStatus.has(Sagsstatus.Navn.in_(required_sagsstatus)),
                 Sag.SkabelonID.notin_(ignore_sagsskabelon_ids),
-                # Sag.SagsPart.has(
-                #     and_(
-                #         Sagspart.PartType == 1,
-                #         Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),
-                #     )
-                # ),
+                Sag.SagsPart.has(
+                    and_(
+                        Sagspart.PartType == 1,
+                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),
+                    )
+                ),
             )
         )
 
         # Apply additional filter for required SkabelonIDs if provided
-        # if required_sagsskabelon_ids:
-        #     query = query.filter(Sag.SkabelonID.in_(required_sagsskabelon_ids))
-        query = query.filter(Sag.Nummer == "01.01.00-G00-17-26")
+        if required_sagsskabelon_ids:
+            query = query.filter(Sag.SkabelonID.in_(required_sagsskabelon_ids))
 
         sager_to_close = query.all()
         logger.info(f"Found {len(sager_to_close)} cases to close based on the specified criteria.")
@@ -229,7 +228,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     OprettetAfID=USER_ID,
                     Oprettet=datetime.now(),
                     PostlisteTitel=kladde.Navn,
-                    PrimaryDokumentDataInfoID =None  # Will be set after DokumentDataInfo is created
+                    PrimaryDokumentDataInfoID=None  # Will be set after DokumentDataInfo is created
                 )
                 session.add(dokument)
                 session.flush()
