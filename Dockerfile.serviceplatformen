@@ -1,7 +1,8 @@
-FROM apache/airflow:2.11.0
+FROM python:3.10-slim
 
 USER root
 
+# Install dependencies and .NET 9 runtime
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
@@ -12,7 +13,6 @@ RUN mkdir -p /etc/apt/keyrings \
  && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
     | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
 
-# ✅ Debian 11 repo
 RUN echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] \
     https://packages.microsoft.com/debian/11/prod bullseye main" \
     > /etc/apt/sources.list.d/microsoft-prod.list
@@ -23,10 +23,17 @@ RUN apt-get update \
 
 RUN dotnet --list-runtimes
 
+# Install Python requirements if needed
+COPY requirements-serviceplatformen.txt /requirements-serviceplatformen.txt
+RUN pip install --no-cache-dir -r /requirements-serviceplatformen.txt
+
+# Copy certs (adjust path as needed)
 COPY ["dags/dag_serviceplatformen_test/certs/CA-Den Danske Stat OCES rod-CA.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-rod-CA.crt"]
 RUN update-ca-certificates
 
-USER airflow
+# Copy your app/code as needed
+COPY dags/dag_serviceplatformen_test /app
 
-COPY requirements.txt /requirements.txt
-RUN pip install --no-cache-dir -r /requirements.txt
+WORKDIR /app
+
+CMD ["python3"]
