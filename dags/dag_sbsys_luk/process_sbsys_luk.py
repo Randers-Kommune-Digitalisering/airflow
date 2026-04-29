@@ -130,15 +130,15 @@ def _delete_kladde_data(session: Session, shard_db: str, kladde_id: int) -> int:
     return result.rowcount or 0
 
 
-def _insert_dokument_data(session: Session, shard_db: str, dokument_id: int, data: bytes) -> None:
+def _insert_dokument_data(session: Session, shard_db: str, dokument_id: int, dokument_data_info_id: int, data: bytes) -> None:
     session.execute(
         text(
             f"""
-            INSERT INTO [{shard_db}].dbo.DokumentData (DokumentID, Data)
-            VALUES (:dokument_id, :data)
+            INSERT INTO [{shard_db}].dbo.DokumentData (DokumentID, DokumentDataInfoID, Data)
+            VALUES (:dokument_id, :dokument_data_info_id, :data)
             """
         ),
-        {"dokument_id": dokument_id, "data": data},
+        {"dokument_id": dokument_id, "dokument_data_info_id": dokument_data_info_id, "data": data},
     )
 
 
@@ -259,7 +259,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                 session.add(dokument)
                 session.flush()
 
-                _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, kladde_blob)
+                _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, dokument_data_info.ID, kladde_blob)
 
                 kladde.IsArchived = 1
                 session.add(kladde)
