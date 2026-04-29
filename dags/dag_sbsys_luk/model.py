@@ -132,6 +132,8 @@ class Kladde(Base):
     Navn = Column(Unicode(200, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
     Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
     IsArchived = Column(BIT, nullable=False)
+    FileName = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    FileExtension = Column(Unicode(50, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
 
     KladdeRegistrering = relationship('KladdeRegistrering', uselist=False, back_populates='Kladde')
     KladdeData = relationship('KladdeData', uselist=False, back_populates='Kladde')
@@ -204,9 +206,12 @@ class Dokument(Base):
     DokumentType = Column(Integer, nullable=True)
     OprettetAfID = Column(Integer, nullable=False)
     Oprettet = Column(DateTime, nullable=False)
+    PostlisteTitel = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    PrimaryDokumentDataInfoID = Column(Integer, nullable=True)
 
     DokumentRegistrering = relationship('DokumentRegistrering', uselist=False, back_populates='Dokument')
     DokumentData = relationship('DokumentData', uselist=False, back_populates='Dokument')
+    DokumentDataInfo = relationship('DokumentDataInfo', uselist=False, back_populates='Dokument')
 
 
 class DokumentData(Base):
@@ -222,3 +227,22 @@ class DokumentData(Base):
     Data = Column(LargeBinary, nullable=True)
 
     Dokument = relationship('Dokument', uselist=False, back_populates='DokumentData')
+
+
+class DokumentDataInfo(Base):
+    __tablename__ = 'DokumentDataInfo'
+    __table_args__ = (
+        ForeignKeyConstraint(['DokumentID'], [f'SbsysNet{ENV}.dbo.Dokument.ID'], name='DokumentDataInfo_Dokument'),
+        PrimaryKeyConstraint('ID', name='PK_DokumentDataInfo'),
+        {"schema": f"SbsysNet{ENV}.dbo"}
+    )
+
+    ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
+    DokumentID = Column(Integer, nullable=False)
+    DokumentDataType = Column(Integer, nullable=False)
+    DokumentDataInfoType = Column(Integer, nullable=False)
+    FileName = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    FileSize = Column(Integer, nullable=False)
+    FileExtension = Column(Unicode(30, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+
+    Dokument = relationship('Dokument', uselist=False, back_populates='DokumentDataInfo')

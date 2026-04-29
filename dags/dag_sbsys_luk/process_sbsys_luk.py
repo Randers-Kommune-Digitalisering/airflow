@@ -13,6 +13,7 @@ from dag_sbsys_luk.model import (
     CivilstandOpslag,
     Dokument,
     DokumentRegistrering,
+    DokumentDataInfo,
     KladdeRegistrering,
     Person,
     Sag,
@@ -28,6 +29,7 @@ USER_ID = 202653  # User: "Autoafslutsag"
 SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in production, 8 in test
 DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
 DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
+DOKUMENT_DATA_TYPE_ID = 2 # Data type 2: "Unspecified"
 
 
 def _iter_dokument_shard_dbs(session: Session) -> list[str]:
@@ -191,7 +193,9 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     DokumentArtID=DOKUMENT_ART_ID,
                     DokumentType=DOKUMENT_TYPE_ID,
                     OprettetAfID=USER_ID,
-                    Oprettet=datetime.now()
+                    Oprettet=datetime.now(),
+                    PostlisteTitel=kladde.Navn,
+                    PrimaryDokumentDataInfoID =None  # Will be set after DokumentDataInfo is created
                 )
                 session.add(dokument)
                 session.flush()
@@ -205,6 +209,20 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     RegistreretAfID=USER_ID
                 )
                 session.add(dokument_reg)
+
+                dokument_data_info = DokumentDataInfo(
+                    DokumentID=dokument.ID,
+                    DokumentDataType=DOKUMENT_DATA_TYPE_ID,
+                    DokumentDataInfoType=DOKUMENT_DATA_TYPE_ID,
+                    FileName=kladde.FileName,
+                    FileExtension=kladde.FileExtension,
+                    FileSize=len(kladde_blob) if kladde_blob else 0,
+                )
+                session.add(dokument_data_info)
+                session.flush()
+
+                dokument.PrimaryDokumentDataInfoID = dokument_data_info.ID
+                session.add(dokument)
                 session.flush()
 
                 _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, kladde_blob)
