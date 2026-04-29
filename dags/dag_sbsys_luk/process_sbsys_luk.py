@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, text  # , or_
 from sqlalchemy.orm import selectinload
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
+from airflow.models import Variable
 
 from dag_sbsys_luk.model import (
     CivilstandOpslag,
@@ -21,18 +22,21 @@ from dag_sbsys_luk.model import (
 )
 
 logger = logging.getLogger(__name__)
+ENV = "Test" if Variable.get("SBSYS_LUK_TEST_ENV", default_var="False").lower() == "true" else "Drift"
 
-USER_ID = 9999  # Placeholder for the user ID performing the closure
-SAG_STATUS_CLOSED_PROD = 5
+USER_ID = 202653  # User: "Autoafslutsag"
+SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in production, 8 in test
+DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
+DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
 
 
 def _iter_dokument_shard_dbs(session: Session) -> list[str]:
     return session.execute(
         text(
-            """
+            f"""
             SELECT name
             FROM sys.databases
-            WHERE name LIKE 'SbsysNetDriftDokument[0-9][0-9][0-9][0-9]'
+            WHERE name LIKE 'SbsysNet{ENV}Dokument[0-9][0-9][0-9][0-9]'
             ORDER BY name
             """
         )
@@ -42,10 +46,10 @@ def _iter_dokument_shard_dbs(session: Session) -> list[str]:
 def _iter_kladde_shard_dbs(session: Session) -> list[str]:
     return session.execute(
         text(
-            """
+            f"""
             SELECT name
             FROM sys.databases
-            WHERE name LIKE 'SbsysNetDriftKladde[0-9][0-9][0-9][0-9]'
+            WHERE name LIKE 'SbsysNet{ENV}Kladde[0-9][0-9][0-9][0-9]'
             ORDER BY name
             """
         )
@@ -106,7 +110,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
     """
     Fetch and close SBSYS cases based on specific criteria using SQL.
     """
-    hook = MsSqlHook(mssql_conn_id="sbsys_luk_prod")
+    hook = MsSqlHook(mssql_conn_id=f"sbsys_luk_{ENV}")
     engine = hook.get_sqlalchemy_engine()
 
     with Session(engine) as session:
@@ -125,18 +129,19 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
             .filter(
                 Sag.SagsStatus.has(Sagsstatus.Navn.in_(required_sagsstatus)),
                 Sag.SkabelonID.notin_(ignore_sagsskabelon_ids),
-                Sag.SagsPart.has(
-                    and_(
-                        Sagspart.PartType == 1,
-                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),
-                    )
-                ),
+                # Sag.SagsPart.has(
+                #     and_(
+                #         Sagspart.PartType == 1,
+                #         Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),
+                #     )
+                # ),
             )
         )
 
         # Apply additional filter for required SkabelonIDs if provided
-        if required_sagsskabelon_ids:
-            query = query.filter(Sag.SkabelonID.in_(required_sagsskabelon_ids))
+        # if required_sagsskabelon_ids:
+        #     query = query.filter(Sag.SkabelonID.in_(required_sagsskabelon_ids))
+        query = query.filter(Sag.Nummer == "01.01.00-G00-17-26")
 
         sager_to_close = query.all()
         logger.info(f"Found {len(sager_to_close)} cases to close based on the specified criteria.")
@@ -183,6 +188,10 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     Navn=kladde.Navn,
                     Beskrivelse=kladde.Beskrivelse,
                     FraKladdeID=kladde.ID,
+                    DokumentArtID=DOKUMENT_ART_ID,
+                    DokumentType=DOKUMENT_TYPE_ID,
+                    OprettetAfID=USER_ID,
+                    Oprettet=datetime.now()
                 )
                 session.add(dokument)
                 session.flush()
@@ -192,12 +201,10 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                     DokumentID=dokument.ID,
                     Navn=kladde_reg.Navn,
                     Beskrivelse=kladde_reg.Beskrivelse,
+                    Registreret=datetime.now(),
+                    RegistreretAfID=USER_ID
                 )
                 session.add(dokument_reg)
-                session.flush()
-
-                # Keep FK pair consistent if the schema expects Dokument -> DokumentRegistrering.
-                dokument.DokumentRegistreringID = dokument_reg.ID
                 session.flush()
 
                 _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, kladde_blob)
@@ -209,7 +216,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                 logger.info(f"Deleted {deleted} KladdeData row(s) for Kladde ID {kladde.ID} from shard {kladde_data_shard_db}")
 
             # Update the case status to 'Lukket'
-            sag.SagsStatusID = SAG_STATUS_CLOSED_PROD
+            sag.SagsStatusID = SAG_STATUS_CLOSED
             sag.LastStatusChange = datetime.now()
             sag.LastStatusChangeComments = "Sagsstatus ændret til 'Lukket' ifm. automatisk sagslukning af robot (Digitalisering)."
             session.add(sag)
