@@ -29,7 +29,41 @@ USER_ID = 202653  # User: "Autoafslutsag"
 SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in production, 8 in test
 DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
 DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
-DOKUMENT_DATA_TYPE_ID = 2 # Data type 2: "Unspecified"
+DOKUMENT_DATA_INFO_TYPE_ID = 2 # Data type info 2: "Unspecified"
+
+
+def _get_dokument_data_type(fileExtension: str) -> int:
+    """
+    Map file extensions to DokumentDataType IDs.
+    Extend this mapping as needed based on actual types used in the system.
+    """
+    extension_mapping = {
+        ".doc": 1,  # Word Document
+        ".docx": 1,  # Word Document
+        ".xls": 2,  # Excel Spreadsheet
+        ".xlsx": 2,  # Excel Spreadsheet
+        ".ppt": 3,  # PowerPoint Presentation
+        ".pptx": 3,  # PowerPoint Presentation
+        ".txt": 4,  # Text Document
+        ".rtf": 5,  # Rich Text Format
+        ".pdf": 6,  # PDF Document
+        ".jpg": 7,  # Image
+        ".jpeg": 7,  # Image
+        ".png": 7,  # Image
+        ".gif": 7,  # Image
+        ".bmp": 7,  # Image
+        ".mov": 8,  # Video
+        ".mp4": 8,  # Video
+        ".avi": 8,  # Video
+        ".mp3": 9,  # Audio
+        ".wav": 9,  # Audio
+        ".html": 10, # HTML Document
+        ".htm": 10,  # HTML Document
+        ".msg": 11, # Email
+        ".eml": 11, # Email
+        # Add more mappings as necessary
+    }
+    return extension_mapping.get(fileExtension.lower(), 0)  # Default to 'Ukendt' (0) if extension is not recognized
 
 
 def _iter_dokument_shard_dbs(session: Session) -> list[str]:
@@ -212,8 +246,8 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
 
                 dokument_data_info = DokumentDataInfo(
                     DokumentID=dokument.ID,
-                    DokumentDataType=DOKUMENT_DATA_TYPE_ID,
-                    DokumentDataInfoType=DOKUMENT_DATA_TYPE_ID,
+                    DokumentDataType=_get_dokument_data_type(kladde.FileExtension),
+                    DokumentDataInfoType=DOKUMENT_DATA_INFO_TYPE_ID,
                     FileName=kladde.FileName,
                     FileExtension=kladde.FileExtension,
                     FileSize=len(kladde_blob) if kladde_blob else 0,
