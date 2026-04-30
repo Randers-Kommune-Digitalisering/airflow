@@ -4,9 +4,10 @@ def test():
         import os
         from pathlib import Path
         import tempfile
-        import subprocess
-
-        print(os.environ["TEST_ENV_VAR"])
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        from cryptography.hazmat.backends import default_backend
+        from cryptography import x509
 
         DAG_DIR = Path(__file__).parent
         certs_dir = DAG_DIR / "certs"
@@ -18,36 +19,37 @@ def test():
 
         private_pem = os.environ["CLIENT_CERT_PRIVATE_KEY"]
         public_pem = os.environ["CLIENT_CERT_PUBLIC_KEY"]
-        print(public_pem)
+
         client_cert_path = None
         if private_pem and public_pem:
-            with tempfile.NamedTemporaryFile("w", delete=False) as pub_file, tempfile.NamedTemporaryFile("w", delete=False) as priv_file, tempfile.NamedTemporaryFile("wb", delete=False) as p12_file:
-                pub_file.write(public_pem)
-                pub_file.flush()
-                priv_file.write(private_pem)
-                priv_file.flush()
-                pub_path = pub_file.name
-                priv_path = priv_file.name
-                client_cert_path = p12_file.name
+            # Load private key
+            private_key = serialization.load_pem_private_key(
+                private_pem.encode("utf-8"),
+                password=None,
+                backend=default_backend()
+            )
+            # Load public certificate
+            cert = x509.load_pem_x509_certificate(
+                public_pem.encode("utf-8"),
+                backend=default_backend()
+            )
+            # No additional cert chain
+            additional_certs = []
 
-            # Use openssl to create .p12 file
-            pfx_password = ""  # No password
-            cmd = [
-                "openssl", "pkcs12", "-export",
-                "-out", client_cert_path,
-                "-inkey", priv_path,
-                "-in", pub_path,
-                "-passout", f"pass:{pfx_password}"
-            ]
-            try:
-                subprocess.check_call(cmd)
-                print(f"Wrote {client_cert_path} from PEM environment variables using openssl.")
-            except Exception as e:
-                print(f"Failed to create .p12 file: {e}")
-                client_cert_path = None
-            finally:
-                os.unlink(pub_path)
-                os.unlink(priv_path)
+            # Create PKCS#12
+            # pfx_password = None  # No password
+            p12_bytes = pkcs12.serialize_key_and_certificates(
+                name=b"client-cert",
+                key=private_key,
+                cert=cert,
+                cas=additional_certs,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            with tempfile.NamedTemporaryFile("wb", delete=False) as p12_file:
+                p12_file.write(p12_bytes)
+                p12_file.flush()
+                client_cert_path = p12_file.name
+            print(f"Wrote {client_cert_path} from PEM environment variables using cryptography.")
         else:
             print("CLIENT_CERT_PRIVATE_KEY or CLIENT_CERT_PUBLIC_KEY environment variable not set. Skipping clientCertPROD.p12 write.")
 
