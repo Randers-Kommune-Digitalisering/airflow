@@ -77,3 +77,22 @@ with DAG(
             )
         ]
     )
+
+with DAG(
+    dag_id="test_kubernetes",
+    start_date=datetime(year=2026, month=4, day=28, tz=timezone("Europe/Copenhagen")),
+    schedule=None,
+    catchup=False,
+    default_args=dag_args,
+    description="Testing kubernetes",
+    tags=["test", "kubernetes"],
+) as dag:
+
+    test_kubernetes = KubernetesPodOperator(
+        task_id="test_kubernetes",
+        name="test_kubernetes",
+        image="python:3.12-alpine",
+        cmds=["python"],
+        arguments=["-c", "print('hello world')"],
+        get_logs=True
+    )
