@@ -2,7 +2,9 @@ from pathlib import Path
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
+
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.kubernetes.secret import Secret
 
 from pendulum import datetime, timezone
 from utils.config import DEFAULT_DAG_ARGS
@@ -60,24 +62,18 @@ with DAG(
         cmds=["python"],
         arguments=["testing.py"],
         get_logs=True,
-        env=[
-            {
-                "name": "CLIENT_CERT_PRIVATE_KEY",
-                "valueFrom": {
-                    "secretKeyRef": {
-                        "name": "cpr-replika-auth",
-                        "key": "client_cert_privat"
-                    }
-                }
-            },
-            {
-                "name": "CLIENT_CERT_PUBLIC_KEY",
-                "valueFrom": {
-                    "secretKeyRef": {
-                        "name": "cpr-replika-auth",
-                        "key": "client_cert_public"
-                    }
-                }
-            }
+        secrets=[
+            Secret(
+                deploy_type="env",
+                deploy_target="CLIENT_CERT_PRIVATE_KEY",
+                secret="cpr-replika-auth",
+                key="client_cert_privat"
+            ),
+            Secret(
+                deploy_type="env",
+                deploy_target="CLIENT_CERT_PUBLIC_KEY",
+                secret="cpr-replika-auth",
+                key="client_cert_public"
+            )
         ]
     )
