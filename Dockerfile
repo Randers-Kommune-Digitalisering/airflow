@@ -12,7 +12,6 @@ RUN mkdir -p /etc/apt/keyrings \
  && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
     | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg
 
-# ✅ Debian 11 repo
 RUN echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] \
     https://packages.microsoft.com/debian/11/prod bullseye main" \
     > /etc/apt/sources.list.d/microsoft-prod.list
@@ -24,6 +23,7 @@ RUN apt-get update \
 RUN dotnet --list-runtimes
 
 COPY ["dags/dag_serviceplatformen_test/certs/CA-Den Danske Stat OCES rod-CA.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-rod-CA.crt"]
+COPY ["dags/dag_serviceplatformen_test/certs/CA-Den Danske Stat OCES udstedende-CA 1.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-udstedende-CA-1.crt"]
 RUN update-ca-certificates
 
 USER airflow
