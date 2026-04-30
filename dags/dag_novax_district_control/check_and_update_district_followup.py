@@ -11,7 +11,7 @@ from dag_novax_district_control.model import Name, NameDetails, Address, PersonD
 logger = logging.getLogger(__name__)
 
 
-def check_and_update_district_followup(dry_run: bool, **context) -> None:
+def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **context) -> None:
     """
     Retrieves and updates user, address and district information
     for any patients with an upcoming due date based on their addresses.
@@ -34,8 +34,14 @@ def check_and_update_district_followup(dry_run: bool, **context) -> None:
     with Session(engine) as session:
         entries: list[Name] = (
             session.query(Name)
-            .join(NameDetails, NameDetails.NAVNID == Name.ID)
-            .filter(NameDetails.TERMIN >= run_dt)
+            .join(
+                NameDetails,
+                NameDetails.NAVNID == Name.ID
+            )
+            .filter(
+                NameDetails.TERMIN >= run_dt,
+                Name.CPR.not_in(ignore_cprs)
+            )
             .order_by(Name.ID)
             .all()
         )
@@ -51,6 +57,7 @@ def check_and_update_district_followup(dry_run: bool, **context) -> None:
         # now_dt and today already computed above
         now_time = now_dt.strftime("%H:%M")
 
+        invalid_entries = []
         for entry in entries:
             # CPR validation
             if not (entry.CPR.isdigit() and len(entry.CPR) == 10):
@@ -58,6 +65,7 @@ def check_and_update_district_followup(dry_run: bool, **context) -> None:
                     "Skipping Name ID %s: invalid CPR value",
                     entry.ID
                 )
+                invalid_entries.append(entry.ID)
                 continue
 
             # CPR lookup: address UUID + protected status
@@ -211,4 +219,8 @@ def check_and_update_district_followup(dry_run: bool, **context) -> None:
             logger.info("Committing changes to the database")
             session.commit()
 
-    logger.info("Successfully completed check_and_update_district_followup")
+    if invalid_entries:
+        logger.error(f"Entries with invalid CPR values that were skipped: {invalid_entries}")
+        raise ValueError(f"Invalid CPR values found for Name IDs: {invalid_entries}")
+    else:
+        logger.info("Successfully completed check_and_update_district_followup")

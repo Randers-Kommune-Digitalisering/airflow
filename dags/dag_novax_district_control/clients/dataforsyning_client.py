@@ -42,9 +42,22 @@ class DataforsyningClient:
         }
 
         url = f"{self.base_url}{endpoint}"
-        results = self.session.get(url, params=params, timeout=10)
-        results.raise_for_status()
-        data = results.json()
+        max_retries = 4
+        for attempt in range(max_retries + 1):
+            try:
+                results = self.session.get(url, params=params, timeout=10)
+                results.raise_for_status()
+                data = results.json()
+            except Exception as e:
+                if attempt == max_retries:
+                    logger.error(
+                        "Dataforsyning lookup for adresse_id=%s failed after %d attempts: %s. Skipping address/district lookup for this user.",
+                        adresse_id,
+                        max_retries + 1,
+                        str(e),
+                    )
+                    return None
+                continue
         if len(data) != 1:
             logger.error(
                 "Dataforsyning lookup for adresse_id=%s returned %s result(s); expected exactly 1. Skipping address/district lookup for this user.",

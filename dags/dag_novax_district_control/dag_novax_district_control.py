@@ -12,6 +12,7 @@ dag_args["retries"] = 0
 
 # DRY_RUN: set to True to log intended updates without making changes, False to perform updates
 DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"
+IGNORE_CPRS = Variable.get("NOVAX_IGNORE_CPRS", default_var="").split(",")
 
 with DAG(
     dag_id="dag_novax_district_control",
@@ -28,6 +29,7 @@ with DAG(
         task_id="check_and_update_district_task",
         python_callable=check_and_update_district,
         op_kwargs={
-            "dry_run": DRY_RUN
+            "dry_run": DRY_RUN,
+            "ignore_cprs": IGNORE_CPRS
         },
     )

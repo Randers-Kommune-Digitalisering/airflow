@@ -15,7 +15,7 @@ from dag_novax_district_control.model import Name, Godkommu, Note, Phone, Person
 logger = logging.getLogger(__name__)
 
 
-def check_and_update_district(dry_run: bool) -> None:
+def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
     """
     Retrieves and updates user, address and district information
     for any new patients based on their addresses.
@@ -36,7 +36,10 @@ def check_and_update_district(dry_run: bool) -> None:
     with Session(engine) as session:
         results = (
             session.query(Name, Godkommu, Note)
-            .join(Godkommu, Godkommu.NAVNID == Name.ID)
+            .join(
+                Godkommu,
+                Godkommu.NAVNID == Name.ID
+            )
             .outerjoin(
                 Note,
                 and_(
@@ -48,7 +51,8 @@ def check_and_update_district(dry_run: bool) -> None:
             .filter(
                 Godkommu.JOURNALDATO >= start_date,
                 Godkommu.JOURNALDATO <= end_date,
-                Godkommu.EMNEBREV.like('%Orientering - Gravid%')
+                Godkommu.EMNEBREV.like('%Orientering - Gravid%'),
+                Name.CPR.not_in(ignore_cprs)
             )
             .order_by(Godkommu.NAVNID, Godkommu.JOURNALDATO.desc(), func.trim(Godkommu.JOURNALTID).desc())
             .all()
@@ -80,6 +84,7 @@ def check_and_update_district(dry_run: bool) -> None:
         sentinel_open_end = datetime(1753, 1, 1)
         sentinel_open_end_date = sentinel_open_end.date()
 
+        invalid_entries = []
         for entry in entries:
             # CPR validation
             if not (entry.CPR.isdigit() and len(entry.CPR) == 10):
@@ -87,6 +92,7 @@ def check_and_update_district(dry_run: bool) -> None:
                     "Skipping Name ID %s: invalid CPR value",
                     entry.ID
                 )
+                invalid_entries.append(entry.ID)
                 continue
 
             # Due date
@@ -289,3 +295,9 @@ def check_and_update_district(dry_run: bool) -> None:
         else:
             logger.info("Committing changes to the database")
             session.commit()
+
+        if invalid_entries:
+            logger.error(f"Entries with invalid CPR values that were skipped: {invalid_entries}")
+            raise ValueError(f"Invalid CPR values found for Name IDs: {invalid_entries}")
+        else:
+            logger.info("Successfully completed check_and_update_district")
