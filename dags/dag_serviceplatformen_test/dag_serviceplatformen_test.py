@@ -56,7 +56,7 @@ with DAG(
 ) as dag:
 
     run_kubernetes = KubernetesPodOperator(
-        task_id="run_kubernetes",
+        task_id="run-kubernetes",
         name="run-testing-py",
         image="ghcr.io/randers-kommune-digitalisering/airflow-serviceplatformen:prod",
         cmds=["python"],
@@ -89,10 +89,14 @@ with DAG(
 ) as dag:
 
     test_kubernetes = KubernetesPodOperator(
-        task_id="test_kubernetes",
-        name="test_kubernetes",
+        task_id="test-kubernetes",
+        name="test-kubernetes",
+        namespace="prod",
         image="python:3.12-alpine",
         cmds=["python"],
         arguments=["-c", "print('hello world')"],
-        get_logs=False
+        in_cluster=True,
+        get_logs=False,
+        is_delete_operator_pod=True,
+        startup_timeout_seconds=60
     )
