@@ -22,11 +22,15 @@ RUN apt-get update \
 
 RUN dotnet --list-runtimes
 
-COPY ["dags/dag_serviceplatformen_test/certs/CA-Den Danske Stat OCES rod-CA.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-rod-CA.crt"]
-COPY ["dags/dag_serviceplatformen_test/certs/CA-Den Danske Stat OCES udstedende-CA 1.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-udstedende-CA-1.crt"]
+COPY ["dags/certs/CA-Den Danske Stat OCES rod-CA.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-rod-CA.crt"]
+COPY ["dags/certs/CA-Den Danske Stat OCES udstedende-CA 1.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-udstedende-CA-1.crt"]
 RUN update-ca-certificates
 
 USER airflow
+
+ENV CLIENT_CERT=
+ENV CVR_NUMBER="29189668"
+ENV CERT_BASE_PATH=/opt/airflow/dags/certs
 
 COPY requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
