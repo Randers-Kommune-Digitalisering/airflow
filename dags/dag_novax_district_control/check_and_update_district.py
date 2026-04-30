@@ -14,6 +14,9 @@ from dag_novax_district_control.model import Name, Godkommu, Note, Phone, Person
 
 logger = logging.getLogger(__name__)
 
+SENTINEL_OPEN_END = datetime(1753, 1, 1)
+SENTINEL_OPEN_END_DATE = SENTINEL_OPEN_END.date()
+
 
 def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
     """
@@ -82,9 +85,6 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 logger.warning(f"No pregnancy note found for Name ID {name_obj.ID} with journal timestamp {godkommu_obj.JOURNALTID}. Skipping entry.")
 
         logger.info(f"Processing {len(entries)} entries for date range {start_date} to {end_date}")
-
-        sentinel_open_end = datetime(1753, 1, 1)
-        sentinel_open_end_date = sentinel_open_end.date()
 
         invalid_entries = []
         for entry in entries:
@@ -180,7 +180,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
                 # Reset district to empty if address cannot be found
                 for d in entry.person_districts:
-                    if d.DATETO is None or d.DATETO == sentinel_open_end_date:
+                    if d.DATETO is None or d.DATETO == SENTINEL_OPEN_END_DATE:
                         d.DATETO = now_dt
                         d.TS_UPDD = now_dt
                         d.TS_UPDT = now_time
@@ -188,10 +188,6 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 if entry.DISTRIKT != "":
                     entry.DISTRIKT = ""
                     is_new_district = True
-
-                if entry.details.TS_KOMID != "":
-                    entry.details.TS_KOMID = ""
-                    is_new_district_details = True
 
                 if is_new_district or is_new_district_details:
                     logger.info(
@@ -217,7 +213,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         (entry_date is not None and a.DATO_FRA is not None and a.DATO_FRA <= entry_date) and
                         (
                             a.DATO_TIL is None or
-                            a.DATO_TIL == sentinel_open_end_date or
+                            a.DATO_TIL == SENTINEL_OPEN_END_DATE or
                             (entry_date is not None and a.DATO_TIL > entry_date)
                         )
                         for a in entry.addresses
@@ -225,7 +221,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
                     if not has_valid_address:
                         for a in entry.addresses:
-                            if a.DATO_TIL is None or a.DATO_TIL == sentinel_open_end_date:
+                            if a.DATO_TIL is None or a.DATO_TIL == SENTINEL_OPEN_END_DATE:
                                 a.DATO_TIL = entry.date
                                 a.TS_UPDD = now_dt
                                 a.TS_UPDT = now_time
@@ -240,7 +236,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                             STEDNAVN=address_info['town_name'],
                             NR_LT_ETAGE=address_info['number_floor'],
                             DATO_FRA=entry.date,
-                            DATO_TIL=sentinel_open_end,
+                            DATO_TIL=SENTINEL_OPEN_END_DATE,
                             TS_DATE=now_dt,
                             TS_TIME=now_time,
                             TS_UPDD=now_dt,
@@ -265,7 +261,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         (entry_date is not None and d.DATEFROM is not None and d.DATEFROM <= entry_date) and
                         (
                             d.DATETO is None or
-                            d.DATETO == sentinel_open_end_date or
+                            d.DATETO == SENTINEL_OPEN_END_DATE or
                             (entry_date is not None and d.DATETO > entry_date)
                         )
                         for d in entry.person_districts
@@ -273,7 +269,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
                     if not has_valid_person_district:
                         for d in entry.person_districts:
-                            if d.DATETO is None or d.DATETO == sentinel_open_end_date:
+                            if d.DATETO is None or d.DATETO == SENTINEL_OPEN_END_DATE:
                                 d.DATETO = entry.date
                                 d.TS_UPDD = now_dt
                                 d.TS_UPDT = now_time
@@ -282,7 +278,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                             NAVNID=entry.ID,
                             DISTRICT=new_district,
                             DATEFROM=entry.date,
-                            DATETO=sentinel_open_end,
+                            DATETO=SENTINEL_OPEN_END_DATE,
                             TS_DATE=now_dt,
                             TS_TIME=now_time,
                             TS_UPDD=now_dt,

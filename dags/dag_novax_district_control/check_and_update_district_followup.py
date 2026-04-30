@@ -10,6 +10,9 @@ from dag_novax_district_control.model import Name, NameDetails, Address, PersonD
 
 logger = logging.getLogger(__name__)
 
+SENTINEL_OPEN_END = datetime(1753, 1, 1)
+SENTINEL_OPEN_END_DATE = SENTINEL_OPEN_END.date()
+
 
 def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **context) -> None:
     """
@@ -53,9 +56,6 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
         logger.info("Processing %s patients for district/address follow-up", len(entries))
 
-        sentinel_open_end = datetime(1753, 1, 1)
-        sentinel_open_end_date = sentinel_open_end.date()
-
         invalid_entries = []
         for entry in entries:
             # CPR validation
@@ -95,7 +95,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
                 # Reset district to empty if address cannot be found
                 for d in entry.person_districts:
-                    if d.DATETO is None or d.DATETO == sentinel_open_end_date:
+                    if d.DATETO is None or d.DATETO == SENTINEL_OPEN_END_DATE:
                         d.DATETO = now_dt
                         d.TS_UPDD = now_dt
                         d.TS_UPDT = now_time
@@ -103,10 +103,6 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                 if entry.DISTRIKT != "":
                     entry.DISTRIKT = ""
                     is_new_district = True
-
-                if entry.details.TS_KOMID != "":
-                    entry.details.TS_KOMID = ""
-                    is_new_kommunekode_details = True
 
                 if is_new_district or is_new_kommunekode_details:
                     logger.info(
@@ -131,7 +127,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                         (a.DATO_FRA is not None and a.DATO_FRA <= today) and
                         (
                             a.DATO_TIL is None or
-                            a.DATO_TIL == sentinel_open_end_date or
+                            a.DATO_TIL == SENTINEL_OPEN_END_DATE or
                             a.DATO_TIL > today
                         )
                         for a in entry.addresses
@@ -139,7 +135,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
                     if not has_valid_address:
                         for a in entry.addresses:
-                            if a.DATO_TIL is None or a.DATO_TIL == sentinel_open_end_date:
+                            if a.DATO_TIL is None or a.DATO_TIL == SENTINEL_OPEN_END_DATE:
                                 a.DATO_TIL = now_dt
                                 a.TS_UPDD = now_dt
                                 a.TS_UPDT = now_time
@@ -154,7 +150,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                             STEDNAVN=address_info["town_name"],
                             NR_LT_ETAGE=address_info["number_floor"],
                             DATO_FRA=now_dt,
-                            DATO_TIL=sentinel_open_end,
+                            DATO_TIL=SENTINEL_OPEN_END_DATE,
                             TS_DATE=now_dt,
                             TS_TIME=now_time,
                             TS_UPDD=now_dt,
@@ -194,7 +190,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                         (d.DATEFROM is not None and d.DATEFROM <= today) and
                         (
                             d.DATETO is None or
-                            d.DATETO == sentinel_open_end_date or
+                            d.DATETO == SENTINEL_OPEN_END_DATE or
                             d.DATETO > today
                         )
                         for d in entry.person_districts
@@ -202,18 +198,16 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
                     if not has_valid_person_district:
                         for d in entry.person_districts:
-                            if d.DATETO is None or d.DATETO == sentinel_open_end_date:
+                            if d.DATETO is None or d.DATETO == SENTINEL_OPEN_END_DATE:
                                 d.DATETO = now_dt
                                 d.TS_UPDD = now_dt
                                 d.TS_UPDT = now_time
-                                logger.info(
-                                    f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {today}"
-                                )
+                                logger.info(f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {today}")
                         new_person_district = PersonDistrict(
                             NAVNID=entry.ID,
                             DISTRICT=new_district,
                             DATEFROM=now_dt,
-                            DATETO=sentinel_open_end,
+                            DATETO=SENTINEL_OPEN_END_DATE,
                             TS_DATE=now_dt,
                             TS_TIME=now_time,
                             TS_UPDD=now_dt,
