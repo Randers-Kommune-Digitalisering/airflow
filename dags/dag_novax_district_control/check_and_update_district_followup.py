@@ -1,5 +1,5 @@
 import logging
-import datetime
+from datetime import datetime
 from sqlalchemy.orm import Session
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
@@ -16,9 +16,10 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
     Retrieves and updates user, address and district information
     for any patients with an upcoming due date based on their addresses.
     """
-    now_dt = datetime.datetime.now()
+    now_dt = datetime.now()
+    now_time = now_dt.strftime("%H:%M")
     today = now_dt.date()
-    run_dt = datetime.datetime.combine(today, datetime.time.min)
+    run_dt = datetime.combine(today, datetime.min.time())
     logger.info("Querying all upcoming due dates from today (TERMIN >= %s)", today)
 
     # Initialize clients
@@ -52,10 +53,8 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
         logger.info("Processing %s patients for district/address follow-up", len(entries))
 
-        sentinel_open_end = datetime.datetime(1753, 1, 1)
+        sentinel_open_end = datetime(1753, 1, 1)
         sentinel_open_end_date = sentinel_open_end.date()
-        # now_dt and today already computed above
-        now_time = now_dt.strftime("%H:%M")
 
         invalid_entries = []
         for entry in entries:
@@ -87,10 +86,32 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
             if address_info is None:
                 logger.warning(
-                    "Skipping address + district lookup for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
+                    "Skipping address lookup and clearing district for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
                     entry.ID,
                     cpr_info["address_uuid"],
                 )
+
+                # Reset district to empty if address cannot be found
+                for d in entry.person_districts:
+                    if d.DATETO is None or d.DATETO == sentinel_open_end_date:
+                        d.DATETO = now_dt
+                        d.TS_UPDD = now_dt
+                        d.TS_UPDT = now_time
+
+                if entry.DISTRIKT != "":
+                    entry.DISTRIKT = ""
+                    is_new_district = True
+
+                if entry.details.TS_KOMID != "":
+                    entry.details.TS_KOMID = ""
+                    is_new_district_details = True
+
+                if is_new_district or is_new_district_details:
+                    logger.info(
+                        "Cleared district for Name ID %s due to missing address",
+                        entry.ID,
+                    )
+
             else:
                 # Address update
                 new_full_address = address_info.get("full_address")
@@ -121,7 +142,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                                 a.TS_UPDD = now_dt
                                 a.TS_UPDT = now_time
                                 logger.info(
-                                    f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {now_dt.date()}"
+                                    f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {today}"
                                 )
                         new_address_entry = Address(
                             NAVNID=entry.ID,
@@ -180,6 +201,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                         )
                         for d in entry.person_districts
                     )
+
                     if not has_valid_person_district:
                         for d in entry.person_districts:
                             if d.DATETO is None or d.DATETO == sentinel_open_end_date:

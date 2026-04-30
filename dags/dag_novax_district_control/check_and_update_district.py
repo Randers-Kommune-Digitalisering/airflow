@@ -20,6 +20,8 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
     Retrieves and updates user, address and district information
     for any new patients based on their addresses.
     """
+    now_dt = datetime.now()
+    now_time = now_dt.strftime("%H:%M")
     # Determine date range for processing
     # Start date is inclusive, end date is exclusive
     start_date, end_date = determine_date_range()
@@ -127,26 +129,26 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         for p in entry.phones:
                             if p.PRIMAER == 1:
                                 p.PRIMAER = 0
-                                p.TS_UPDD = datetime.now()
-                                p.TS_UPDT = datetime.now().strftime("%H:%M")
+                                p.TS_UPDD = now_dt
+                                p.TS_UPDT = now_time
                         secondary_phone.PRIMAER = 1
-                        secondary_phone.TS_UPDD = datetime.now()
-                        secondary_phone.TS_UPDT = datetime.now().strftime("%H:%M")
+                        secondary_phone.TS_UPDD = now_dt
+                        secondary_phone.TS_UPDT = now_time
                         logger.info(f"Updated phone number for Name ID {entry.ID} to {journal_phone} by setting existing secondary phone as primary")
                     else:
                         for p in entry.phones:
                             if p.PRIMAER == 1:
                                 p.PRIMAER = 0
-                                p.TS_UPDD = datetime.now()
-                                p.TS_UPDT = datetime.now().strftime("%H:%M")
+                                p.TS_UPDD = now_dt
+                                p.TS_UPDT = now_time
                         new_phone = Phone(
                             NAVNID=entry.ID,
                             TELEFONNUMMER=journal_phone,
                             PRIMAER=1,
-                            TS_DATE=datetime.now(),
-                            TS_TIME=datetime.now().strftime("%H:%M"),
-                            TS_UPDD=datetime.now(),
-                            TS_UPDT=datetime.now().strftime("%H:%M")
+                            TS_DATE=now_dt,
+                            TS_TIME=now_time,
+                            TS_UPDD=now_dt,
+                            TS_UPDT=now_time
                         )
                         entry.phones.append(new_phone)
                         logger.info(f"Added new phone number for Name ID {entry.ID}: {journal_phone}")
@@ -169,10 +171,32 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
             if address_info is None:
                 logger.warning(
-                    "Skipping address + district lookup for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
+                    "Skipping address lookup and clearing district for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
                     entry.ID,
-                    cpr_info['address_uuid'],
+                    cpr_info["address_uuid"],
                 )
+
+                # Reset district to empty if address cannot be found
+                for d in entry.person_districts:
+                    if d.DATETO is None or d.DATETO == sentinel_open_end_date:
+                        d.DATETO = now_dt
+                        d.TS_UPDD = now_dt
+                        d.TS_UPDT = now_time
+
+                if entry.DISTRIKT != "":
+                    entry.DISTRIKT = ""
+                    is_new_district = True
+
+                if entry.details.TS_KOMID != "":
+                    entry.details.TS_KOMID = ""
+                    is_new_district_details = True
+
+                if is_new_district or is_new_district_details:
+                    logger.info(
+                        "Cleared district for Name ID %s due to missing address",
+                        entry.ID,
+                    )
+
             else:
                 entry_date = entry.date
 
@@ -201,8 +225,8 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         for a in entry.addresses:
                             if a.DATO_TIL is None or a.DATO_TIL == sentinel_open_end_date:
                                 a.DATO_TIL = entry.date
-                                a.TS_UPDD = datetime.now()
-                                a.TS_UPDT = datetime.now().strftime("%H:%M")
+                                a.TS_UPDD = now_dt
+                                a.TS_UPDT = now_time
                                 logger.info(
                                     f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {entry.date}"
                                 )
@@ -215,10 +239,10 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                             NR_LT_ETAGE=address_info['number_floor'],
                             DATO_FRA=entry.date,
                             DATO_TIL=sentinel_open_end,
-                            TS_DATE=datetime.now(),
-                            TS_TIME=datetime.now().strftime("%H:%M"),
-                            TS_UPDD=datetime.now(),
-                            TS_UPDT=datetime.now().strftime("%H:%M")
+                            TS_DATE=now_dt,
+                            TS_TIME=now_time,
+                            TS_UPDD=now_dt,
+                            TS_UPDT=now_time
                         )
                         entry.addresses.append(new_address_entry)
                         logger.info(f"Added new address for Name ID {entry.ID}")
@@ -253,18 +277,18 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         for d in entry.person_districts:
                             if d.DATETO is None or d.DATETO == sentinel_open_end_date:
                                 d.DATETO = entry.date
-                                d.TS_UPDD = datetime.now()
-                                d.TS_UPDT = datetime.now().strftime("%H:%M")
+                                d.TS_UPDD = now_dt
+                                d.TS_UPDT = now_time
                                 logger.info(f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {entry.date}")
                         new_person_district = PersonDistrict(
                             NAVNID=entry.ID,
                             DISTRICT=new_district,
                             DATEFROM=entry.date,
                             DATETO=sentinel_open_end,
-                            TS_DATE=datetime.now(),
-                            TS_TIME=datetime.now().strftime("%H:%M"),
-                            TS_UPDD=datetime.now(),
-                            TS_UPDT=datetime.now().strftime("%H:%M")
+                            TS_DATE=now_dt,
+                            TS_TIME=now_time,
+                            TS_UPDD=now_dt,
+                            TS_UPDT=now_time
                         )
                         entry.person_districts.append(new_person_district)
                         logger.info(f"Added new person district for Name ID {entry.ID}: {new_district}")
@@ -283,12 +307,12 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
 
             if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl]):
-                entry.TS_UPDD = datetime.now()
-                entry.TS_UPDT = datetime.now().strftime("%H:%M")
+                entry.TS_UPDD = now_dt
+                entry.TS_UPDT = now_time
 
             if any([is_due_date_changed, has_changed_protected_status, is_new_district_details]):
-                entry.details.TS_UPDD = datetime.now()
-                entry.details.TS_UPDT = datetime.now().strftime("%H:%M")
+                entry.details.TS_UPDD = now_dt
+                entry.details.TS_UPDT = now_time
 
         if dry_run:
             logger.warning("Dry run enabled - no changes committed to the database")
