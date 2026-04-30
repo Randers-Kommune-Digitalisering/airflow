@@ -7,7 +7,6 @@ def test():
         import subprocess
 
         print(os.environ["TEST_ENV_VAR"])
-        return
 
         DAG_DIR = Path(__file__).parent
         certs_dir = DAG_DIR / "certs"
@@ -19,6 +18,7 @@ def test():
 
         private_pem = os.environ["CLIENT_CERT_PRIVATE_KEY"]
         public_pem = os.environ["CLIENT_CERT_PUBLIC_KEY"]
+        print(public_pem)
         client_cert_path = None
         if private_pem and public_pem:
             with tempfile.NamedTemporaryFile("w", delete=False) as pub_file, tempfile.NamedTemporaryFile("w", delete=False) as priv_file, tempfile.NamedTemporaryFile("wb", delete=False) as p12_file:
