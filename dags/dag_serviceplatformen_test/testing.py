@@ -6,6 +6,9 @@ def test():
         import tempfile
         import subprocess
 
+        print(os.environ["TEST_ENV_VAR"])
+        return
+
         DAG_DIR = Path(__file__).parent
         certs_dir = DAG_DIR / "certs"
         certs_dir.mkdir(parents=True, exist_ok=True)
