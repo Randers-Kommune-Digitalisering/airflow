@@ -65,7 +65,7 @@ class NameDetails(Base):
     NAVNID = Column(CHAR(36), nullable=False, default='')
     TERMIN = Column(DATETIME, nullable=False, default='1753-01-01')
     BESKYTTETADRESSE = Column(SmallInteger, nullable=False, default=0)
-    # KOMMUNE_OPR = Column(CHAR(3))  # Is this the same as TS_KOMID?
+    KOMMUNE_OPR = Column(CHAR(3))  # Same as TS_KOMID
     TS_KOMID = Column(CHAR(3), nullable=False, default='')
     TS_UPDD = Column(DATETIME, nullable=False, default='1753-01-01')
     TS_UPDT = Column(CHAR(5), nullable=False, default='')

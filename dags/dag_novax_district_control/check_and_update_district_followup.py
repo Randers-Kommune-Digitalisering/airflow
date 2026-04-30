@@ -83,6 +83,8 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
             is_new_address_set = False
             is_new_district = False
             is_new_district_details = False
+            is_new_kommunekode = False
+            is_new_kommunekode_details = False
 
             if address_info is None:
                 logger.warning(
@@ -104,9 +106,9 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
                 if entry.details.TS_KOMID != "":
                     entry.details.TS_KOMID = ""
-                    is_new_district_details = True
+                    is_new_kommunekode_details = True
 
-                if is_new_district or is_new_district_details:
+                if is_new_district or is_new_kommunekode_details:
                     logger.info(
                         "Cleared district for Name ID %s due to missing address",
                         entry.ID,
@@ -187,10 +189,6 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                     entry.DISTRIKT = new_district
                     logger.info(f"Updated district for Name ID {entry.ID}")
 
-                    if entry.details.TS_KOMID != new_district:
-                        entry.details.TS_KOMID = new_district
-                        is_new_district_details = True
-
                     has_valid_person_district = any(
                         d.DISTRICT == new_district and
                         (d.DATEFROM is not None and d.DATEFROM <= today) and
@@ -208,6 +206,9 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                                 d.DATETO = now_dt
                                 d.TS_UPDD = now_dt
                                 d.TS_UPDT = now_time
+                                logger.info(
+                                    f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {today}"
+                                )
                         new_person_district = PersonDistrict(
                             NAVNID=entry.ID,
                             DISTRICT=new_district,
@@ -219,6 +220,17 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                             TS_UPDT=now_time,
                         )
                         entry.person_districts.append(new_person_district)
+                        logger.info(f"Added new person district for Name ID {entry.ID}: {new_district}")
+
+                # Kommune update in name and name details
+                if entry.TS_KOMID != "730":
+                    entry.TS_KOMID = "730"
+                    is_new_kommunekode = True
+
+                if entry.details.TS_KOMID != "730" or entry.details.KOMMUNE_OPR != "730":
+                    entry.details.TS_KOMID = "730"
+                    entry.details.KOMMUNE_OPR = "730"
+                    is_new_kommunekode_details = True
 
             # Always update active status
             has_changed_active = False
@@ -227,11 +239,11 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                 has_changed_active = True
                 logger.info(f"Updated active status for Name ID {entry.ID}")
 
-            if any([is_new_district, is_new_address_set, has_changed_active]):
+            if any([is_new_district, is_new_address_set, has_changed_active, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 
-            if any([has_changed_protected_status, is_new_district_details]):
+            if any([has_changed_protected_status, is_new_district_details, is_new_kommunekode_details]):
                 entry.details.TS_UPDD = now_dt
                 entry.details.TS_UPDT = now_time
 

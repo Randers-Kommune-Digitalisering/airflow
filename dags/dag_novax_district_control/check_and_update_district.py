@@ -165,9 +165,11 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
             address_info = dataforsyning_client.get_address_by_id(cpr_info['address_uuid'])
 
             # Address + district updates
-            is_new_address_set = None
-            is_new_district = None
+            is_new_address_set = False
+            is_new_district = False
             is_new_district_details = False
+            is_new_kommunekode = False
+            is_new_kommunekode_details = False
 
             if address_info is None:
                 logger.warning(
@@ -248,19 +250,14 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         logger.info(f"Added new address for Name ID {entry.ID}")
 
                 # District update
-                district = district_db_client.get_district_name_for_point(
+                new_district = district_db_client.get_district_name_for_point(
                     x=address_info['coordinates'][0],
                     y=address_info['coordinates'][1],
                 )
-                new_district = district
+
                 if new_district and new_district != entry.DISTRIKT:
                     is_new_district = True
                     entry.DISTRIKT = new_district
-                    current_ts_komid = entry.details.TS_KOMID
-                    if current_ts_komid != new_district:
-                        entry.details.TS_KOMID = new_district
-                        is_new_district_details = True
-                        logger.info(f"Updated district details for Name ID {entry.ID} to {new_district}")
                     logger.info(f"Updated district for Name ID {entry.ID} to {new_district}")
 
                     has_valid_person_district = any(
@@ -273,6 +270,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         )
                         for d in entry.person_districts
                     )
+
                     if not has_valid_person_district:
                         for d in entry.person_districts:
                             if d.DATETO is None or d.DATETO == sentinel_open_end_date:
@@ -293,6 +291,16 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                         entry.person_districts.append(new_person_district)
                         logger.info(f"Added new person district for Name ID {entry.ID}: {new_district}")
 
+                # Kommune update in name and name details
+                if entry.TS_KOMID != "730":
+                    entry.TS_KOMID = "730"
+                    is_new_kommunekode = True
+
+                if entry.details.TS_KOMID != "730" or entry.details.KOMMUNE_OPR != "730":
+                    entry.details.TS_KOMID = "730"
+                    entry.details.KOMMUNE_OPR = "730"
+                    is_new_kommunekode_details = True
+
             # Always-updates
             has_changed_active = False
             if entry.AKTIV in ("", "0"):
@@ -306,11 +314,11 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 has_changed_ansvarshpl = True
                 logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
 
-            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl]):
+            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 
-            if any([is_due_date_changed, has_changed_protected_status, is_new_district_details]):
+            if any([is_due_date_changed, has_changed_protected_status, is_new_district_details, is_new_kommunekode_details]):
                 entry.details.TS_UPDD = now_dt
                 entry.details.TS_UPDT = now_time
 

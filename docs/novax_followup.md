@@ -15,20 +15,28 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
 - Bestemmer "i dag" ved runtime (lokal dato på den worker, der afvikler tasken).
 - Slår patienter op i Novax DB blandt patienter med tilknyttet `NameDetails` ved at filtrere på terminsdato (`NameDetails.TERMIN`) fra og med i dag (inkl.).
 - For hver patient:
+  - Springer over hvis patientens CPR er angivet i Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste).
   - Validerer CPR-nummer.
   - Slår CPR op for at hente:
     - Adresse UUID (til Dataforsyningen)
     - “beskyttet adresse”-status
   - Opdaterer `NameDetails.BESKYTTETADRESSE` hvis CPR-status er ændret.
   - Slår adressen op i Dataforsyningen på CPR-adresse UUID.
-    - Hvis Dataforsyningen returnerer uventet/ingen data for adressen, logges det, og patientens adresse/distrikt-opdatering springes over.
+    - Hvis Dataforsyningen returnerer uventet/ingen data for adressen, logges det, og patientens distrikt ryddes (se nedenfor).
   - Hvis Dataforsyningen giver en gyldig adresse:
     - Opdaterer `Name.ADRESSE` hvis den fulde adresse er ændret.
     - Sikrer at adressens historik-tabeller holdes konsistente:
       - Eksisterende “åben” adresse-linje lukkes (slutdato sættes til nu), og der oprettes en ny adresse-linje med “åben” slutdato (Novax bruger typisk `1753-01-01` som sentinel for “open end”).
     - Slår distrikt op ud fra koordinater (x/y) via District Map.
     - Opdaterer `Name.DISTRIKT` hvis nyt distrikt kan bestemmes og afviger fra nuværende.
-    - Opdaterer `NameDetails.TS_KOMID` til nyt distrikt, samt vedligeholder historik-tabellen for person-distrikter ved at lukke eksisterende “åben” række og oprette en ny.
+    - Vedligeholder distrikt historik-tabellen i `PERSONDISTRIKT` for person-distrikter ved at lukke eksisterende “åben” række og oprette en ny.
+    - Kommune-ID opdateres i `Name.TS_KOMID` samt `NameDetails.TS_KOMID` og `NameDetails.KOMMUNE_OPR`.
+
+Hvis adressen ikke kan valideres/returneres fra Dataforsyningen, ryddes distrikt for patienten:
+
+- Åben række i `PERSONDISTRIKT` lukkes (slutdato sættes til runtime)
+- `Name.DISTRIKT` sættes til tom streng
+- `NameDetails.TS_KOMID` sættes til tom streng
 
 **Vigtigt: “Always updates” pr. patient**
 
@@ -39,7 +47,10 @@ Uanset om der er detekteret ændringer i adresse/distrikt, udfører jobbet altid
 **Drift / sikkerhed**
 
 - Jobbet kan køres i “dry-run” mode (styres af Airflow-variablen `NOVAX_DRY_RUN`, default `True`). Ved dry-run logges hvilke ændringer der ville blive skrevet, men der commits ikke til databasen.
+- Jobbet kan filtrere specifikke CPR-numre fra via Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste af CPR-numre).
+- Dataforsyning-opslag har retry ved midlertidige fejl (timeouts og 5xx), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
 - Opdateringer sker i én SQLAlchemy-session/transaction. Når `dry_run = False` commits ændringerne samlet til sidst.
+- Hvis der findes patienter med ugyldigt CPR-format (ikke 10 cifre), logges de og tasken fejler til sidst med en fejl (så det ikke bliver en “silent skip”).
 
 **Dataflow:**
 
