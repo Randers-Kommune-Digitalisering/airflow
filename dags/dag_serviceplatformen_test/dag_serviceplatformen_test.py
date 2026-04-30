@@ -61,7 +61,7 @@ with DAG(
         image="ghcr.io/randers-kommune-digitalisering/airflow-serviceplatformen:prod",
         cmds=["python"],
         arguments=["testing.py"],
-        get_logs=True,
+        get_logs=False,
         secrets=[
             Secret(
                 deploy_type="env",
@@ -94,5 +94,5 @@ with DAG(
         image="python:3.12-alpine",
         cmds=["python"],
         arguments=["-c", "print('hello world')"],
-        get_logs=True
+        get_logs=False
     )
