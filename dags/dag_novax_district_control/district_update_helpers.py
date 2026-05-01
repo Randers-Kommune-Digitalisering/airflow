@@ -128,7 +128,7 @@ def update_address_from_dataforsyning(
     :param new_from_dt: Timestamp/date to use as the new row's start.
     :param now_dt: Current timestamp.
     :param now_time: Current time formatted as "HH:MM".
-    :return: True if `entry.ADRESSE` was updated (and possibly history updated), else False.
+    :return: True if address history was updated, else False.
     """
     new_full_address = address_info.get("full_address")
     if new_full_address == str(entry.ADRESSE).strip():
@@ -141,7 +141,7 @@ def update_address_from_dataforsyning(
         str(a.NR_LT_ETAGE).strip().replace(" ", "").replace(".", "") == str(address_info.get("number_floor")).replace(" ", "").replace(".", "")
         and a.VEJKODE == address_info.get("street_code")
         and str(a.STEDNAVN).strip() == address_info.get("town_name")
-        and int(str(a.POSTNR).strip()) == address_info.get("postal_code")
+        and str(a.POSTNR).strip() == str(address_info.get("postal_code"))
         and a.KOMMUNEKODE == address_info.get("municipality_code")
         and (a.DATO_FRA is not None and _coerce_to_datetime(a.DATO_FRA) <= now_dt)
         and (
