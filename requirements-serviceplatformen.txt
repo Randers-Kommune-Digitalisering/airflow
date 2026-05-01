@@ -1,2 +1,0 @@
-cryptography
-kombit-client==1.1.1

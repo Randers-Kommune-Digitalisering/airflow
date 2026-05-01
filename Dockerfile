@@ -30,7 +30,7 @@ USER airflow
 
 ENV CLIENT_CERT=
 ENV CVR_NUMBER="29189668"
-ENV CERT_BASE_PATH=/opt/airflow/dags/certs
+ENV CERT_BASE_PATH=/opt/airflow/dags/repo/dags/certs
 
 COPY requirements.txt /requirements.txt
 RUN pip install --no-cache-dir -r /requirements.txt
