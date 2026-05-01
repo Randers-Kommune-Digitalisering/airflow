@@ -152,7 +152,7 @@ def update_address_from_dataforsyning(
     )
 
     if has_valid_address:
-        return True
+        return False
 
     close_dt = _coerce_to_datetime(close_to_dt)
     for a in entry.addresses:
