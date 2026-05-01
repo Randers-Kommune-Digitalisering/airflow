@@ -135,8 +135,6 @@ def update_address_from_dataforsyning(
         return False
 
     entry.ADRESSE = new_full_address
-    logger.info("Updated address for Name ID %s", entry.ID)
-
     ref_dt = _coerce_to_datetime(reference_date)
 
     has_valid_address = any(
