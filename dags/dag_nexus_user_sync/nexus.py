@@ -14,6 +14,7 @@ class NexusClient:
             raise Exception("NexusClient can only be created once.")
         NexusClient._created = True
         self._base_url: str = hook.get_connection(hook.http_conn_id).host.strip('/')
+        self._logout_url: str = hook.get_connection(hook.http_conn_id).extra_dejson.get("logout_url")
         self._session: ManagedOAuth2Session = self._set_session(hook)
         self._home: dict = self._set_home()
         self._active_org_list: list[dict] = self._fetch_all_active_organisations(delta_orgs=adm_org_dict, supplier_list=supplier_list)
@@ -82,14 +83,14 @@ class NexusClient:
         active_suppliers = [supplier for supplier in all_suppliers_res if supplier.get('active')]
 
         # Build lookups
-        org_to_supplier_lookup: dict = {entry['delta_id']: entry['nexus_id'] for entry in supplier_list}
-        supplier_by_id = {str(supplier['id']): supplier for supplier in active_suppliers}
+        org_to_supplier_lookup: dict = {entry['delta_id'].strip(): entry['nexus_name'].strip() for entry in supplier_list}
+        supplier_by_id = {str(supplier['name']).strip(): supplier for supplier in active_suppliers}
 
         # Add supplier info to the relevant orgs
         for org in relevant_organisations:
             supplier_id = org_to_supplier_lookup.get(org['syncId'])
             if supplier_id:
-                org['supplier'] = supplier_by_id.get(str(supplier_id))
+                org['supplier'] = supplier_by_id.get(str(supplier_id).strip())
 
         return relevant_organisations
 
@@ -97,6 +98,13 @@ class NexusClient:
         res = self._session.get(self._home['_links']['professionalJobs']['href'])
         res.raise_for_status()
         return res.json()
+
+    def logout(self) -> None:
+        """
+        Logs out of the Nexus API session.
+        """
+        res = self._session.get(self._logout_url)
+        res.raise_for_status()
 
     def _fetch_professional(self, primary_identifier: str) -> dict | None:
         """
@@ -107,9 +115,11 @@ class NexusClient:
         res.raise_for_status()
         professionals = res.json()
         if len(professionals) > 1:
-            raise Exception(
-                f"Expected to find exactly one professional with primary identifier: {primary_identifier}, but found {len(professionals)}"
-            )
+            # raise Exception(
+            #     f"Expected to find exactly one professional with primary identifier: {primary_identifier}, but found {len(professionals)}"
+            # )
+            logger.error(f"Expected to find exactly one professional with primary identifier: {primary_identifier}, but found {len(professionals)}")
+            return None
         elif len(professionals) == 0:
             logger.info(f"No professional found with primary identifier: {primary_identifier}")
             return None
@@ -260,7 +270,7 @@ class NexusClient:
 
         current_supplier = professional_config.get('defaultOrganizationSupplier')
         if current_supplier and current_supplier.get('id') == supplier.get('id'):
-            logger.info(f'Professional {employee["user"]} already has correct supplier assigned - not updating')
+            # logger.info(f'Professional {employee["user"]} already has correct supplier assigned - not updating')
             return professional_config
 
         professional_config['defaultOrganizationSupplier'] = supplier
@@ -285,7 +295,7 @@ class NexusClient:
         professional_config = res.json()
 
         if professional_config['professionalJob'] == job_title:
-            logger.info(f'Professional {employee["user"]} already has correct job title assigned - not updating')
+            # logger.info(f'Professional {employee["user"]} already has correct job title assigned - not updating')
             return professional_self
         else:
             professional_config['professionalJob'] = job_title
@@ -294,7 +304,7 @@ class NexusClient:
             logger.info(f"Professional {employee['user']} updated with job title")
             return res.json()
 
-    def _execute_brugerauth(self, employee: dict) -> None:
+    def _execute_brugerauth(self, employee: dict, report_list: list | None = None) -> None:
         """
         Executes the main flow for an employee / professional:
         fetches the professional from Nexus, imports it if it doesn't exist, updates organizations and supplier as needed.
@@ -307,7 +317,9 @@ class NexusClient:
             if external_professional:
                 professional = external_professional
             else:
-                logger.error(f"Failed to import professional, skipping employee {employee['user']} - not handling!")
+                logger.error(f"Failed to import professional, skipping employee {employee['name']} ({employee['user']}) - not handling!")
+                if report_list is not None:
+                    report_list.append(f"{employee['name']} ({employee['user']}) - kunne ikke importeres til Nexus")
                 return
 
         professional_org_list = self._fetch_professional_org_syncIds(professional)
@@ -329,8 +341,8 @@ class NexusClient:
         if len(organisation_ids_to_assign) > 0 or len(organisation_ids_to_remove) > 0:
             self._update_professional_organisations(professional, organisation_ids_to_assign, organisation_ids_to_remove)
             logger.info(f"Professional {employee['user']} updated with organisations")
-        else:
-            logger.info(f"Professional {employee['user']} already has correct organisations assigned - not updating")
+        # else:
+        #     logger.info(f"Professional {employee['user']} already has correct organisations assigned - not updating")
 
         if employee['organizations']:
             current = next((item for item in self._active_org_list if item['syncId'] == employee['organizations'][0]), {})
@@ -340,7 +352,9 @@ class NexusClient:
             if supplier:
                 self._update_professional_supplier(employee=employee, professional=professional, supplier=supplier)
             else:
-                logger.info(f"Top organisation for professional {employee['user']} has no supplier - not updating")
+                logger.warning(f"Top organisation for professional {employee['name']} ({employee['user']})  has no supplier - not updating")
+                if report_list is not None:
+                    report_list.append(f"{employee['name']} ({employee['user']}) - ingen standardleverandør fundet")
 
         if employee['job_title']:
             job_title_obj = next((item for item in self._all_job_titles if item.get('name', '').lower() == employee['job_title'].lower() and item.get('active')), None)
@@ -353,12 +367,12 @@ class NexusClient:
             else:
                 logger.warning(f"Job title '{employee['job_title']}' not found in Nexus - not updating")
 
-        logger.info(f"Professional {employee['user']} updated sucessfully")
+        # logger.info(f"Professional {employee['user']} updated sucessfully")
 
-    def import_to_nexus_and_set_permissions(self, employees_changed_list: list[dict]):
+    def import_to_nexus_and_set_permissions(self, employees_changed_list: list[dict], report_list: list | None = None) -> None:
         """
         Main method to import/update professionals in Nexus and set their permissions based on the employee data from Delta.
         """
         for index, employee in enumerate(employees_changed_list):
-            logger.info(f"Processing employee {employee['user']} - {index + 1}/{len(employees_changed_list)}")
-            self._execute_brugerauth(employee=employee)
+            logger.info(f"Processing employee {employee['name']} ({employee['user']}) - {index + 1}/{len(employees_changed_list)}")
+            self._execute_brugerauth(employee=employee, report_list=report_list)

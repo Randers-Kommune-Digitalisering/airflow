@@ -105,10 +105,12 @@ class DeltaClient:
             uuid, state = instance.get('identity', {}).get('uuid', None), instance.get('state', None)
             if not state or not uuid:
                 raise ValueError(f'Missing state or uuid in employee details response. UUID: {uuid}, state: {state}.')
-            upn, user, cpr, name, org, postion, jobs_add, jobs_remove, aa_orgs_add, aa_orgs_remove = None, None, None, None, None, None, [], [], [], []
+            upn, user, cpr, name, org, postion, jobs_add, jobs_remove, aa_orgs_add, aa_orgs_remove, missing_job_func = None, None, None, None, None, None, [], [], [], [], False
+            has_active_aa, has_job_func = False, False
             for type_ref in instance.get('typeRefs', []) + instance.get('inTypeRefs', []):
                 if type_ref.get('refObjTypeUserKey', '') == 'APOS-Types-AdditionalAssociation':
                     if type_ref.get('targetObject', {}).get('state', '') == 'STATE_ACTIVE':
+                        has_active_aa = True
                         aa_type_refs = type_ref.get('targetObject', {}).get('typeRefs', [])
                         if aa_type_refs:
                             aa_orgs_add.append(aa_type_refs[0].get('targetObject', {}).get('identity', {}).get('uuid', None))
@@ -117,6 +119,7 @@ class DeltaClient:
                         if aa_type_refs:
                             aa_orgs_remove.append(aa_type_refs[0].get('targetObject', {}).get('identity', {}).get('uuid', None))
                 elif type_ref.get('refObjTypeUserKey', '') == 'APOS-Types-Jobfunction':
+                    has_job_func = True
                     if type_ref.get('targetObject', {}).get('state', '') == 'STATE_ACTIVE':
                         jobs_add.append(type_ref.get('targetObject', {}).get('identity', {}).get('userKey', None))
                     elif type_ref.get('targetObject', {}).get('state', '') == 'STATE_INACTIVE':
@@ -141,8 +144,8 @@ class DeltaClient:
                         for att in type_ref.get('targetObject', {}).get('attributes', []):
                             if att.get('userKey', '') == 'APOS-Types-User-Attribute-UserPrincipalName':
                                 upn = att.get('value', None)
-
-            unpacked_details.append({'uuid': uuid, 'state': state, 'user': user, 'upn': upn, 'cpr': cpr, 'name': name, 'position': postion, 'org': org, 'jobs_add': jobs_add, 'jobs_remove': jobs_remove, 'aa_orgs_add': aa_orgs_add, 'aa_orgs_remove': aa_orgs_remove})
+            missing_job_func = has_active_aa and not has_job_func
+            unpacked_details.append({'uuid': uuid, 'state': state, 'user': user, 'upn': upn, 'cpr': cpr, 'name': name, 'position': postion, 'org': org, 'jobs_add': jobs_add, 'jobs_remove': jobs_remove, 'aa_orgs_add': aa_orgs_add, 'aa_orgs_remove': aa_orgs_remove, 'missing_job_func': missing_job_func})
 
         return unpacked_details
 
@@ -266,7 +269,7 @@ class DeltaClient:
         data = res.json()
         return self._unpack_employee_details(employee_details_response=data, requested_uuids=engagement_uuids)
 
-    def get_employment_changes(self) -> list[dict]:
+    def get_employment_changes(self, report_list: list | None = None) -> list[dict]:
         """
         Get employee changes from Delta, filter for changes relevant for Nexus and return relevant details for those changes.
 
@@ -381,14 +384,20 @@ class DeltaClient:
             }
             if len(employee_detail_dict[e]['jobs_add']) == 1 and employee_detail_dict[e]['set_job_title']:
                 employee['job_title'] = employee_detail_dict[e]['jobs_add'][0]
-            employees_to_change.append(employee)
+            if employee_detail_dict[e]['missing_job_func']:
+                logger.error(f"{employee_detail_dict[e]['name']} ({employee_detail_dict[e]['user']}) has active AdditionalAssociation but missing job function. Skipping - not handling!")
+                if report_list is not None:
+                    report_list.append(f"{employee_detail_dict[e]['name']} ({employee_detail_dict[e]['user']}) - Har aktiv supplerende tilknytning men mangler jobfunktion. Delta data fejl for intern vikar. Importeres ikke til Nexus.")
+            else:
+                employees_to_change.append(employee)
 
         # Ensure all employees have both 'user' and 'upn' set to a value
         for emp in employees_to_change[:]:  # shallow copy of list to allow modification while iterating
             if not emp.get('user') or not emp.get('upn'):
                 #  TODO: How to handle employees missing user in Delta (comtains DQ-number and UPN)
                 logger.error(f"Employee missing 'user' or 'upn', skipping employee. Employee details: {emp['name']}. Not handling!")
+                if report_list is not None:
+                    report_list.append(f"{emp['name']} - kunne ikke finde bruger, ikke importeret til Nexus")
                 employees_to_change.remove(emp)
-                # raise ValueError(f"Employee missing 'user' or 'upn': {emp['name']}")
 
         return employees_to_change
