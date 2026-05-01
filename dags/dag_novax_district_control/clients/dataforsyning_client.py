@@ -21,7 +21,7 @@ class DataforsyningClient:
             full_address(str),
             number_floor(str),
             street_code(int),
-            town_name(str|None),
+            town_name(str),
             postal_code(int),
             municipality_code(int),
             coordinates(tuple[float, float])
@@ -92,7 +92,7 @@ class DataforsyningClient:
             "full_address": full_address,
             "number_floor": number_floor,
             "street_code": street_code,
-            "town_name": town_name,  # optional
+            "town_name": town_name or "",  # optional
             "postal_code": postal_code,
             "municipality_code": municipality_code,
             "coordinates": coordinates

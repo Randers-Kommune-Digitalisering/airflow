@@ -140,12 +140,12 @@ def update_address_from_dataforsyning(
     ref_dt = _coerce_to_datetime(reference_date)
 
     has_valid_address = any(
-        a.NR_LT_ETAGE == address_info.get("number_floor")
+        str(a.NR_LT_ETAGE).strip().replace(" ", "").replace(".", "") == str(address_info.get("number_floor")).replace(" ", "").replace(".", "")
         and a.VEJKODE == address_info.get("street_code")
-        and a.STEDNAVN == address_info.get("town_name")
-        and a.POSTNR == address_info.get("postal_code")
+        and str(a.STEDNAVN).strip() == address_info.get("town_name")
+        and int(str(a.POSTNR).strip()) == address_info.get("postal_code")
         and a.KOMMUNEKODE == address_info.get("municipality_code")
-        and (a.DATO_FRA is not None and _coerce_to_datetime(a.DATO_FRA) <= ref_dt)
+        and (a.DATO_FRA is not None and _coerce_to_datetime(a.DATO_FRA) <= now_dt)
         and (
             _is_open_end(a.DATO_TIL)
             or (a.DATO_TIL is not None and _coerce_to_datetime(a.DATO_TIL) > ref_dt)
@@ -164,17 +164,15 @@ def update_address_from_dataforsyning(
             a.TS_UPDT = now_time
             logger.info(
                 "Closed existing address code %s for Name ID %s with end date %s",
-                str(a.VEJKODE).strip(),
-                entry.ID,
-                close_dt,
+                a.VEJKODE, entry.ID, close_dt
             )
 
     from_dt = _coerce_to_datetime(new_from_dt)
     new_address_entry = Address(
         NAVNID=entry.ID,
-        VEJKODE=str(address_info["street_code"]),
-        KOMMUNEKODE=str(address_info["municipality_code"]),
-        POSTNR=str(address_info["postal_code"]),
+        VEJKODE=address_info["street_code"],
+        KOMMUNEKODE=address_info["municipality_code"],
+        POSTNR=address_info["postal_code"],
         STEDNAVN=address_info["town_name"],
         NR_LT_ETAGE=address_info["number_floor"],
         DATO_FRA=from_dt,
@@ -227,7 +225,7 @@ def update_district_from_coordinates(
     ref_dt = _coerce_to_datetime(reference_date)
 
     has_valid_person_district = any(
-        str(d.DISTRICT).strip() == str(new_district).strip()
+        str(d.DISTRICT).strip() == new_district
         and (d.DATEFROM is not None and _coerce_to_datetime(d.DATEFROM) <= ref_dt)
         and (
             _is_open_end(d.DATETO)
@@ -284,11 +282,11 @@ def update_kommunekode(
     is_new_kommunekode = False
     is_new_kommunekode_details = False
 
-    if str(entry.TS_KOMID).strip() != kommune_code:
+    if entry.TS_KOMID != kommune_code:
         entry.TS_KOMID = kommune_code
         is_new_kommunekode = True
 
-    if str(entry.details.TS_KOMID).strip() != kommune_code or str(entry.details.KOMMUNE_OPR).strip() != kommune_code:
+    if entry.details.TS_KOMID != kommune_code or entry.details.KOMMUNE_OPR != kommune_code:
         entry.details.TS_KOMID = kommune_code
         entry.details.KOMMUNE_OPR = kommune_code
         is_new_kommunekode_details = True
