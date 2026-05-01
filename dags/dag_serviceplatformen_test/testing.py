@@ -3,25 +3,29 @@ def test():
 
     import os
 
-    cert_dirs = [
-        "/opt/airflow/dags/certs",
-        "/opt/airflow/certs",
-        "/opt/airflow/dags/dag_serviceplatformen_test/certs",
-        "/tmp/certs"
-    ]
-    found = False
-    for cert_dir in cert_dirs:
-        print(f"[CHECK] Listing files in: {cert_dir}")
-        if os.path.isdir(cert_dir):
-            found = True
-            files = os.listdir(cert_dir)
-            for f in files:
-                print(f"  - {f}")
-        else:
-            print("(directory does not exist)")
-    if not found:
-        print("[CHECK] No certs directory found in common locations.\n"
-              "Try placing your certs in one of these paths or check your DAGs mount configuration.")
+    # List current working directory
+    cwd = os.getcwd()
+    print(f"[CHECK] Current working directory: {cwd}")
+    try:
+        files = os.listdir(cwd)
+        print("[CHECK] Files in current directory:")
+        for f in files:
+            print(f"  - {f}")
+    except Exception as e:
+        print(f"[CHECK] Could not list files in current directory: {e}")
+
+    # Go to parent and list directories
+    parent = os.path.dirname(cwd)
+    print(f"[CHECK] Parent directory: {parent}")
+    try:
+        entries = os.listdir(parent)
+        print("[CHECK] Directories in parent directory:")
+        for entry in entries:
+            full_path = os.path.join(parent, entry)
+            if os.path.isdir(full_path):
+                print(f"  - {entry}/")
+    except Exception as e:
+        print(f"[CHECK] Could not list parent directory: {e}")
 
     with TempClientCert() as client_cert_path:
         print(f"Client certificate .p12 file created at: {client_cert_path}")
