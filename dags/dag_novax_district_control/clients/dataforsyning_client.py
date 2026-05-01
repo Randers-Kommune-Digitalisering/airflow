@@ -20,10 +20,10 @@ class DataforsyningClient:
         :return: A dictionary containing:
             full_address(str),
             number_floor(str),
-            street_code(int),
+            street_code(str),
             town_name(str),
-            postal_code(int),
-            municipality_code(int),
+            postal_code(str),
+            municipality_code(str),
             coordinates(tuple[float, float])
             OR None if the lookup returns an unexpected number of results.
         """
