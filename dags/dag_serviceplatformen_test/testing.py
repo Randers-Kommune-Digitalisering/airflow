@@ -3,29 +3,15 @@ def test():
 
     import os
 
-    # List current working directory
-    cwd = os.getcwd()
-    print(f"[CHECK] Current working directory: {cwd}")
-    try:
-        files = os.listdir(cwd)
-        print("[CHECK] Files in current directory:")
-        for f in files:
-            print(f"  - {f}")
-    except Exception as e:
-        print(f"[CHECK] Could not list files in current directory: {e}")
-
-    # Go to parent and list directories
-    parent = os.path.dirname(cwd)
-    print(f"[CHECK] Parent directory: {parent}")
-    try:
-        entries = os.listdir(parent)
-        print("[CHECK] Directories in parent directory:")
-        for entry in entries:
-            full_path = os.path.join(parent, entry)
-            if os.path.isdir(full_path):
-                print(f"  - {entry}/")
-    except Exception as e:
-        print(f"[CHECK] Could not list parent directory: {e}")
+    # List contents of /opt/airflow/dags and /opt/airflow/dags/certs
+    for path in ["/opt/airflow/dags", "/opt/airflow/dags/certs"]:
+        print(f"[CHECK] Listing files in: {path}")
+        try:
+            files = os.listdir(path)
+            for f in files:
+                print(f"  - {f}")
+        except Exception as e:
+            print(f"  (could not list files: {e})")
 
     with TempClientCert() as client_cert_path:
         print(f"Client certificate .p12 file created at: {client_cert_path}")
