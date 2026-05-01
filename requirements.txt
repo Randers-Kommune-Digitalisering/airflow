@@ -9,4 +9,3 @@ geoalchemy2==0.18.1
 shapely==2.1.0
 rk-digi==2.1.0
 kombit-client==1.1.1
-apache-airflow-providers-cncf-kubernetes>=9.0.0
