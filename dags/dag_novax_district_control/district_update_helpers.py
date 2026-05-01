@@ -123,7 +123,7 @@ def update_address_from_dataforsyning(
     :param entry: Novax `Name` ORM object with joined `addresses`.
     :param address_info: Dataforsyning mapping (expects keys like `full_address`,
         `street_code`, `municipality_code`, `postal_code`, `town_name`, `number_floor`).
-    :param reference_date: Date to validate coverage against.
+    :param reference_date: Date to validate against end date of existing address rows.
     :param close_to_dt: Timestamp/date to use when closing open-ended rows.
     :param new_from_dt: Timestamp/date to use as the new row's start.
     :param now_dt: Current timestamp.
