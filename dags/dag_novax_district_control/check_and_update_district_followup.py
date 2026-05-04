@@ -6,12 +6,18 @@ from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
 from dag_novax_district_control.clients.district_map_client import DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
-from dag_novax_district_control.model import Name, NameDetails, Address, PersonDistrict, Remind
+from dag_novax_district_control.model import Name, NameDetails, Remind
+from dag_novax_district_control.district_update_helpers import (
+    clear_district_due_to_missing_address,
+    ensure_active,
+    is_valid_cpr,
+    update_address_from_dataforsyning,
+    update_district_from_coordinates,
+    update_kommunekode,
+    update_protected_address_status,
+)
 
 logger = logging.getLogger(__name__)
-
-SENTINEL_OPEN_END = datetime(1753, 1, 1)
-SENTINEL_OPEN_END_DATE = SENTINEL_OPEN_END.date()
 
 
 def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **context) -> None:
@@ -59,7 +65,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
         invalid_entries = []
         for entry in entries:
             # CPR validation
-            if not (entry.CPR.isdigit() and len(entry.CPR) == 10):
+            if not is_valid_cpr(entry.CPR):
                 logger.warning(
                     "Skipping Name ID %s: invalid CPR value",
                     entry.ID
@@ -70,12 +76,10 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
             # CPR lookup: address UUID + protected status
             cpr_info = cpr_client.get_address_uuid_and_protected_status(entry.CPR)
 
-            has_changed_protected_status = False
-            prev_protected = bool(entry.details.BESKYTTETADRESSE)
-            if cpr_info["is_protected_address"] != prev_protected:
-                entry.details.BESKYTTETADRESSE = int(cpr_info["is_protected_address"])
-                has_changed_protected_status = True
-                logger.info(f"Updated protected address status for Name ID {entry.ID}")
+            has_changed_protected_status = update_protected_address_status(
+                entry=entry,
+                is_protected_address=bool(cpr_info["is_protected_address"]),
+            )
 
             address_info = dataforsyning_client.get_address_by_id(cpr_info["address_uuid"])
 
@@ -93,73 +97,26 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                     cpr_info["address_uuid"],
                 )
 
-                # Reset district to empty if address cannot be found
-                for d in entry.person_districts:
-                    if d.DATETO is None or d.DATETO == SENTINEL_OPEN_END_DATE:
-                        d.DATETO = now_dt
-                        d.TS_UPDD = now_dt
-                        d.TS_UPDT = now_time
-
-                if entry.DISTRIKT != "":
-                    entry.DISTRIKT = ""
-                    is_new_district = True
-
-                if is_new_district or is_new_kommunekode_details:
-                    logger.info(
-                        "Cleared district for Name ID %s due to missing address",
-                        entry.ID,
-                    )
+                is_new_district = clear_district_due_to_missing_address(
+                    entry=entry,
+                    now_dt=now_dt,
+                    now_time=now_time,
+                )
 
             else:
                 # Address update
                 new_full_address = address_info.get("full_address")
-                if new_full_address != entry.ADRESSE:
-                    is_new_address_set = True
-                    entry.ADRESSE = new_full_address
-                    logger.info(f"Updated address for Name ID {entry.ID}")
+                is_new_address_set = update_address_from_dataforsyning(
+                    entry=entry,
+                    address_info=address_info,
+                    reference_date=today,
+                    close_to_dt=now_dt,
+                    new_from_dt=now_dt,
+                    now_dt=now_dt,
+                    now_time=now_time,
+                )
 
-                    has_valid_address = any(
-                        a.NR_LT_ETAGE == address_info.get("number_floor") and
-                        a.VEJKODE == address_info.get("street_code") and
-                        a.STEDNAVN == address_info.get("town_name") and
-                        a.POSTNR == address_info.get("postal_code") and
-                        a.KOMMUNEKODE == address_info.get("municipality_code") and
-                        (a.DATO_FRA is not None and a.DATO_FRA <= today) and
-                        (
-                            a.DATO_TIL is None or
-                            a.DATO_TIL == SENTINEL_OPEN_END_DATE or
-                            a.DATO_TIL > today
-                        )
-                        for a in entry.addresses
-                    )
-
-                    if not has_valid_address:
-                        for a in entry.addresses:
-                            if a.DATO_TIL is None or a.DATO_TIL == SENTINEL_OPEN_END_DATE:
-                                a.DATO_TIL = now_dt
-                                a.TS_UPDD = now_dt
-                                a.TS_UPDT = now_time
-                                logger.info(
-                                    f"Closed existing address {a.VEJKODE} {a.NR_LT_ETAGE} for Name ID {entry.ID} with end date {today}"
-                                )
-                        new_address_entry = Address(
-                            NAVNID=entry.ID,
-                            VEJKODE=str(address_info["street_code"]),
-                            KOMMUNEKODE=str(address_info["municipality_code"]),
-                            POSTNR=str(address_info["postal_code"]),
-                            STEDNAVN=address_info["town_name"],
-                            NR_LT_ETAGE=address_info["number_floor"],
-                            DATO_FRA=now_dt,
-                            DATO_TIL=SENTINEL_OPEN_END_DATE,
-                            TS_DATE=now_dt,
-                            TS_TIME=now_time,
-                            TS_UPDD=now_dt,
-                            TS_UPDT=now_time,
-                        )
-                        entry.addresses.append(new_address_entry)
-                        logger.info(f"Added new address for Name ID {entry.ID}")
-
-                    # Notify ansvarShpl if address has changed
+                if is_new_address_set:
                     new_reminder = Remind(
                         NAVNID=entry.ID,
                         KODE='FLYTTET',
@@ -180,58 +137,21 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                     y=address_info["coordinates"][1],
                 )
 
-                if new_district and new_district != entry.DISTRIKT:
-                    is_new_district = True
-                    entry.DISTRIKT = new_district
-                    logger.info(f"Updated district for Name ID {entry.ID}")
-
-                    has_valid_person_district = any(
-                        d.DISTRICT == new_district and
-                        (d.DATEFROM is not None and d.DATEFROM <= today) and
-                        (
-                            d.DATETO is None or
-                            d.DATETO == SENTINEL_OPEN_END_DATE or
-                            d.DATETO > today
-                        )
-                        for d in entry.person_districts
-                    )
-
-                    if not has_valid_person_district:
-                        for d in entry.person_districts:
-                            if d.DATETO is None or d.DATETO == SENTINEL_OPEN_END_DATE:
-                                d.DATETO = now_dt
-                                d.TS_UPDD = now_dt
-                                d.TS_UPDT = now_time
-                                logger.info(f"Closed existing person district {d.DISTRICT} for Name ID {entry.ID} with end date {today}")
-                        new_person_district = PersonDistrict(
-                            NAVNID=entry.ID,
-                            DISTRICT=new_district,
-                            DATEFROM=now_dt,
-                            DATETO=SENTINEL_OPEN_END_DATE,
-                            TS_DATE=now_dt,
-                            TS_TIME=now_time,
-                            TS_UPDD=now_dt,
-                            TS_UPDT=now_time,
-                        )
-                        entry.person_districts.append(new_person_district)
-                        logger.info(f"Added new person district for Name ID {entry.ID}: {new_district}")
+                is_new_district = update_district_from_coordinates(
+                    entry=entry,
+                    new_district=new_district,
+                    reference_date=today,
+                    close_to_dt=now_dt,
+                    new_from_dt=now_dt,
+                    now_dt=now_dt,
+                    now_time=now_time,
+                )
 
                 # Kommune update in name and name details
-                if entry.TS_KOMID != "730":
-                    entry.TS_KOMID = "730"
-                    is_new_kommunekode = True
-
-                if entry.details.TS_KOMID != "730" or entry.details.KOMMUNE_OPR != "730":
-                    entry.details.TS_KOMID = "730"
-                    entry.details.KOMMUNE_OPR = "730"
-                    is_new_kommunekode_details = True
+                is_new_kommunekode, is_new_kommunekode_details = update_kommunekode(entry=entry)
 
             # Always update active status
-            has_changed_active = False
-            if entry.AKTIV in ("", "0"):
-                entry.AKTIV = "1"
-                has_changed_active = True
-                logger.info(f"Updated active status for Name ID {entry.ID}")
+            has_changed_active = ensure_active(entry=entry)
 
             if any([is_new_district, is_new_address_set, has_changed_active, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
