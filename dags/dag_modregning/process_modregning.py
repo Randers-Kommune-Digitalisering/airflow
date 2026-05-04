@@ -6,7 +6,6 @@ from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from rkdigi.email_handling import EmailSender
-from kombit_client.integrations.sf1491.ydelse_liste_hent import YdelseListeHentClient
 
 from dag_modregning.modregning_data import (
     df_to_excel_bytes,
@@ -71,17 +70,23 @@ def process_modregning() -> None:
         logger.info("After extracting unique CPRs")
 
         rows: list[list[str]] = []
-        for cpr in cpr_list:
-            logger.info(f"Processing CPR: {mask_cpr(cpr)}")
-            try:
-                logger.info("Before calling YdelseListeHentClient")
-                ydelse_client = YdelseListeHentClient(cvr="29189668")
-                payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
-                ydelser = extract_ydelser_from_serviceplatform_response(payload=payload)
-                rows.append([cpr, ", ".join(sorted(ydelser)) if ydelser else ""])
-            except Exception as e:
-                logger.error(f"Failed for CPR {mask_cpr(cpr)}: {e}")
-                rows.append([cpr, ""])
+
+        # ## vvv New serviceplatformen / kombit cert handling vvv ## #
+        from utils.kombit import TempClientCert
+        from kombit_client.integrations.sf1491 import YdelseListeHentClient
+        with TempClientCert() as client_cert_path:
+            for cpr in cpr_list:
+                logger.info(f"Processing CPR: {mask_cpr(cpr)}")
+                try:
+                    logger.info("Before calling YdelseListeHentClient")
+                    ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
+                    payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
+                    ydelser = extract_ydelser_from_serviceplatform_response(payload=payload)
+                    rows.append([cpr, ", ".join(sorted(ydelser)) if ydelser else ""])
+                except Exception as e:
+                    logger.error(f"Failed for CPR {mask_cpr(cpr)}: {e}")
+                    rows.append([cpr, ""])
+        # ## ^^^ New serviceplatformen / kombit cert handling ^^^ ## #
 
         out_df = pd.DataFrame(rows, columns=["cpr", "YdelseNavn"])
         excel_bytes = df_to_excel_bytes(out_df)
