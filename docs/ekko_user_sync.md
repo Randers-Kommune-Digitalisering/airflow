@@ -9,6 +9,16 @@ Uploader fil til Ekko App-server med relevante bruger- og ansættelsesdata (synk
 Læser ansættelsesdata og persondata for ansatte i Ejendomsservice (baseret på liste af SD-afdelinger) fra SD → genererer en CSV-fil med de relevante data → uploader filen til Ekko apps FTPS-server.
 
 
+## Beskrivelse
+Jobbet henter data fra SD for ansætte i bestemte afdelinger i insitutionen RG og udtrækker de nødvendige data - beskrevet i tabellen her under.
+
+**Beskrivelse af fil der skal uploades til FTPS-server**
+| Navn | Personalenr. | Mobiltelefonnr. | Email | MasterGroup | UserGroup | Titel | Fødselsdag | Ansættelsesdato |
+|------|--------------|-----------------|-------|-------------|-----------|-------|------------|------------------|
+| Her skriver I medarbejderens fulde navn | Fx det der står på lønseddel | Her angiver I medarbejderens mobilnummer | Her angiver I medarbejderens arbejdsemailadresse | Hovedgruppe – primær (geografisk eller organisatorisk) | Undergruppe – afdeling (gerne afdelingsnr.) | Medarbejderens titel | Medarbejderens fødselsdag | Medarbejderens ansættelsesdato |
+| Fx Hans Hansen | Fx 7424 | Fx 22334455 | Fx hans.hansen@mitfirma.dk | Timelønnede | Beton | Maskinfører | Fx 31-03-1995 | Fx 31-03-2015 |
+| <navn> | <tjeneste- / løn-nummer> | <mobiltelefonnummer> | <emailadresse> | <level 3 parent for SD department > | <sd department > | <titel> | <fødselsdato> | <ansættelsesdato> |
+
 ## Afhængigheder
 
 :key: | **Airflow Connections**

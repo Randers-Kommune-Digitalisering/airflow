@@ -55,6 +55,7 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
 
     ekko_employees_df = pd.DataFrame(columns=['Navn', 'Personalenr.', 'Email', 'MasterGroup', 'UserGroup', 'Titel', 'Fødselsdag', 'Ansættelsesdato', 'Mobiltelefonnr.', 'occupation_rate'])
 
+    # Get all departments for institution "RG"
     res = sd_http_hook.run(
         endpoint="/GetOrganization",
         params={
@@ -73,10 +74,12 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
             for dept_elem in institution.findall('Department'):
                 org.append(_parse_department(dept_elem))
 
+    # Iterate Ejendomsservice departments (relevant for Ekko app)
     for sd_department in ekko_sd_departments_list:
         sd_id = sd_department[0]
         sd_name = sd_department[1]
 
+        # Get and unpack all employment details
         res = sd_http_hook.run(
             endpoint="/GetEmployment20070401",
             params={
@@ -97,18 +100,19 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
 
         employees = []
         for p in persons_objs:
-            cpr = p.find('PersonCivilRegistrationIdentifier').text if p.find('PersonCivilRegistrationIdentifier') is not None else None
+            cpr = p.find('PersonCivilRegistrationIdentifier').text if p.find('PersonCivilRegistrationIdentifier') is not None else None  # cpr used to link employment details to person details
             if not cpr:
                 continue
             for e in p.xpath('.//Employment'):
                 emp_id = e.find('EmploymentIdentifier')
                 emp_date = e.find('EmploymentDate')
-                employment_date = emp_date.text if emp_date is not None else None
-                employment_id = emp_id.text if emp_id is not None else None
-                profession = e.find('Profession/EmploymentName').text if e.find('Profession/EmploymentName') is not None else None
-                occupation_rate = float(e.find('WorkingTime/OccupationRate').text) if e.find('WorkingTime/OccupationRate') is not None else 0
+                employment_date = emp_date.text if emp_date is not None else None  # ansættelsesdato
+                employment_id = emp_id.text if emp_id is not None else None  # tjenestenr. / lønnummer
+                profession = e.find('Profession/EmploymentName').text if e.find('Profession/EmploymentName') is not None else None  # titel
+                occupation_rate = float(e.find('WorkingTime/OccupationRate').text) if e.find('WorkingTime/OccupationRate') is not None else 0  # beskæftigelsesgrad - used for filtering duplicates
                 employees.append({'cpr': cpr, 'employment_id': employment_id, 'employment_date': employment_date, 'profession': profession, 'occupation_rate': occupation_rate})
 
+        # Get and unpack all person details
         res = sd_http_hook.run(
             endpoint="/GetPerson",
             params={
@@ -127,12 +131,12 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
 
         persons = []
         for p in persons_objs:
-            cpr = p.find('PersonCivilRegistrationIdentifier').text
+            cpr = p.find('PersonCivilRegistrationIdentifier').text  # cpr used to link employment details to person details
             person_phones = p.xpath('./ContactInformation/TelephoneNumberIdentifier/text()')
             person_emails = p.xpath('./ContactInformation/EmailAddressIdentifier/text()')
             first_name = p.find('PersonGivenName').text
             last_name = p.find('PersonSurnameName').text
-            name = f"{first_name} {last_name}"
+            name = f"{first_name} {last_name}"  # fulde navn
             employment_ids = []
             employment_phones = []
             employment_emails = []
@@ -157,6 +161,7 @@ def get_ekko_sd_user_data(sd_departments_task_id: str, sd_http_hook: HttpHook, *
             }
             persons.append(person_dict)
 
+        # Get relevant details for Ekko app
         for employment_dict in employees:
             person_dict = next((p for p in persons if employment_dict['cpr'] in p['cpr']), None)
             if not person_dict:
