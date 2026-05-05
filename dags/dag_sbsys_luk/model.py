@@ -149,8 +149,8 @@ class Kladde(Base):
     Navn = Column(Unicode(200, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
     Beskrivelse = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
     IsArchived = Column(BIT, nullable=False)
-    FileName = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
-    FileExtension = Column(Unicode(50, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=True)
+    FileName = Column(Unicode(255, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
+    FileExtension = Column(Unicode(50, collation='SQL_Danish_Pref_CP1_CI_AS'), nullable=False)
 
     KladdeRegistrering = relationship('KladdeRegistrering', uselist=False, back_populates='Kladde')
     KladdeData = relationship('KladdeData', uselist=False, back_populates='Kladde')
@@ -252,13 +252,14 @@ class DokumentData(Base):
     __tablename__ = 'DokumentData'
     __table_args__ = (
         ForeignKeyConstraint(['DokumentID'], [f'SbsysNet{ENV}.dbo.Dokument.ID'], name='DokumentData_Dokument'),
+        ForeignKeyConstraint(['DokumentDataInfoID'], [f'SbsysNet{ENV}.dbo.DokumentDataInfo.ID'], name='DokumentData_DokumentDataInfo'),
         PrimaryKeyConstraint('ID', name='PK_DokumentData'),
         {"schema": DOKUMENTDATA_SHARD_SCHEMA}
     )
 
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     DokumentID = Column(Integer)
-    Data = Column(LargeBinary, nullable=True)
+    DokumentDataInfoID = Column(Integer, nullable=True)
 
     Dokument = relationship('Dokument', uselist=False, back_populates='DokumentData')
 

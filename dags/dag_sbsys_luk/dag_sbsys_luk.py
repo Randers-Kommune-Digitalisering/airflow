@@ -16,7 +16,7 @@ SBSYS_LUK_SAGSSKABELON_IDS = Variable.get("SBSYS_LUK_SAGSSKABELON_IDS", "")
 SBSYS_LUK_SAGSSKABELON_IGNORE_IDS = Variable.get("SBSYS_LUK_SAGSSKABELON_IGNORE_IDS", "")
 REQUIRED_SAGSSKABELON_IDS = [int(id.strip()) for id in SBSYS_LUK_SAGSSKABELON_IDS.split(",") if id.strip().isdigit()]
 IGNORE_SAGSSKABELON_IDS = [int(id.strip()) for id in SBSYS_LUK_SAGSSKABELON_IGNORE_IDS.split(",") if id.strip().isdigit()]
-REQUIRED_SAGSSTATUS = Variable.get("SBSYS_LUK_SAGSSTATUS", "Aktiv").split(",")  # Default to "Aktiv" if not set
+REQUIRED_SAGSSTATUS = [status.strip() for status in Variable.get("SBSYS_LUK_SAGSSTATUS", "Aktiv").split(",") if status.strip()]  # Default to "Aktiv" if not set
 
 with DAG(
     dag_id="dag_sbsys_luk",

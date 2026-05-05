@@ -188,6 +188,11 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
 
             # Complete all Erindring records associated with the case
             for erindring in sag.Erindring:
+                if dry_run:
+                    logger.info(
+                        f"DRY_RUN: Would complete Erindring ID {erindring.ID} for case ID {sag.ID} (set ErAfsluttet=1, Afsluttet=datetime.now(), AfsluttetAfID={USER_ID}, AfsluttetNotat='Erindring afsluttet ifm. automatisk sagslukning af robot (Digitalisering).')"
+                    )
+                    continue
                 erindring.ErAfsluttet = 1
                 erindring.Afsluttet = datetime.now()
                 erindring.AfsluttetAfID = USER_ID
@@ -258,13 +263,10 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
 
                 delforloeb_links = kladde_reg.DelforloebKladdeRegistrering
                 if delforloeb_links:
-                    if hasattr(delforloeb_links, "DelforloebID"):
-                        delforloeb_ids = [getattr(delforloeb_links, "DelforloebID", None)]
-                    else:
-                        delforloeb_ids = [
-                            getattr(link, "DelforloebID", None)
-                            for link in delforloeb_links
-                        ]
+                    delforloeb_ids = [
+                        getattr(link, "DelforloebID", None)
+                        for link in delforloeb_links
+                    ]
 
                     for delforloeb_id in sorted({i for i in delforloeb_ids if i is not None}):
                         dokument_delforloeb_reg = DelforloebDokumentRegistrering(
@@ -286,6 +288,11 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                 logger.info(f"Deleted {deleted} KladdeData row(s) for Kladde ID {kladde.ID} from shard {kladde_data_shard_db}")
 
             # Update the case status to 'Lukket'
+            if dry_run:
+                logger.info(
+                    f"DRY_RUN: Would update case ID {sag.ID} status to 'Lukket' and set LastStatusChange fields."
+                )
+                continue
             sag.SagsStatusID = SAG_STATUS_CLOSED
             sag.LastStatusChange = datetime.now()
             sag.LastStatusChangeComments = "Sagsstatus ændret til 'Lukket' ifm. automatisk sagslukning af robot (Digitalisering)."
