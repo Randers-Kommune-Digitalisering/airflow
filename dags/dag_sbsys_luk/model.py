@@ -260,6 +260,7 @@ class DokumentData(Base):
     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
     DokumentID = Column(Integer)
     DokumentDataInfoID = Column(Integer, nullable=True)
+    Data = Column(LargeBinary, nullable=True)
 
     Dokument = relationship('Dokument', uselist=False, back_populates='DokumentData')
 
