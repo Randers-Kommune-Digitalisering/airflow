@@ -11,12 +11,34 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CPR_COLUMN = "ID-nummer"
 
+EXCLUDED_YDELSE_NAVNE: set[str] = {
+    "Sygedagpenge til virksomhed",
+    "Sygedagpenge til borger",
+    "LAS § 81 a - Enkeltydelse til udsættelsestruede lejere",
+    "DAL § 86 - Tilskud pasning af egne børn",
+    "Ressourceforløbsydelse under ressourceforløb, Uddannelseshjælp",
+    "Fleksløntilskud",
+    "Ledighedsydelse",
+    "Ressourceforløbsydelse under ressourceforløb",
+    "Ressourceforløbsydelse, jobafklaring",
+    "Fleksløntilskud, Ledighedsydelse",
+}
+
 
 def get_latest_excel_info(
     sftp_hook: SFTPHook,
     directory: str,
     pattern: str = "*.xlsx",
 ) -> tuple[str, datetime] | None:
+    """
+    Find the newest Excel file on an SFTP matching a filename pattern.
+
+    :param sftp_hook: Airflow SFTPHook for SFTP.
+    :param directory: Remote directory to search in.
+    :param pattern: Glob pattern for matching filenames (default '*.xlsx').
+    :return: (remote_path, modified_at_utc) if a match is found, otherwise None.
+    """
+
     sftp = sftp_hook.get_conn()
     files = sftp.listdir_attr(directory)
 
@@ -37,6 +59,16 @@ def read_excel_from_sftp(
     dtype: dict[str, Any] | None = None,
     sheet_name: str | int | None = 0,
 ) -> pd.DataFrame:
+    """
+    Read an Excel file from SFTP into a pandas DataFrame.
+
+    :param sftp_hook: Airflow SFTPHook used to obtain an SFTP connection.
+    :param remote_path: Full remote path to the Excel file to read.
+    :param dtype: Optional dtype mapping forwarded to `pandas.read_excel`.
+    :param sheet_name: Sheet name
+    :return: DataFrame containing the parsed Excel sheet.
+    """
+
     logger.info(f"Reading Excel file from SFTP: {remote_path}")
 
     sftp = sftp_hook.get_conn()
@@ -87,7 +119,6 @@ def extract_unique_cprs(
     :param df: DataFrame from Excel.
     :param column: Column name containing CPR/ID numbers.
     :return: Sorted list of unique CPR strings (10 digits).
-    :raises ValueError: If expected column is missing.
     """
     if column not in df.columns:
         raise ValueError(f'Expected column "{column}" not found. Columns: {df.columns.tolist()}')
@@ -103,33 +134,42 @@ def extract_unique_cprs(
     return unique
 
 
-def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> set[str]:
+def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tuple[set[str], bool]:
     """
-    Extract unique YdelseNavn values from the Serviceplatform payload (new format).
+    Extract unique `YdelseNavn` values from a Serviceplatform response payload.
 
-    :param payload: JSON payload returned by the Serviceplatform endpoint.
-    :return: Set of unique YdelseNavn strings.
+    :param payload: Parsed JSON/dict response from Serviceplatform.
+    :return: (ydelser, found_any_ydelse)
     """
     ydelser: set[str] = set()
+    found_any_ydelse = False
 
     if not isinstance(payload, dict):
-        return ydelser
+        return ydelser, found_any_ydelse
 
     effektuering = payload.get("EffektueringHent_O", {}) or {}
     oek_list = effektuering.get("OEkonomiskEffektueringListe", []) or []
 
     for oek in oek_list:
-        # New structure: list is directly under each item
         ydelse_list = oek.get("OEkonomiskYdelseseffektueringListe", []) or []
 
         for ydelse in ydelse_list:
-            navn = (ydelse.get("BevilgetYdelse", {}) or {}).get("YdelseNavn", "")
-            if isinstance(navn, str):
-                navn = navn.strip()
-                if navn:
-                    ydelser.add(navn)
+            found_any_ydelse = True
 
-    return ydelser
+            navn = (ydelse.get("BevilgetYdelse", {}) or {}).get("YdelseNavn", "")
+            if not isinstance(navn, str):
+                continue
+
+            navn = navn.strip()
+            if not navn:
+                continue
+
+            if navn in EXCLUDED_YDELSE_NAVNE:
+                continue
+
+            ydelser.add(navn)
+
+    return ydelser, found_any_ydelse
 
 
 def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes:
