@@ -19,7 +19,7 @@ ekko_ftps_hook = FTPHook(ftp_conn_id="ekko_ftps")
 with DAG(
     dag_id="ekko_user_sync",
     start_date=datetime(2025, 4, 21, tz=timezone("Europe/Copenhagen")),
-    schedule="@daily",
+    schedule="0 12 * * *",
     catchup=False,
     default_args=dag_args,
     description="Sync users from SD (Ejendomsservice) to Ekko App",
