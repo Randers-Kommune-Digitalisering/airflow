@@ -51,4 +51,4 @@ Auth til SD API
 ## Schedule
 Schedule er sat op til at køre automatisk på følgende tidspunkter:
 
-- **Tidspunkt:** @daily (hver dag ved midnat)
+- **Tidspunkt:** `0 12 * * *` (hver dag ved middag (12:00))
