@@ -188,6 +188,8 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
 
             # Complete all Erindring records associated with the case
             for erindring in sag.Erindring:
+                if erindring.ErAfsluttet:
+                    continue
                 if dry_run:
                     logger.info(
                         f"DRY_RUN: Would complete Erindring ID {erindring.ID} for case ID {sag.ID} (set ErAfsluttet=1, Afsluttet=datetime.now(), AfsluttetAfID={USER_ID}, AfsluttetNotat='Erindring afsluttet ifm. automatisk sagslukning af robot (Digitalisering).')"

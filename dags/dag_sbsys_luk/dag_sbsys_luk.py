@@ -6,7 +6,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_sbsys_luk.process_sbsys_luk import process_sbsys_luk
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 # DRY_RUN: set to True to log intended updates without making changes, False to perform updates
 DRY_RUN = Variable.get("SBSYS_LUK_DRY_RUN", default_var="True").lower() == "true"
@@ -23,6 +23,7 @@ with DAG(
     start_date=datetime(year=2026, month=3, day=9, tz=timezone("Europe/Copenhagen")),
     schedule="@weekly",
     catchup=False,
+    max_active_runs=1,
     default_args=dag_args,
     description="Fetch and close SBSYS cases based on specific criteria using SQL",
     tags=["sbsys", "sql"],
