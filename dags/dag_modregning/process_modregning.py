@@ -6,7 +6,6 @@ from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from rkdigi.email_handling import EmailSender
-
 from dag_modregning.modregning_data import (
     df_to_excel_bytes,
     extract_unique_cprs,
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 def _resolve_date_range() -> tuple[str, str]:
     """
     Resolve startDato/slutDato as ISO dates based on logical_date (default: month-to-date).
-    Can be overridden by Airflow Variable modregning_config: {"start_date": "...", "end_date": "..."}.
     """
     ctx = get_current_context()
     logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
@@ -40,7 +38,6 @@ def process_modregning() -> None:
     modregning_config = Variable.get("modregning_config", deserialize_json=True)
 
     sftp_dir = modregning_config["sftp_dir"]
-
     sender = modregning_config["sender_email"]
     recipients = modregning_config["recipient_emails"]
     smtp_server = modregning_config["smtp_server"]
@@ -49,7 +46,7 @@ def process_modregning() -> None:
     logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
 
     sftp_hook = SFTPHook(ssh_conn_id="shared_sftp")
-    latest_info = get_latest_excel_info(sftp_hook, directory=sftp_dir)
+    latest_info = get_latest_excel_info(sftp_hook=sftp_hook, directory=sftp_dir)
     if not latest_info:
         raise AirflowFailException("No Excel file found on SFTP for Modregning")
 
@@ -58,38 +55,46 @@ def process_modregning() -> None:
 
     try:
         df = read_excel_from_sftp(
-            sftp_hook,
-            excel_path,
+            sftp_hook=sftp_hook,
+            remote_path=excel_path,
             dtype={"ID-nummer": str},
             sheet_name=0,
         )
-        cpr_list = extract_unique_cprs(df, column="ID-nummer")
+        cpr_list = extract_unique_cprs(df=df)
+        logger.info("Extracted CPR from sftp")
         if not cpr_list:
             raise AirflowFailException("No CPR values found in the Excel file")
 
         logger.info("After extracting unique CPRs")
 
         rows: list[list[str]] = []
-
-        # ## vvv New serviceplatformen / kombit cert handling vvv ## #
+        
         from utils.kombit import TempClientCert
-        from kombit_client.integrations.sf1491 import YdelseListeHentClient
+        from kombit_client.integrations.sf1491 import YdelseListeHentClient # Virker kun med Lazy import. Hvis du sætter import ved toppen så fryser hele DAG'en 
         with TempClientCert() as client_cert_path:
             for cpr in cpr_list:
-                logger.info(f"Processing CPR: {mask_cpr(cpr)}")
+                masked_cpr = mask_cpr(cpr=cpr)
+                logger.info(f"Processing CPR: {masked_cpr}")
                 try:
-                    logger.info("Before calling YdelseListeHentClient")
                     ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
                     payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
-                    ydelser = extract_ydelser_from_serviceplatform_response(payload=payload)
-                    rows.append([cpr, ", ".join(sorted(ydelser)) if ydelser else ""])
+
+                    ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
+
+                    if ydelser:
+                        cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(eg. Forhøjet sats , Grund sats)
+                    elif found_any:
+                        cell_value = ""  # Only filtered ydelser -> empty cell Onl
+                    else:
+                        cell_value = "Ingen Ydelse"  # No ydelser in response -> "Ingen Ydelse"
+
+                    rows.append([cpr, cell_value])
+
                 except Exception as e:
-                    logger.error(f"Failed for CPR {mask_cpr(cpr)}: {e}")
-                    rows.append([cpr, ""])
-        # ## ^^^ New serviceplatformen / kombit cert handling ^^^ ## #
+                    logger.error(f"Error processing CPR {masked_cpr}: {e}")
 
         out_df = pd.DataFrame(rows, columns=["cpr", "YdelseNavn"])
-        excel_bytes = df_to_excel_bytes(out_df)
+        excel_bytes = df_to_excel_bytes(df=out_df)
 
         ctx = get_current_context()
         logical_date = ctx["logical_date"]
@@ -111,7 +116,7 @@ def process_modregning() -> None:
 
     finally:
         try:
-            # sftp_hook.delete_file(excel_path)
+            sftp_hook.delete_file(excel_path)
             logger.info(f"Deleted SFTP file: {excel_path}")
         except Exception:
             logger.exception(f"Could not delete SFTP file: {excel_path}")
