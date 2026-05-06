@@ -1,10 +1,10 @@
 import fnmatch
 import io
 import logging
+import pandas as pd
 from datetime import datetime, timezone
 from typing import Any
-
-import pandas as pd
+from openpyxl.utils import get_column_letter
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 
 logger = logging.getLogger(__name__)
@@ -183,4 +183,20 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
+
+        ws = writer.sheets[sheet_name]
+
+        padding = 2
+        max_width = 60
+
+        for col_idx, col_name in enumerate(df.columns, start=1):
+            series = df[col_name].fillna("").astype(str)
+
+            max_len = series.map(len).max() if not series.empty else 0
+            if pd.isna(max_len):
+                max_len = 0
+
+            max_len = max(int(max_len), len(str(col_name)))
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + padding, max_width)
+
     return output.getvalue()
