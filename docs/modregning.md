@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at hente den nyeste CPR-liste (Excel) fra en SFTP, slå modregningsrelevante ydelser op via Serviceplatform (KOMBIT), og sende en Excel-rapport på email.
+Formålet med jobbet er at hente den nyeste CPR-liste (Excel) fra en SFTP, slå modregningsrelevante ydelser op via Serviceplatform gennem Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/))  , og sende en Excel-rapport på email.
 
 ## Beskrivelse
 
@@ -26,6 +26,8 @@ Koden består af et DAG-job, der udfører følgende trin:
 - Excel på SFTP → CPR-liste → Serviceplatform-opslag → Excel-rapport → Email
 
 ## Afhængigheder
+
+Da koden anvender kombit_client pakken kræver det at man sætter **`CLIENT_CERT_PUBLIC_KEY`** og **`CLIENT_CERT_PRIVATE_KEY`**. De resterende certifikater fra Serviceplatformen ligger i mappen **`Certificates`**
 
 :key: | **Airflow Connections**
 
