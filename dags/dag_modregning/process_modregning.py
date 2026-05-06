@@ -84,7 +84,7 @@ def process_modregning() -> None:
                     if ydelser:
                         cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(eg. Forhøjet sats , Grund sats)
                     elif found_any:
-                        cell_value = ""  # Only filtered ydelser -> empty cell Onl
+                        cell_value = ""  # Only filtered ydelser -> empty cell only
                     else:
                         cell_value = "Ingen Ydelse"  # No ydelser in response -> "Ingen Ydelse"
 
@@ -92,6 +92,7 @@ def process_modregning() -> None:
 
                 except Exception as e:
                     logger.error(f"Error processing CPR {masked_cpr}: {e}")
+                    rows.append([cpr, "Error"])
 
         out_df = pd.DataFrame(rows, columns=["cpr", "YdelseNavn"])
         excel_bytes = df_to_excel_bytes(df=out_df)
