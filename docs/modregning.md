@@ -60,3 +60,9 @@ Eksempel:
   "recipient_emails": ["modtager1@randers.dk", "modtager2@randers.dk"],
   "smtp_server": "smtp.example.local"
 }
+
+## Schedule
+
+Schedule er sat op til at køre automatisk på følgende tidspunkter:
+
+- **Tidspunkt:** Kl. 09:00 den 15. i hver måned
