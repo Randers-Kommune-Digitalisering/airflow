@@ -11,7 +11,7 @@ dag_args["retries"] = 1
 with DAG(
     dag_id="dag_modregning",
     start_date=datetime(year=2026, month=5, day=5, tz=timezone("Europe/Copenhagen")),
-    schedule="@daily",
+    schedule="0 9 15 * *",
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
