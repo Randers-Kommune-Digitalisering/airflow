@@ -1,15 +1,10 @@
 import requests
 import logging
-import re
 
 from airflow.hooks.base import BaseHook
-
 from utils.token_provider import BearerAuth
 
 logger = logging.getLogger(__name__)
-
-
-_CPR_10_DIGITS_RE = re.compile(r"^\d{10}$")
 
 
 class CPRClient:
