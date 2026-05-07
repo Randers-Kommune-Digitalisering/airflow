@@ -9,3 +9,4 @@ dist/
 *.egg-info/
 .env
 .coverage
+docker-compose.yaml
