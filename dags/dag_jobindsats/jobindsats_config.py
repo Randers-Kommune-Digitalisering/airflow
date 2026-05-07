@@ -1,5 +1,13 @@
 JOBINDSATS_CONFIG = [
     {
+        "name": "Ledighed: Faktiske antal ledige og fuldtidsledige",
+        "years_back": 5,
+        "dataset": "y25i01",
+        "period_format": "M",
+        "data_to_get": {
+        }
+    },
+    {
         "name": "Ydelsesmodtagere med løntimer",
         "years_back": 2,
         "dataset": "otij01",
