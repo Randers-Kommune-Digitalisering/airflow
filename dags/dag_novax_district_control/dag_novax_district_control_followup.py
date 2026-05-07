@@ -1,11 +1,10 @@
-
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.models import Variable
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_novax_district_control.check_and_update_district import check_and_update_district
+from dag_novax_district_control.check_and_update_district_followup import check_and_update_district_followup
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
@@ -15,9 +14,9 @@ DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"
 IGNORE_CPRS = Variable.get("NOVAX_IGNORE_CPRS", default_var="").split(",")
 
 with DAG(
-    dag_id="dag_novax_district_control",
-    start_date=datetime(year=2026, month=4, day=25, tz=timezone("Europe/Copenhagen")),
-    schedule="@daily",  # midnight every day
+    dag_id="dag_novax_district_control_followup",
+    start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
+    schedule="15 1 * * 1",
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
@@ -26,8 +25,8 @@ with DAG(
 ) as dag:
 
     task = PythonOperator(
-        task_id="check_and_update_district_task",
-        python_callable=check_and_update_district,
+        task_id="check_and_update_district_followup_task",
+        python_callable=check_and_update_district_followup,
         op_kwargs={
             "dry_run": DRY_RUN,
             "ignore_cprs": IGNORE_CPRS

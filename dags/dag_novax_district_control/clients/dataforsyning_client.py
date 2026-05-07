@@ -12,7 +12,7 @@ class DataforsyningClient:
         self.base_url = connection.host
         self.session = requests.Session()
 
-    def get_address_by_id(self, adresse_id: str) -> dict:
+    def get_address_by_id(self, adresse_id: str) -> dict | None:
         """
         Connects to Dataforsyning API to get address information by adresse_id.
 
@@ -20,14 +20,16 @@ class DataforsyningClient:
         :return: A dictionary containing:
             full_address(str),
             number_floor(str),
-            street_code(int),
-            town_name(str|None),
+            street_code(str),
+            town_name(str),
             postal_code(str),
-            municipality_code(int),
+            municipality_code(str),
             coordinates(tuple[float, float])
+            OR None if the lookup returns an unexpected number of results.
         """
         # Fails if Dataforsyning is down/broken or if the adresse_id is invalid.
-        # We want it to fail hard in those cases, so we can fix the underlying issue.
+        # NOTE: If the API returns 0 or >1 results, we do not fail the entire job.
+        # We treat that as "skip address + district lookup for this user".
         endpoint = '/adresser/autocomplete'
         params = {
             'id': adresse_id,
@@ -40,11 +42,29 @@ class DataforsyningClient:
         }
 
         url = f"{self.base_url}{endpoint}"
-        results = self.session.get(url, params=params, timeout=10)
-        results.raise_for_status()
-        data = results.json()
+        max_retries = 4
+        for attempt in range(max_retries + 1):
+            try:
+                results = self.session.get(url, params=params, timeout=10)
+                results.raise_for_status()
+                data = results.json()
+            except Exception as e:
+                if attempt == max_retries:
+                    logger.error(
+                        "Dataforsyning lookup for adresse_id=%s failed after %d attempts: %s. Skipping address/district lookup for this user.",
+                        adresse_id,
+                        max_retries + 1,
+                        str(e),
+                    )
+                    return None
+                continue
         if len(data) != 1:
-            raise ValueError(f"Expected exactly one result for adresse_id {adresse_id}, but got {len(data)}")
+            logger.error(
+                "Dataforsyning lookup for adresse_id=%s returned %s result(s); expected exactly 1. Skipping address/district lookup for this user.",
+                adresse_id,
+                len(data),
+            )
+            return None
 
         full_address = data[0].get('tekst', '')
 
@@ -72,7 +92,7 @@ class DataforsyningClient:
             "full_address": full_address,
             "number_floor": number_floor,
             "street_code": street_code,
-            "town_name": town_name,  # optional
+            "town_name": town_name or "",  # optional
             "postal_code": postal_code,
             "municipality_code": municipality_code,
             "coordinates": coordinates

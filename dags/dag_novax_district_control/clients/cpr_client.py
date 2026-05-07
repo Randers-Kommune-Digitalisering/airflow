@@ -2,7 +2,6 @@ import requests
 import logging
 
 from airflow.hooks.base import BaseHook
-
 from utils.token_provider import BearerAuth
 
 logger = logging.getLogger(__name__)
