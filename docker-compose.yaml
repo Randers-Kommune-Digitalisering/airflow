@@ -67,7 +67,7 @@ services:
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: pass
-      POSTGRES_DB: jobindsats_db
+      POSTGRES_DB: demo
     ports:
       - "5433:5432"
 
