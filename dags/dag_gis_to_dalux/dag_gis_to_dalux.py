@@ -15,7 +15,7 @@ with DAG(
     catchup=False,
     default_args=dag_args,
     description="Sync GIS building data into Dalux FM",
-    tags=["dalux", "gis", "api", "postgres", "update + add new buildings"],
+    tags=["dalux", "gis", "api", "postgres", "create_buildings", "update_buildings"],
 ) as dag:
 
     run_prod = PythonOperator(
