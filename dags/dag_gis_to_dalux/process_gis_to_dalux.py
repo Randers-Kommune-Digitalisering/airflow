@@ -63,7 +63,7 @@ def process_gis_to_dalux() -> None:
             try:
                 kl_bda_areal_int = int(str(kl_bda_areal).strip())
             except ValueError:
-                logger.warning(f"Invalid kl_bda_areal (not int)")
+                logger.warning(f"Invalid kl_bda_areal (not int): value:{kl_bda_areal}, estate_id={estate_id}, bbr_number={bbr_number}")
 
         if inst_name:
             inst_name = inst_name.strip()
@@ -81,7 +81,7 @@ def process_gis_to_dalux() -> None:
             # GIS needs to be matched to Dalux building via (estate_id, bbr_number)
             if not estate_id or not bbr_number:
                 logger.warning(
-                    "Skipping row without estate_id or bbr_bygningsnummer (cannot dedupe/create safely)"
+                    f"Skipping row without estate_id or bbr_bygningsnummer (cannot dedupe/create safely): estate_id={estate_id}, bbr_bygningsnummer={bbr_number}"
                 )
                 continue
 
