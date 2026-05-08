@@ -68,7 +68,7 @@ def _get_dalux_headers(http_hook: HttpHook) -> dict:
 def dalux_update_building(
     http_hook: HttpHook,
     building_id: int,
-    data_fields: dict[str, str] | None = None,
+    data_fields: dict[str, str | None] | None = None,
     user_fields: dict[str, Any] | None = None,
 ) -> bool:
     """
