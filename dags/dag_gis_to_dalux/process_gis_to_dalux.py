@@ -33,7 +33,6 @@ def process_gis_to_dalux() -> None:
             ejendom_adresse,
             ST_AsText(wkb_geometry) AS wkt
         FROM nye_tabeller.v_kommunale_bygninger_rk_dalux
-        WHERE id is NULL AND estate_id = 102 AND bbr_bygningsnummer = '19'
     """
     records = gis_db.get_records(sql)
     logger.info(f"Fetched {len(records)} buildings from GIS DB")
