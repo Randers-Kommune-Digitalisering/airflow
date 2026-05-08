@@ -25,11 +25,11 @@ Koden består af et DAG-job, der udfører følgende trin:
     - De gamle Brugerdefinerede felter kan ikke bruges med API'et da "Historik" er slået til. Når først Historik er slået til så kan man ikke fjerne det igen([Brugerdefinerede felter](https://support.dalux.com/hc/da/articles/11723141799836-Brugerdefinerede-felter#h_01HHHFKNF06BRTBA3KPMVJJ83G:~:text=N%C3%A5r%20der%20oprettes,ikke%20%C3%A6ndres%20bagefter.)). Derfor er der blevet lavet helt nye Brugerdefinerede felter i Dalux FM.
     - Brugerdefinerede felter (userDefinedFields) med de nye feltnavne(Uden histoik enabled i Dalux FM):
       - `Ny SBSYS`
-      - `Ny Institutionsnavn` (trimmes for whitespace)
+      - `Ny Institutionsnavn`
       - `Ny Servicedistrikt` (normaliseres, fx fjern “Distrikt”)
       - `Ny KL Anvendelsesområde`
       - `Ny KL Ejerskab`
-      - `Ny KL BDA areal` (sendes som integer når muligt)
+      - `Ny KL BDA areal`
   - Hvis bygningen har geometri:
     - Konverteres geometri fra UTM32/WKT-format til WGS84
     - Opdateres som polygon i Dalux FM
