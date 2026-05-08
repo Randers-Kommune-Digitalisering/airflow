@@ -113,7 +113,7 @@ def dalux_update_building(
 
         payload = {"data": patch_data}
 
-        headers = _get_dalux_headers(http_hook)
+        headers = _get_dalux_headers(http_hook=http_hook)
         http_hook.method = "PATCH"
 
         res = http_hook.run(
@@ -170,7 +170,7 @@ def dalux_update_building_polygon(
             "links": [],
         }
 
-        headers = _get_dalux_headers(http_hook)
+        headers = _get_dalux_headers(http_hook=http_hook)
         http_hook.method = "PATCH"
         http_hook.run(
             endpoint=f"/api/2.0/buildings/{building_id}/polygon",
@@ -218,7 +218,7 @@ def dalux_create_building(
         if owned is not None:
             payload["data"]["owned"] = owned
 
-        headers = _get_dalux_headers(http_hook)
+        headers = _get_dalux_headers(http_hook=http_hook)
         http_hook.method = "POST"
 
         res = http_hook.run(
@@ -256,7 +256,7 @@ def dalux_list_buildings(http_hook: HttpHook, limit: int = 100) -> list[dict[str
     :param limit: Page size per request.
     :return: List of building items (payload entries) collected across pages.
     """
-    headers = _get_dalux_headers(http_hook)
+    headers = _get_dalux_headers(http_hook=http_hook)
     http_hook.method = "GET"
 
     all_items: list[dict[str, Any]] = []
@@ -282,7 +282,6 @@ def dalux_list_buildings(http_hook: HttpHook, limit: int = 100) -> list[dict[str
         if not next_bookmark:
             break
 
-        # Safety: undgå uendeligt loop hvis API svarer mærkeligt
         if str(next_bookmark) == str(bookmark):
             logger.warning("Dalux paging stuck (nextBookmark == bookmark); aborting")
             break
