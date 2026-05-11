@@ -117,7 +117,16 @@ JOBINDSATS_CONFIG = [
         "years_back": 5,
         "dataset": "y60a02",
         "period_format": "M",
-        "data_to_get": {}
+        "data_to_get": {
+            "_viskat_1int":[                     
+                "Visitationskategori i alt",
+                "Jobparat",
+                "Aktivitetsparat",
+                "Uddannelsesparat",
+                "Åbenlys uddannelsesparat",
+                "Uoplyst visitationskategori"
+            ]
+        }
     },
     {
         "name": "Barselsdagpenge",
