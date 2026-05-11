@@ -170,7 +170,7 @@ class KladdeData(Base):
 
     Kladde = relationship('Kladde', uselist=False, back_populates='KladdeData')
 
-
+# TODO: Fjern hvis det ikke skal bruges
 # class Bilag(Base):
 #     __tablename__ = 'Bilag'
 #     __table_args__ = (

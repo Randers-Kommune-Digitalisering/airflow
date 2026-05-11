@@ -8,6 +8,7 @@ from sqlalchemy import and_, text  # , or_
 from sqlalchemy.orm import selectinload
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.models import Variable
+from rkdigi import DatabaseManager
 
 from dag_sbsys_luk.model import (
     CivilstandOpslag,
@@ -27,12 +28,13 @@ logger = logging.getLogger(__name__)
 ENV = "Test" if Variable.get("SBSYS_LUK_TEST_ENV", default_var="False").lower() == "true" else "Drift"
 
 USER_ID = 202653  # User: "Autoafslutsag"
+# TODO: Consider dynamic appraoch instead of hard code values for SAG_STATUS_CLOSED
 SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in production, 8 in test
 DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
 DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
 DOKUMENT_DATA_INFO_TYPE_ID = 2  # Data type info 2: "Unspecified"
 
-
+# TODO: update docstring with parameter and return type descriptions
 def _get_dokument_data_type(fileExtension: str) -> int:
     """
     Map file extensions to DokumentDataType IDs.
@@ -67,6 +69,7 @@ def _get_dokument_data_type(fileExtension: str) -> int:
     return extension_mapping.get(fileExtension.lower(), 0)  # Default to 'Ukendt' (0) if extension is not recognized
 
 
+# TODO: add docstrings
 def _iter_dokument_shard_dbs(session: Session) -> list[str]:
     return session.execute(
         text(
@@ -80,6 +83,7 @@ def _iter_dokument_shard_dbs(session: Session) -> list[str]:
     ).scalars().all()
 
 
+# TODO: add docstrings
 def _iter_kladde_shard_dbs(session: Session) -> list[str]:
     return session.execute(
         text(
@@ -93,12 +97,14 @@ def _iter_kladde_shard_dbs(session: Session) -> list[str]:
     ).scalars().all()
 
 
+# TODO: add docstring
 def _get_newest_shard_db(shard_dbs: list[str], shard_type_label: str) -> str:
     if not shard_dbs:
         raise ValueError(f"No shard databases found for {shard_type_label}.")
     return max(shard_dbs)
 
 
+# TODO: add docstring
 def _get_kladde_data_blob(session: Session, kladde_shard_dbs: list[str], kladde_id: int) -> Tuple[str, bytes] | None:
     for shard_db in kladde_shard_dbs:
         blob = session.execute(
@@ -117,7 +123,7 @@ def _get_kladde_data_blob(session: Session, kladde_shard_dbs: list[str], kladde_
 
     return None
 
-
+# TODO: add docstring
 def _delete_kladde_data(session: Session, shard_db: str, kladde_id: int) -> int:
     result = session.execute(
         text(
@@ -130,7 +136,7 @@ def _delete_kladde_data(session: Session, shard_db: str, kladde_id: int) -> int:
     )
     return result.rowcount or 0
 
-
+# TODO: add docstring
 def _insert_dokument_data(session: Session, shard_db: str, dokument_id: int, dokument_data_info_id: int, data: bytes) -> None:
     session.execute(
         text(
@@ -143,17 +149,18 @@ def _insert_dokument_data(session: Session, shard_db: str, dokument_id: int, dok
     )
 
 
+# TODO: update docstring with parameter and return type descriptions
 def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list, ignore_sagsskabelon_ids: list, dry_run: bool) -> None:
     """
     Fetch and close SBSYS cases based on specific criteria using SQL.
     """
-    hook = MsSqlHook(mssql_conn_id=f"sbsys_luk_{ENV}")
+    hook = MsSqlHook(mssql_conn_id=f"sbsys_luk_{ENV}") # TODO: Consider using DatabaseManager directly(from rkdigi import DatabaseManager)
     engine = hook.get_sqlalchemy_engine()
 
     with Session(engine) as session:
-        dokument_shard_dbs = _iter_dokument_shard_dbs(session)
-        kladde_shard_dbs = _iter_kladde_shard_dbs(session)
-        newest_dokument_shard_db = _get_newest_shard_db(dokument_shard_dbs, shard_type_label="DokumentData")
+        dokument_shard_dbs = _iter_dokument_shard_dbs(session) # TODO: Call func with parameter name 
+        kladde_shard_dbs = _iter_kladde_shard_dbs(session) # TODO: Call func with parameter name 
+        newest_dokument_shard_db = _get_newest_shard_db(dokument_shard_dbs, shard_type_label="DokumentData") # TODO: Call func with parameter name 
         logger.info(f"Newest DokumentData shard selected for inserts: {newest_dokument_shard_db}")
 
         # Query to fetch cases that match the criteria
@@ -170,7 +177,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                 Sag.SagsPart.has(
                     and_(
                         Sagspart.PartType == 1,
-                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),
+                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")), # Filter for cases where Civilstand is "Død"
                     )
                 ),
             )
@@ -254,7 +261,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
 
                 dokument_data_info = DokumentDataInfo(
                     DokumentID=dokument.ID,
-                    DokumentDataType=_get_dokument_data_type(kladde.FileExtension),
+                    DokumentDataType=_get_dokument_data_type(kladde.FileExtension), # TODO: Call func with parameter name 
                     DokumentDataInfoType=DOKUMENT_DATA_INFO_TYPE_ID,
                     FileName=kladde.FileName,
                     FileExtension=kladde.FileExtension,
@@ -281,12 +288,12 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                 session.add(dokument)
                 session.flush()  # ensure dokument.PrimaryDokumentDataInfoID is set before inserting DokumentData
 
-                _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, dokument_data_info.ID, kladde_blob)
+                _insert_dokument_data(session, newest_dokument_shard_db, dokument.ID, dokument_data_info.ID, kladde_blob) # TODO: Call func with parameter name 
 
                 kladde.IsArchived = 1
                 session.add(kladde)
 
-                deleted = _delete_kladde_data(session, kladde_data_shard_db, kladde.ID)
+                deleted = _delete_kladde_data(session, kladde_data_shard_db, kladde.ID) # TODO: Call func with parameter name 
                 logger.info(f"Deleted {deleted} KladdeData row(s) for Kladde ID {kladde.ID} from shard {kladde_data_shard_db}")
 
             # Update the case status to 'Lukket'
