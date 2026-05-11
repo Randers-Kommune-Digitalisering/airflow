@@ -154,10 +154,13 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
     """
     Fetch and close SBSYS cases based on specific criteria using SQL.
     """
-    hook = MsSqlHook(mssql_conn_id=f"sbsys_luk_{ENV}") # TODO: Consider using DatabaseManager directly(from rkdigi import DatabaseManager)
-    engine = hook.get_sqlalchemy_engine()
+    db = DatabaseManager(
+        profile_name=f"sbsys_luk_{ENV}",
+        db_type="mssql",
+        airflow_connection_id=f"sbsys_luk_{ENV}",
+    )
 
-    with Session(engine) as session:
+    with db.get_session() as session:
         dokument_shard_dbs = _iter_dokument_shard_dbs(session) # TODO: Call func with parameter name 
         kladde_shard_dbs = _iter_kladde_shard_dbs(session) # TODO: Call func with parameter name 
         newest_dokument_shard_db = _get_newest_shard_db(dokument_shard_dbs, shard_type_label="DokumentData") # TODO: Call func with parameter name 
