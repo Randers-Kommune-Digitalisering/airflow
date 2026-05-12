@@ -1,4 +1,5 @@
 import logging
+import json
 import pandas as pd
 from io import BytesIO
 from typing import Any, Sequence
@@ -6,7 +7,9 @@ from dag_affald.affald_config import SHEET_SPECS, GENBRUGSPLADSEN_CUSTOMER_NAMES
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
 from openpyxl import Workbook
+from airflow.providers.http.hooks.http import HttpHook
 from openpyxl.worksheet.worksheet import Worksheet
+from collections import defaultdict
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -976,3 +979,325 @@ def build_affald_excel_bytes(df: pd.DataFrame) -> bytes:
     buffer = BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+def mp_waste_amount_data(
+    http_hook: HttpHook,
+    customer_numbers: list[int],
+    from_date: str,
+    to_date: str,
+    installation_address_id: list[int],
+) -> list[dict[str, Any]]:
+    """
+    Fetch waste amount statistics from the MP API
+
+    :param http_hook: Airflow HttpHook configured for the MP API base URL/connection.
+    :param customer_numbers: Customer number filter sent to the API payload.
+    :param from_date: Start date (string) sent to the API payload (expected format per API, e.g. YYYY-MM-DD).
+    :param to_date: End date (string) sent to the API payload (expected format per API, e.g. YYYY-MM-DD).
+    :param installation_address_id: Installation address id filter sent to the API payload.
+    :return: List of raw row dicts returned from the API (concatenated across pages).
+    """
+    logger.info("Fetching waste amount data from MP API...")
+
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+    if not conn.password:
+        raise ValueError("Missing MP_ApiKey (connection password) for marius_pedersen_api connection.")
+
+    headers = {
+        "MP_ApiKey": conn.password,
+        "Content-Type": "application/json",
+    }
+
+    http_hook.method = "POST"
+
+    page_size = 200
+    page = 1
+    CustomerNumbers = customer_numbers
+    from_date = from_date
+    to_date = to_date
+    installation_address_id = installation_address_id
+
+    all_rows: list = []
+    total_count = None
+
+    while True:
+        logger.debug(f"Fetching MP data page={page} page_size={page_size} ...")
+
+        payload = {
+            "PageSize": page_size,
+            "Page": page,
+            "CustomerNumbers": CustomerNumbers,
+            "FromDate": from_date,
+            "ToDate": to_date,
+            "InstallationAddressId": installation_address_id,
+        }
+
+        res = http_hook.run(
+            endpoint="/umbraco/api/wastestatistic/GetWasteamountStatistic",
+            data=json.dumps(payload),
+            headers=headers,
+        )
+
+        body = res.json()
+        data = body.get("data", [])
+
+        all_rows.extend(data)
+
+        logger.debug(f"Fetched {len(data)} records from page {page}. Total so far: {len(all_rows)}")
+
+        if len(data) == 0:
+            break
+
+        if isinstance(total_count, int) and len(all_rows) >= total_count:
+            break
+
+        page += 1
+
+    logger.info(
+        f"Successfully retrieved data from MP API. Total records: {len(all_rows)} (pages fetched: {page})"
+    )
+
+    return all_rows
+
+
+def aggregate_taxes_quantity_by_month(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Aggregate MP ``taxesQuantity(Mængde kg)`` per (customerNumber, activityYear, activityMonth).
+
+    :param rows: List of API rows (dict-like) containing customerNumber/activityYear/activityMonth/taxesQuantity.
+    :return: List of dicts with keys: customerNumber, activityYear, activityMonth, taxesQuantity.
+    """
+    monthly_totals = defaultdict(float)
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        cust = row.get("customerNumber")
+        year = row.get("activityYear")
+        month = row.get("activityMonth")
+        quantity = row.get("taxesQuantity") or 0
+
+        if cust is None or year is None or month is None:
+            continue
+
+        monthly_totals[(int(cust), int(year), int(month))] += float(quantity)
+
+    return [
+        {
+            "customerNumber": cust,
+            "activityYear": year,
+            "activityMonth": month,
+            "taxesQuantity": total,
+        }
+        for (cust, year, month), total in sorted(monthly_totals.items())
+    ]
+
+
+def build_mp_monthly_excel_bytes(
+    monthly_data: list[dict[str, Any]],
+) -> bytes:
+    """
+    Build the MP Excel report file for MP monthly quantities and return it as bytes.
+
+    :param monthly_data: Monthly records containing customerNumber/activityYear/activityMonth/taxesQuantity.
+                         Values are summed per (customer, year, month) before writing.
+    :return: Excel file content as bytes.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Marius Pedersen udtræk"
+
+    customer_name_map: dict[int, str] = {
+        80067523: "MP A/S Undergrund Århus VIP",
+        80070490: "Brændbart, direkte Aarhus MP (mini aff.)",
+        80070170: "Pap - indsamlet i containere MP (pap)",
+    }
+
+    def _row_label(cust_i: int, year_i: int) -> str:
+        name = customer_name_map.get(cust_i)
+        if name:
+            return f"{name} {year_i}"
+        return f"{cust_i} {year_i}"
+
+    # Find max-år til highlight (som i _write_sheet)
+    years_present: list[int] = []
+    for rec in (monthly_data or []):
+        y = rec.get("activityYear")
+        if y is not None:
+            try:
+                years_present.append(int(y))
+            except Exception:
+                pass
+    newest_year = max(years_present) if years_present else None
+
+    # ===== Header/top som _write_sheet (A..P) =====
+    ws.merge_cells("A1:P1")
+    ws["A1"].value = "Marius Pedersen API - Mængder"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+
+    ws.merge_cells("N2:P2")
+    ws["N2"].value = "Årssummer"
+    ws["N2"].font = Font(bold=True)
+
+    ws["A3"].value = "i kg."
+    ws["A3"].font = Font(bold=True)
+
+    ws["N3"].value = "i kg"
+    ws["N3"].font = Font(bold=True)
+    ws["O3"].value = "i %"
+    ws["O3"].font = Font(bold=True)
+
+    # Header-row 4: months + year total + pct change
+    for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
+        cell = ws.cell(row=4, column=i, value=name)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+
+    ws["N4"].value = "Årssum"
+    ws["N4"].font = Font(bold=True)
+    ws["N4"].alignment = Alignment(horizontal="center")
+
+    ws["O4"].value = "Stigning = +/Fald = -"
+    ws["O4"].font = Font(bold=True)
+    ws["O4"].alignment = Alignment(horizontal="center")
+
+    num_fmt_kg = "#,##0"
+    num_fmt_ton = "#,##0.00"
+    num_fmt_pct = "+0.0%;-0.0%;0.0%"
+    current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
+
+    # ===== Byg pivot: (customer, year) -> month -> qty =====
+    month_qty: dict[tuple[int, int], dict[int, float]] = defaultdict(lambda: defaultdict(float))
+
+    for rec in (monthly_data or []):
+        cust = rec.get("customerNumber")
+        year = rec.get("activityYear")
+        month = rec.get("activityMonth")
+        qty = rec.get("taxesQuantity") or 0
+
+        if cust is None or year is None or month is None:
+            continue
+
+        try:
+            cust_i = int(cust)
+            year_i = int(year)
+            month_i = int(month)
+        except Exception:
+            continue
+
+        if not (1 <= month_i <= 12):
+            continue
+
+        month_qty[(cust_i, year_i)][month_i] += float(qty)
+
+    keys_sorted = sorted(month_qty.keys(), key=lambda t: (t[0], t[1]))
+
+    ws.column_dimensions["A"].width = 67
+    for col in range(2, 17):  # B..P
+        ws.column_dimensions[get_column_letter(col)].width = 20
+
+    # KG-section
+    start_row = 5
+    r = start_row
+
+    prev_year_total_by_customer: dict[int, float] = {}
+    prev_customer: int | None = None
+
+    for (cust_i, year_i) in keys_sorted:
+        if prev_customer is not None and cust_i != prev_customer:
+            r += 1  # blank række mellem customers
+
+        ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
+
+        year_total = 0.0
+        for m in range(1, 13):
+            v = float(month_qty[(cust_i, year_i)].get(m, 0.0))
+            year_total += v
+            cell = ws.cell(row=r, column=1 + m, value=v)  # B..M
+            cell.number_format = num_fmt_kg
+            if newest_year is not None and year_i == newest_year:
+                cell.fill = current_year_fill
+
+        y_cell = ws.cell(row=r, column=14, value=year_total)  # N
+        y_cell.number_format = num_fmt_kg
+        y_cell.font = Font(bold=True)
+
+        prev_total = prev_year_total_by_customer.get(cust_i)
+        if prev_total is None or prev_total == 0:
+            ws.cell(row=r, column=15, value=None)  # O
+        else:
+            pct = (year_total - prev_total) / prev_total
+            p_cell = ws.cell(row=r, column=15, value=float(pct))
+            p_cell.number_format = num_fmt_pct
+
+        prev_year_total_by_customer[cust_i] = year_total
+        prev_customer = cust_i
+        r += 1
+
+    last_kg_row = r - 1
+
+    # ===== TON-sektion =====
+    ton_unit_row = last_kg_row + 2
+    ton_header_row = ton_unit_row + 1
+    ton_data_row = ton_header_row + 1
+
+    ws.cell(row=ton_unit_row, column=1, value="i tons.")
+    ws.cell(row=ton_unit_row, column=1).font = Font(bold=True)
+
+    ws.cell(row=ton_unit_row, column=14, value="i tons")
+    ws.cell(row=ton_unit_row, column=14).font = Font(bold=True)
+
+    ws.cell(row=ton_unit_row, column=15, value="i %")
+    ws.cell(row=ton_unit_row, column=15).font = Font(bold=True)
+
+    for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
+        cell = ws.cell(row=ton_header_row, column=i, value=name)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+
+    ws.cell(row=ton_header_row, column=14, value="Årssum").font = Font(bold=True)
+    ws.cell(row=ton_header_row, column=15, value="Stigning = +/Fald = -").font = Font(bold=True)
+
+    r = ton_data_row
+    prev_year_total_ton_by_customer: dict[int, float] = {}
+    prev_customer_ton: int | None = None
+
+    for (cust_i, year_i) in keys_sorted:
+        if prev_customer_ton is not None and cust_i != prev_customer_ton:
+            r += 1  # blank række mellem customers
+
+        ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
+
+        year_total_ton = 0.0
+        for m in range(1, 13):
+            v_ton = float(month_qty[(cust_i, year_i)].get(m, 0.0)) / 1000.0
+            year_total_ton += v_ton
+            cell = ws.cell(row=r, column=1 + m, value=v_ton)
+            cell.number_format = num_fmt_ton
+            if newest_year is not None and year_i == newest_year:
+                cell.fill = current_year_fill
+
+        y_cell = ws.cell(row=r, column=14, value=year_total_ton)
+        y_cell.number_format = num_fmt_ton
+        y_cell.font = Font(bold=True)
+
+        prev_total = prev_year_total_ton_by_customer.get(cust_i)
+        if prev_total is None or prev_total == 0:
+            ws.cell(row=r, column=15, value=None)
+        else:
+            pct = (year_total_ton - prev_total) / prev_total
+            p_cell = ws.cell(row=r, column=15, value=float(pct))
+            p_cell.number_format = num_fmt_pct
+
+        prev_year_total_ton_by_customer[cust_i] = year_total_ton
+        prev_customer_ton = cust_i
+        r += 1
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
