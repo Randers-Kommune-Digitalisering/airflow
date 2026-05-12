@@ -3,7 +3,12 @@
 
 ## Formål
 
-Formålet med jobbet er at hente den nyeste CPR-liste (Excel) fra en SFTP, slå modregningsrelevante ydelser op via Serviceplatform gennem Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/))  , og sende en Excel-rapport på email.
+# TODO: Beskriv formålet bedre. Hvilke ydelser behandles der? Hvorfor?
+# TODO: Beskriv CPR-listen (Hvad indeholder den? I hvilket format?)
+# TODO: Beskriv SFTP-setup - hvor kommer data fra? Tilføj SFTP til afhængiheder - løsningen virker ikke uden.
+# TODO: Beskriv schedule ift. dato-interval beregning
+
+Formålet med jobbet er at hente den nyeste CPR-liste (Excel) fra en SFTP, slå modregningsrelevante ydelser op via Serviceplatform gennem Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)), og sende en Excel-rapport på email.
 
 ## Beskrivelse
 

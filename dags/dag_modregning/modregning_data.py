@@ -9,6 +9,7 @@ from airflow.providers.sftp.hooks.sftp import SFTPHook
 
 logger = logging.getLogger(__name__)
 
+# TODO: Overvej at flytte pseudo env vars til airflow vars - ellers blot slet kommentar
 DEFAULT_CPR_COLUMN = "ID-nummer"
 
 EXCLUDED_YDELSE_NAVNE: set[str] = {
@@ -44,7 +45,7 @@ def get_latest_excel_info(
 
     matched = [f for f in files if fnmatch.fnmatch(f.filename.lower(), pattern.lower())]
     if not matched:
-        logger.error(f'No Excel files found in "{directory}" matching "{pattern}"')
+        logger.error(f'No Excel files found in "{directory}" matching "{pattern.lower()}"')
         return None
 
     latest = max(matched, key=lambda f: f.st_mtime)
@@ -65,7 +66,7 @@ def read_excel_from_sftp(
     :param sftp_hook: Airflow SFTPHook used to obtain an SFTP connection.
     :param remote_path: Full remote path to the Excel file to read.
     :param dtype: Optional dtype mapping forwarded to `pandas.read_excel`.
-    :param sheet_name: Sheet name
+    :param sheet_name: Sheet name or index to read, forwarded to `pandas.read_excel` (default: 0, i.e. first sheet).
     :return: DataFrame containing the parsed Excel sheet.
     """
 
@@ -76,19 +77,6 @@ def read_excel_from_sftp(
         data = remote_file.read()
 
     return pd.read_excel(io.BytesIO(data), dtype=dtype, sheet_name=sheet_name)
-
-
-def mask_cpr(cpr: object) -> str:
-    """
-    Mask CPR for logging (never log full CPR).
-
-    :param cpr: CPR-like value.
-    :return: Masked CPR like 'DDMMYYxxxx' or 'invalid'.
-    """
-    cpr_str = str(cpr).strip().replace("-", "").replace(" ", "").zfill(10)
-    if len(cpr_str) == 10 and cpr_str.isdigit():
-        return f"{cpr_str[:6]}xxxx"
-    return "invalid"
 
 
 def _normalize_cpr(value: object) -> str | None:
@@ -104,9 +92,13 @@ def _normalize_cpr(value: object) -> str | None:
     s = str(value).strip().replace("-", "").replace(" ", "")
     if not s.isdigit():
         return None
+    
+    if len(s) != 10:
+        return None
+    
+    # TODO: Overvej at validere CPR yderligere, fx ved at tjekke fødselsdato og kontrolciffer - vi har en regex til dette
 
-    s = s.zfill(10)
-    return s if len(s) == 10 else None
+    return s
 
 
 def extract_unique_cprs(
@@ -123,13 +115,9 @@ def extract_unique_cprs(
     if column not in df.columns:
         raise ValueError(f'Expected column "{column}" not found. Columns: {df.columns.tolist()}')
 
-    cprs: list[str] = []
-    for raw in df[column].tolist():
-        normalized = _normalize_cpr(raw)
-        if normalized:
-            cprs.append(normalized)
-
-    unique = sorted(set(cprs))
+    normalized = df[column].map(_normalize_cpr)
+    # `dropna()` removes None/NaN, then `unique()` is faster than `set(...)` for large Series.
+    unique = sorted(str(cpr) for cpr in normalized.dropna().unique())
     logger.info(f"Extracted {len(unique)} unique CPRs from Excel")
     return unique
 
@@ -156,7 +144,7 @@ def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tu
         for ydelse in ydelse_list:
             found_any_ydelse = True
 
-            navn = (ydelse.get("BevilgetYdelse", {}) or {}).get("YdelseNavn", "")
+            navn = ydelse.get("BevilgetYdelse", {}).get("YdelseNavn", "")
             if not isinstance(navn, str):
                 continue
 
@@ -192,11 +180,13 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes
         for col_idx, col_name in enumerate(df.columns, start=1):
             series = df[col_name].fillna("").astype(str)
 
-            max_len = series.map(len).max() if not series.empty else 0
-            if pd.isna(max_len):
+            if series.empty:
                 max_len = 0
+            else:
+                max_len_raw = series.map(len).max()
+                max_len = int(max_len_raw) if pd.notna(max_len_raw) else 0
 
-            max_len = max(int(max_len), len(str(col_name)))
+            max_len = max(max_len, len(str(col_name)))
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + padding, max_width)
 
     return output.getvalue()

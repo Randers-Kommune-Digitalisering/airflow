@@ -11,7 +11,6 @@ from dag_modregning.modregning_data import (
     extract_unique_cprs,
     extract_ydelser_from_serviceplatform_response,
     get_latest_excel_info,
-    mask_cpr,
     read_excel_from_sftp,
 )
 
@@ -20,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 def _resolve_date_range() -> tuple[str, str]:
     """
+    # TODO: Beskriv hvordan startDato og slutDato skal bestemmes. Den vælger ikke month-to-date men i stedet sidste måned.
     Resolve startDato/slutDato as ISO dates based on logical_date (default: month-to-date).
     """
     ctx = get_current_context()
@@ -70,19 +70,18 @@ def process_modregning() -> None:
         rows: list[list[str]] = []
         
         from utils.kombit import TempClientCert
-        from kombit_client.integrations.sf1491 import YdelseListeHentClient # Virker kun med Lazy import. Hvis du sætter import ved toppen så fryser hele DAG'en 
+        from kombit_client.integrations.sf1491 import YdelseListeHentClient # Import lazily to avoid Airflow freezing issue
+
         with TempClientCert() as client_cert_path:
+            ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
             for cpr in cpr_list:
-                masked_cpr = mask_cpr(cpr=cpr)
-                logger.info(f"Processing CPR: {masked_cpr}")
                 try:
-                    ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
                     payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
 
                     ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
 
                     if ydelser:
-                        cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(eg. Forhøjet sats , Grund sats)
+                        cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(e.g. Forhøjet sats , Grund sats)
                     elif found_any:
                         cell_value = ""  # Only filtered ydelser -> empty cell only
                     else:
@@ -91,7 +90,7 @@ def process_modregning() -> None:
                     rows.append([cpr, cell_value])
 
                 except Exception as e:
-                    logger.error(f"Error processing CPR {masked_cpr}: {e}")
+                    logger.error(f"Error during processing: {e}")
                     rows.append([cpr, "Error"])
 
         out_df = pd.DataFrame(rows, columns=["cpr", "YdelseNavn"])
