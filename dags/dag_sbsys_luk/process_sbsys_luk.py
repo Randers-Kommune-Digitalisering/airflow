@@ -6,7 +6,6 @@ from typing import Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, text  # , or_
 from sqlalchemy.orm import selectinload
-from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.models import Variable
 from rkdigi import DatabaseManager
 
@@ -33,6 +32,7 @@ SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in pr
 DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
 DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
 DOKUMENT_DATA_INFO_TYPE_ID = 2  # Data type info 2: "Unspecified"
+
 
 def _get_dokument_data_type(fileExtension: str) -> int:
     """
@@ -270,7 +270,7 @@ def process_sbsys_luk(required_sagsstatus: list, required_sagsskabelon_ids: list
                 Sag.SagsPart.has(
                     and_(
                         Sagspart.PartType == 1,
-                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")), # Filter for cases where Civilstand is "Død"
+                        Sagspart.Person.has(Person.Civilstand.has(CivilstandOpslag.Navn == "Død")),  # Filter for cases where Civilstand is "Død"
                     )
                 ),
             )
