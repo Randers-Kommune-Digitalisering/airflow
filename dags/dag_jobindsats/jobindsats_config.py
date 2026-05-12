@@ -64,13 +64,6 @@ JOBINDSATS_CONFIG = [
         "data_to_get": {}
     },
     {
-        "name": "Revalidering",
-        "years_back": 5,
-        "dataset": "y04a02",
-        "period_format": "M",
-        "data_to_get": {}
-    },
-    {
         "name": "Sygedagpenge",
         "years_back": 5,
         "dataset": "y07a02",
@@ -88,13 +81,6 @@ JOBINDSATS_CONFIG = [
         "name": "Ledighedsydelse",
         "years_back": 5,
         "dataset": "y09a02",
-        "period_format": "M",
-        "data_to_get": {}
-    },
-    {
-        "name": "Tilbagetrækningsydelser",
-        "years_back": 5,
-        "dataset": "y10a02",
         "period_format": "M",
         "data_to_get": {}
     },
@@ -202,7 +188,7 @@ JOBINDSATS_CONFIG = [
         "name": "Andel i beskæftigelse 3, 6, 9 og 12 mdr. efter nyledighed",
         "years_back": 3,
         "dataset": "y25i08",
-        "period_format": "Q",
+        "period_format": "QMAT",
         "data_to_get": {
             "_opdel_akt": [
                 "I alt",
