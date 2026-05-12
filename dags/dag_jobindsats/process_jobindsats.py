@@ -17,12 +17,15 @@ def process_jobindsats() -> None:
 
     fetch_and_store_table_updates(http_hook=jobindsats_http_hook, db_engine=jobindsats_db_engine)
     for job in JOBINDSATS_CONFIG:
-        get_data(
-            http_hook=jobindsats_http_hook,
-            db_engine=jobindsats_db_engine,
-            name=job['name'],
-            years_back=job['years_back'],
-            dataset=job['dataset'],
-            period_format=job['period_format'],
-            data_to_get=job['data_to_get']
-        )
+        kwargs = {
+            "http_hook": jobindsats_http_hook,
+            "db_engine": jobindsats_db_engine,
+            "name": job['name'],
+            "years_back": job['years_back'],
+            "dataset": job['dataset'],
+            "period_format": job['period_format'],
+            "data_to_get": job['data_to_get'],
+        }
+        if job.get('id'):
+            kwargs["id"] = job['id']
+        get_data(**kwargs)

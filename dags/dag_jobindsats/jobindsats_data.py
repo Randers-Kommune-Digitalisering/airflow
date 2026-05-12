@@ -10,7 +10,7 @@ from sqlalchemy.engine import Engine
 logger = logging.getLogger(__name__)
 
 
-def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]]) -> bool:
+def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]], id: str = None) -> bool:
     """
     Fetch data from the Jobindsats API, transform it into a DataFrame, and store it in the database.
 
@@ -64,7 +64,7 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
         }
         df.rename(columns=rename_map, inplace=True)
 
-        output_table = f"jobindsats_{dataset.replace('_', '').lower()}"
+        output_table = f"jobindsats_{dataset.replace('', '').lower()}{f'{id.lower()}' if id else ''}"
 
         df.to_sql(name=output_table, con=db_engine, if_exists='replace', index=False)
         logger.info(f"Successfully saved {output_table} to the database")

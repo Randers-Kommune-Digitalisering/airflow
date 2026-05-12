@@ -114,17 +114,36 @@ JOBINDSATS_CONFIG = [
     },
     {
         "name": "Kontanthjælp",
-        "years_back": 5,
+        "years_back": 3,
+        "dataset": "y60a02",
+        "id": "satser",
+        "period_format": "M",
+        "data_to_get": {
+            "_kth_sats": [
+                "Kontanthjælpssatser i alt",
+                "Forhøjet sats",
+                "Grundsats",
+                "Mindstesats omfattet af program",
+                "Mindstesats øvrige"
+            ]
+        }
+    },
+    {
+        "name": "Kontanthjælp",
+        "years_back": 3,
+        "id": "jobparat_satser",
         "dataset": "y60a02",
         "period_format": "M",
         "data_to_get": {
-            "_viskat_1int":[                     
-                "Visitationskategori i alt",
-                "Jobparat",
-                "Aktivitetsparat",
-                "Uddannelsesparat",
-                "Åbenlys uddannelsesparat",
-                "Uoplyst visitationskategori"
+            "_viskat_1int": [
+                "Jobparat"
+            ],
+            "_kth_sats": [
+                "Kontanthjælpssatser i alt",
+                "Forhøjet sats",
+                "Grundsats",
+                "Mindstesats omfattet af program",
+                "Mindstesats øvrige"
             ]
         }
     },
@@ -177,6 +196,19 @@ JOBINDSATS_CONFIG = [
         "period_format": "M",
         "data_to_get": {
             "area": ["Randers", "Hele landet"]
+        }
+    },
+    {
+        "name": "Andel i beskæftigelse 3, 6, 9 og 12 mdr. efter nyledighed",
+        "years_back": 3,
+        "dataset": "y25i08",
+        "period_format": "Q",
+        "data_to_get": {
+            "_opdel_akt": [
+                "I alt",
+                "A-dagpenge",
+                "Kontanthjælp"
+            ]
         }
     }
 ]
