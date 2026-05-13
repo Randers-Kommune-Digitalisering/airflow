@@ -9,7 +9,7 @@ from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
-
+# TODO: update doc string with new parameters(id)
 def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]], id: str = None) -> bool:
     """
     Fetch data from the Jobindsats API, transform it into a DataFrame, and store it in the database.
