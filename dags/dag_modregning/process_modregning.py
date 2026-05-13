@@ -19,8 +19,14 @@ logger = logging.getLogger(__name__)
 
 def _resolve_date_range() -> tuple[str, str]:
     """
-    # TODO: Beskriv hvordan startDato og slutDato skal bestemmes. Den vælger ikke month-to-date men i stedet sidste måned.
-    Resolve startDato/slutDato as ISO dates based on logical_date (default: month-to-date).
+    Resolve start_dato/slut_dato as ISO dates (YYYY-MM-DD) based on Airflow `logical_date`.
+
+    - `logical_date` is converted to the DAG timezone and truncated to a date.
+    - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
+    - `slut_dato` is set to `logical_date`.
+
+    Returns:
+        (start_dato, slut_dato) as ISO date strings.
     """
     ctx = get_current_context()
     logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
@@ -35,12 +41,12 @@ def process_modregning() -> None:
     2) Call Serviceplatform for each CPR in date range
     3) Email an Excel report
     """
-    modregning_config = Variable.get("modregning_config", deserialize_json=True)
+    modregning_runtime_config = Variable.get("modregning_runtime_config", deserialize_json=True)
 
-    sftp_dir = modregning_config["sftp_dir"]
-    sender = modregning_config["sender_email"]
-    recipients = modregning_config["recipient_emails"]
-    smtp_server = modregning_config["smtp_server"]
+    sftp_dir = modregning_runtime_config["sftp_dir"]
+    sender = modregning_runtime_config["sender_email"]
+    recipients = modregning_runtime_config["recipient_emails"]
+    smtp_server = modregning_runtime_config["smtp_server"]
 
     start_dato, slut_dato = _resolve_date_range()
     logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
@@ -68,7 +74,7 @@ def process_modregning() -> None:
         logger.info("After extracting unique CPRs")
 
         rows: list[list[str]] = []
-        
+
         from utils.kombit import TempClientCert
         from kombit_client.integrations.sf1491 import YdelseListeHentClient # Import lazily to avoid Airflow freezing issue
 
