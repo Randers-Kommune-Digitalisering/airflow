@@ -161,7 +161,7 @@ def _period_request(http_hook: HttpHook, dataset: str, period_format: str) -> Op
         if period_format == 'QMAT':
             valid_periods = [p for p in periods if len(p) == 10 and p[4:8] == 'QMAT' and p[8:].isdigit()]
         elif period_format == 'Q':
-            valid_periods = [p for p in periods if len(p) == 6 and p[4] == 'Q' and p[5:].isdigit()]
+            valid_periods = [p for p in periods if len(p) == 7 and p[4] == 'Q' and p[5:].isdigit()]
         elif period_format == 'M':
             valid_periods = [p for p in periods if len(p) == 7 and p[4] == 'M' and p[5:].isdigit()]
         else:
