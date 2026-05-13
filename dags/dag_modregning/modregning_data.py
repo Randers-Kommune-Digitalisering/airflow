@@ -94,8 +94,6 @@ def _normalize_cpr(value: object) -> str | None:
     if len(s) != 10:
         return None
 
-    # TODO: Overvej at validere CPR yderligere, fx ved at tjekke fødselsdato og kontrolciffer - vi har en regex til dette
-
     return s
 
 
