@@ -3,12 +3,8 @@
 
 ## Formål
 
-# TODO: Beskriv formålet bedre. Hvilke ydelser behandles der? Hvorfor?
-# TODO: Beskriv CPR-listen (Hvad indeholder den? I hvilket format?)
-# TODO: Beskriv SFTP-setup - hvor kommer data fra? Tilføj SFTP til afhængiheder - løsningen virker ikke uden.
-# TODO: Beskriv schedule ift. dato-interval beregning
+Formålet med jobbet er at understøtte Betalingskontorets behov for at sammenholde personer (fra en CPR-liste) med oplysninger om ydelsesudbetalinger hentet via Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)) i et givent dato-interval. Jobbet henter den nyeste CPR-liste (Excel) fra SFTP, slår relevante ydelsestyper op pr. CPR i Serviceplatformen og genererer en Excel-rapport, som sendes på email. Rapporten bruges som grundlag for kontrol og opfølgning på personer, der modtager bestemte ydelsestyper (herunder at kunne frasortere ydelsestyper via excluded-listen).
 
-Formålet med jobbet er at hente den nyeste CPR-liste (Excel) fra en SFTP, slå modregningsrelevante ydelser op via Serviceplatform gennem Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)), og sende en Excel-rapport på email.
 
 ## Beskrivelse
 
@@ -20,7 +16,6 @@ Koden består af et DAG-job, der udfører følgende trin:
 - Finder nyeste Excel-fil på SFTP (default mønster `*.xlsx`) i den mappe, der er angivet i `modregning_config["sftp_dir"]`
 - Læser Excel-arket og udtrækker unikke CPR-numre fra kolonnen `ID-nummer`
   - CPR normaliseres til 10 cifre (ugyldige værdier ignoreres)
-  - CPR maskeres i logs (fx `DDMMYYxxxx`)
 - Kalder Serviceplatform (SF1491) for hver CPR i dato-intervallet og udtrækker `YdelseNavn`
   - Visse ydelsestyper filtreres fra via `EXCLUDED_YDELSE_NAVNE` listen i koden, hvorved YdelseNavn vil være tom
   - Hvis der ingen ydelser findes i svaret sættes feltet til `Ingen Ydelse`
@@ -30,10 +25,20 @@ Koden består af et DAG-job, der udfører følgende trin:
 **Dataflow:**
 - Excel på SFTP → CPR-liste → Serviceplatform-opslag → Excel-rapport → Email
 
+**Forudsætning(manuel proces):**
+
+Den 15. i hver måned uploader Betalingskontoret en ny CPR-liste (Excel) til SFTP-mappen. CPR-listen bruges eom input til modregningsopslag.
+Excel-filen skal indeholde kolonnen `ID-nummer` (CPR). 
+Jobbet bruger den nyeste tilgængelige Excel-fil på SFTP; hvis der ikke ligger en opdateret fil, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov).
+
 ## Afhængigheder
+
+### Kombit_client(Serviceplatformen)
 
 Da koden anvender kombit_client pakken kræver det at man sætter **`CLIENT_CERT_PUBLIC_KEY`** og **`CLIENT_CERT_PRIVATE_KEY`**. De resterende certifikater fra Serviceplatformen ligger i mappen **`Certificates`**
 
+
+### Airflow Connections
 :key: | **Airflow Connections**
 
 **SFTP:**
@@ -46,10 +51,12 @@ Bruges som `Connection id` i Airflow til at hente host, user, pass og port til S
 *Required felter*:
   - Connection id, Host, Username, Password og Port(22)
 
+
+### Airflow Variables 
 :key: | **Airflow Variables**
 
-**Modregning konfiguration (SFTP + email):**
-- **Key**: `modregning_config`
+**Modregning Runtime Konfiguration (SFTP + email + SMTP ):**
+- **Key**: `modregning_runtime_config`
 
 *Required felter*:
   - `sftp_dir` (remote mappe på SFTP)
@@ -65,9 +72,37 @@ Eksempel:
   "recipient_emails": ["modtager1@randers.dk", "modtager2@randers.dk"],
   "smtp_server": "smtp.example.local"
 }
+```
 
-## Schedule
+**Modregning Excluded Ydelse navne liste:**
+- **Key**: `modregning_excluded_ydelse_list`
 
-Schedule er sat op til at køre automatisk på følgende tidspunkter:
+*Required felter*:
+  - `excluded_ydelse_name` (Værdier fra ydelser som skal excludes fra udtrækket)
 
-- **Tidspunkt:** Kl. 09:00 den 15. i hver måned
+Eksempel:
+```json
+{
+  "excluded_ydelse_name": [
+    "Sygedagpenge til virksomhed",
+    "Sygedagpenge til borger"
+  ]
+}
+```
+
+## Schedule og dato interval
+
+
+DAG’en er planlagt til at køre kl. 09:00 den 15. i hver måned. For hver kørsel beregnes dato-intervallet ud fra Airflows `logical_date `(konverteret til DAG’ens timezone og trunkeret til dato):
+
+- `slut_dato` = datoen for `logical_date`
+- `start_dato` = 1. dag i måneden før `logical_date`
+
+
+Det betyder, at en planlagt kørsel den 15. i måneden typisk dækker perioden fra 1. i forrige måned til 15. i indeværende måned (inkl.).
+
+**Eksempel:**
+
+Kørsel: 2026-05-15 kl. 09:00 --->  `logical_date` = 2026-05-15
+- `start_dato` = 2026-04-01
+- `slut_dato` = 2026-05-15
