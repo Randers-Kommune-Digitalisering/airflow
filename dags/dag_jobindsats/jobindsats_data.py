@@ -32,6 +32,7 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
             return False
 
         period = _dynamic_period(latest_period=latest_period, years_back=years_back, period_format=period_format)
+
         if not period:
             logger.error("Failed to generate periods")
             return False
@@ -99,11 +100,11 @@ def _dynamic_period(latest_period: str, years_back: int, period_format: str) -> 
             current_year = int(latest_period[:4])
             current_quarter = int(latest_period[5:])
             for quarter in range(1, current_quarter + 1):
-                period.append(f"{current_year}Q{quarter}")
+                period.append(f"{current_year}Q0{quarter}")
             if years_back:
                 for year in range(current_year - years_back, current_year):
                     for quarter in range(1, 5):
-                        period.append(f"{year}Q{quarter}")
+                        period.append(f"{year}Q0{quarter}")
         elif period_format == 'M' and 'M' in latest_period:
             current_year = int(latest_period[:4])
             current_month = int(latest_period[5:])
