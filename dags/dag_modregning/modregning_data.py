@@ -6,23 +6,21 @@ from datetime import datetime, timezone
 from typing import Any
 from openpyxl.utils import get_column_letter
 from airflow.providers.sftp.hooks.sftp import SFTPHook
+from airflow.models import Variable
 
 logger = logging.getLogger(__name__)
 
-# TODO: Overvej at flytte pseudo env vars til airflow vars - ellers blot slet kommentar
-DEFAULT_CPR_COLUMN = "ID-nummer"
+# the excluded_ydelse_name list will from now on be maintained in Airflow Variables, so it can be updated without code changes
+excluded_cfg = Variable.get(
+    "modregning_excluded_ydelse_list",
+    default_var='{"excluded_ydelse_name": []}',
+    deserialize_json=True,
+)
 
-EXCLUDED_YDELSE_NAVNE: set[str] = {
-    "Sygedagpenge til virksomhed",
-    "Sygedagpenge til borger",
-    "LAS § 81 a - Enkeltydelse til udsættelsestruede lejere",
-    "DAL § 86 - Tilskud pasning af egne børn",
-    "Ressourceforløbsydelse under ressourceforløb, Uddannelseshjælp",
-    "Fleksløntilskud",
-    "Ledighedsydelse",
-    "Ressourceforløbsydelse under ressourceforløb",
-    "Ressourceforløbsydelse, jobafklaring",
-    "Fleksløntilskud, Ledighedsydelse",
+excluded_ydelse_name = {
+    x.strip()
+    for x in excluded_cfg.get("excluded_ydelse_name", [])
+    if x and isinstance(x, str)
 }
 
 
@@ -92,10 +90,10 @@ def _normalize_cpr(value: object) -> str | None:
     s = str(value).strip().replace("-", "").replace(" ", "")
     if not s.isdigit():
         return None
-    
+
     if len(s) != 10:
         return None
-    
+
     # TODO: Overvej at validere CPR yderligere, fx ved at tjekke fødselsdato og kontrolciffer - vi har en regex til dette
 
     return s
@@ -103,7 +101,7 @@ def _normalize_cpr(value: object) -> str | None:
 
 def extract_unique_cprs(
     df: pd.DataFrame,
-    column: str = DEFAULT_CPR_COLUMN,
+    column: str = "ID-nummer",
 ) -> list[str]:
     """
     Extract unique CPR numbers from an Excel DataFrame column.
@@ -152,7 +150,7 @@ def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tu
             if not navn:
                 continue
 
-            if navn in EXCLUDED_YDELSE_NAVNE:
+            if navn in excluded_ydelse_name:
                 continue
 
             ydelser.add(navn)
