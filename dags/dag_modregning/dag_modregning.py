@@ -16,7 +16,7 @@ with DAG(
     max_active_runs=1,
     default_args=dag_args,
     description="Fetch CPR list from SFTP, query Serviceplatform, and email Modregning report",
-    tags=["modregning", "sftp", "http", "email"],
+    tags=["modregning", "sftp", "serviceplatform", "email"],
 ) as dag:
 
     run_modregning = PythonOperator(
