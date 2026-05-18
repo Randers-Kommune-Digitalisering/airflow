@@ -3,7 +3,6 @@ import json
 import pandas as pd
 from io import BytesIO
 from typing import Any, Sequence
-from dag_affald.affald_config import SHEET_SPECS, GENBRUGSPLADSEN_CUSTOMER_NAMES
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
 from openpyxl import Workbook
@@ -12,11 +11,32 @@ from openpyxl.worksheet.worksheet import Worksheet
 from collections import defaultdict
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from airflow.models import Variable
+
 
 logger = logging.getLogger(__name__)
 
 
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"]
+
+
+def _get_affald_cfg() -> dict[str, Any]:
+    cfg = Variable.get("affald_report_config", default_var=None, deserialize_json=True)
+    if not isinstance(cfg, dict):
+        raise ValueError("Airflow Variable is missing or invalid: 'affald_report_config' (expected JSON object).")
+    return cfg
+
+
+def _get_sheet_specs() -> list[dict[str, Any]]:
+    specs = _get_affald_cfg().get("sheet_specs")
+    if not isinstance(specs, list):
+        raise ValueError("Missing/invalid 'sheet_specs' in Variable 'affald_report_config'.")
+    return specs
+
+
+def _get_default_customers() -> list[str]:
+    names = _get_affald_cfg().get("genbrugspladsen_customer_names") or []
+    return [str(x) for x in names]
 
 
 def _normalize_name(value: Any) -> str:
@@ -42,9 +62,7 @@ def sheet_specs_requires_carrier() -> bool:
             return spec[-1]
         return {}
 
-    logger.debug(f"Checking SHEET_SPECS for carrier requirements (spec_count={len(SHEET_SPECS)})...")
-
-    for spec in SHEET_SPECS:
+    for spec in _get_sheet_specs():
         options = _options_from_spec(spec=spec)
 
         if bool(options.get("group_by_carrier", False)):
@@ -72,7 +90,7 @@ def _default_articles_from_sheet_specs() -> list[str]:
     """
     articles: set[str] = set()
 
-    for spec in SHEET_SPECS:
+    for spec in _get_sheet_specs():
 
         # explicit articles
         for a in spec.get("articles") or []:
@@ -110,7 +128,7 @@ def fetch_affald_registration_monthly_df(
              (+ CarrierName if include_carrier=True).
     """
 
-    default_customers = list(GENBRUGSPLADSEN_CUSTOMER_NAMES)
+    default_customers = _get_default_customers()
     default_articles = _default_articles_from_sheet_specs()
 
     if customer_names is None:
@@ -872,7 +890,7 @@ def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
     if "CarrierName" in df2.columns:
         df2["CarrierName"] = df2["CarrierName"].astype(str)
 
-    sheet_specs: list[Any] = SHEET_SPECS
+    sheet_specs: list[Any] = _get_sheet_specs()
 
     wb = Workbook()
     default_ws = wb.active
@@ -1054,9 +1072,7 @@ def mp_waste_amount_data(
 
         page += 1
 
-    logger.info(
-        f"Successfully retrieved data from MP API. Total records: {len(all_rows)} (pages fetched: {page})"
-    )
+    logger.info(f"Successfully retrieved data from MP API. Total records: {len(all_rows)} (pages fetched: {page})")
 
     return all_rows
 
@@ -1111,14 +1127,14 @@ def build_mp_monthly_excel_bytes(
     ws = wb.active
     ws.title = "Marius Pedersen udtræk"
 
-    customer_name_map: dict[int, str] = {
+    customer_number_name_map: dict[int, str] = {
         80067523: "MP A/S Undergrund Århus VIP",
         80070490: "Brændbart, direkte Aarhus MP (mini aff.)",
         80070170: "Pap - indsamlet i containere MP (pap)",
     }
 
     def _row_label(cust_i: int, year_i: int) -> str:
-        name = customer_name_map.get(cust_i)
+        name = customer_number_name_map.get(cust_i)
         if name:
             return f"{name} {year_i}"
         return f"{cust_i} {year_i}"
@@ -1134,7 +1150,7 @@ def build_mp_monthly_excel_bytes(
                 pass
     newest_year = max(years_present) if years_present else None
 
-    # ===== Header/top som _write_sheet (A..P) =====
+    # Header/top som _write_sheet (A..P)
     ws.merge_cells("A1:P1")
     ws["A1"].value = "Marius Pedersen API - Mængder"
     ws["A1"].font = Font(bold=True, size=14)
@@ -1171,7 +1187,7 @@ def build_mp_monthly_excel_bytes(
     num_fmt_pct = "+0.0%;-0.0%;0.0%"
     current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
 
-    # ===== Byg pivot: (customer, year) -> month -> qty =====
+    # Build pivot: (customer, year) -> month -> qty
     month_qty: dict[tuple[int, int], dict[int, float]] = defaultdict(lambda: defaultdict(float))
 
     for rec in (monthly_data or []):
@@ -1210,7 +1226,7 @@ def build_mp_monthly_excel_bytes(
 
     for (cust_i, year_i) in keys_sorted:
         if prev_customer is not None and cust_i != prev_customer:
-            r += 1  # blank række mellem customers
+            r += 1  # blank row between customers
 
         ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
 
@@ -1241,10 +1257,10 @@ def build_mp_monthly_excel_bytes(
 
     last_kg_row = r - 1
 
-    # ===== TON-sektion =====
-    ton_unit_row = last_kg_row + 2
-    ton_header_row = ton_unit_row + 1
-    ton_data_row = ton_header_row + 1
+    # TON-section
+    ton_unit_row = last_kg_row + 2  # blank row + unit row
+    ton_header_row = ton_unit_row + 1  # header row with month names, year total, pct change
+    ton_data_row = ton_header_row + 1  # first data row for tons
 
     ws.cell(row=ton_unit_row, column=1, value="i tons.")
     ws.cell(row=ton_unit_row, column=1).font = Font(bold=True)
