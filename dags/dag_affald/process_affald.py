@@ -50,7 +50,7 @@ def process_affald() -> None:
 
     mp_excel_bytes = build_mp_monthly_excel_bytes(monthly_data=monthly_data)
 
-    affald_config = Variable.get("affald_config", deserialize_json=True)
+    affald_config = Variable.get("affald_runtime_config", deserialize_json=True)
 
     sender = affald_config["sender_email"]
     recipients = affald_config["recipient_emails"]
