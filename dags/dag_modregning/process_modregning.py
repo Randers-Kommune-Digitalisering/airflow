@@ -11,7 +11,6 @@ from dag_modregning.modregning_data import (
     extract_unique_cprs,
     extract_ydelser_from_serviceplatform_response,
     get_latest_excel_info,
-    mask_cpr,
     read_excel_from_sftp,
 )
 
@@ -20,7 +19,14 @@ logger = logging.getLogger(__name__)
 
 def _resolve_date_range() -> tuple[str, str]:
     """
-    Resolve startDato/slutDato as ISO dates based on logical_date (default: month-to-date).
+    Resolve start_dato/slut_dato as ISO dates (YYYY-MM-DD) based on Airflow `logical_date`.
+
+    - `logical_date` is converted to the DAG timezone and truncated to a date.
+    - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
+    - `slut_dato` is set to `logical_date`.
+
+    Returns:
+        (start_dato, slut_dato) as ISO date strings.
     """
     ctx = get_current_context()
     logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
@@ -35,12 +41,12 @@ def process_modregning() -> None:
     2) Call Serviceplatform for each CPR in date range
     3) Email an Excel report
     """
-    modregning_config = Variable.get("modregning_config", deserialize_json=True)
+    modregning_runtime_config = Variable.get("modregning_runtime_config", deserialize_json=True)
 
-    sftp_dir = modregning_config["sftp_dir"]
-    sender = modregning_config["sender_email"]
-    recipients = modregning_config["recipient_emails"]
-    smtp_server = modregning_config["smtp_server"]
+    sftp_dir = modregning_runtime_config["sftp_dir"]
+    sender = modregning_runtime_config["sender_email"]
+    recipients = modregning_runtime_config["recipient_emails"]
+    smtp_server = modregning_runtime_config["smtp_server"]
 
     start_dato, slut_dato = _resolve_date_range()
     logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
@@ -68,21 +74,20 @@ def process_modregning() -> None:
         logger.info("After extracting unique CPRs")
 
         rows: list[list[str]] = []
-        
+
         from utils.kombit import TempClientCert
-        from kombit_client.integrations.sf1491 import YdelseListeHentClient # Virker kun med Lazy import. Hvis du sætter import ved toppen så fryser hele DAG'en 
+        from kombit_client.integrations.sf1491 import YdelseListeHentClient # Import lazily to avoid Airflow freezing issue
+
         with TempClientCert() as client_cert_path:
+            ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
             for cpr in cpr_list:
-                masked_cpr = mask_cpr(cpr=cpr)
-                logger.info(f"Processing CPR: {masked_cpr}")
                 try:
-                    ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
                     payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
 
                     ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
 
                     if ydelser:
-                        cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(eg. Forhøjet sats , Grund sats)
+                        cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(e.g. Forhøjet sats , Grund sats)
                     elif found_any:
                         cell_value = ""  # Only filtered ydelser -> empty cell only
                     else:
@@ -91,7 +96,7 @@ def process_modregning() -> None:
                     rows.append([cpr, cell_value])
 
                 except Exception as e:
-                    logger.error(f"Error processing CPR {masked_cpr}: {e}")
+                    logger.error(f"Error during processing: {e}")
                     rows.append([cpr, "Error"])
 
         out_df = pd.DataFrame(rows, columns=["cpr", "YdelseNavn"])

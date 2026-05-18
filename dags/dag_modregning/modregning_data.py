@@ -6,22 +6,21 @@ from datetime import datetime, timezone
 from typing import Any
 from openpyxl.utils import get_column_letter
 from airflow.providers.sftp.hooks.sftp import SFTPHook
+from airflow.models import Variable
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CPR_COLUMN = "ID-nummer"
+# the excluded_ydelse_name list will from now on be maintained in Airflow Variables, so it can be updated without code changes
+excluded_cfg = Variable.get(
+    "modregning_excluded_ydelse_list",
+    default_var='{"excluded_ydelse_name": []}',
+    deserialize_json=True,
+)
 
-EXCLUDED_YDELSE_NAVNE: set[str] = {
-    "Sygedagpenge til virksomhed",
-    "Sygedagpenge til borger",
-    "LAS § 81 a - Enkeltydelse til udsættelsestruede lejere",
-    "DAL § 86 - Tilskud pasning af egne børn",
-    "Ressourceforløbsydelse under ressourceforløb, Uddannelseshjælp",
-    "Fleksløntilskud",
-    "Ledighedsydelse",
-    "Ressourceforløbsydelse under ressourceforløb",
-    "Ressourceforløbsydelse, jobafklaring",
-    "Fleksløntilskud, Ledighedsydelse",
+excluded_ydelse_name = {
+    x.strip()
+    for x in excluded_cfg.get("excluded_ydelse_name", [])
+    if x and isinstance(x, str)
 }
 
 
@@ -44,7 +43,7 @@ def get_latest_excel_info(
 
     matched = [f for f in files if fnmatch.fnmatch(f.filename.lower(), pattern.lower())]
     if not matched:
-        logger.error(f'No Excel files found in "{directory}" matching "{pattern}"')
+        logger.error(f'No Excel files found in "{directory}" matching "{pattern.lower()}"')
         return None
 
     latest = max(matched, key=lambda f: f.st_mtime)
@@ -65,7 +64,7 @@ def read_excel_from_sftp(
     :param sftp_hook: Airflow SFTPHook used to obtain an SFTP connection.
     :param remote_path: Full remote path to the Excel file to read.
     :param dtype: Optional dtype mapping forwarded to `pandas.read_excel`.
-    :param sheet_name: Sheet name
+    :param sheet_name: Sheet name or index to read, forwarded to `pandas.read_excel` (default: 0, i.e. first sheet).
     :return: DataFrame containing the parsed Excel sheet.
     """
 
@@ -76,19 +75,6 @@ def read_excel_from_sftp(
         data = remote_file.read()
 
     return pd.read_excel(io.BytesIO(data), dtype=dtype, sheet_name=sheet_name)
-
-
-def mask_cpr(cpr: object) -> str:
-    """
-    Mask CPR for logging (never log full CPR).
-
-    :param cpr: CPR-like value.
-    :return: Masked CPR like 'DDMMYYxxxx' or 'invalid'.
-    """
-    cpr_str = str(cpr).strip().replace("-", "").replace(" ", "").zfill(10)
-    if len(cpr_str) == 10 and cpr_str.isdigit():
-        return f"{cpr_str[:6]}xxxx"
-    return "invalid"
 
 
 def _normalize_cpr(value: object) -> str | None:
@@ -105,13 +91,15 @@ def _normalize_cpr(value: object) -> str | None:
     if not s.isdigit():
         return None
 
-    s = s.zfill(10)
-    return s if len(s) == 10 else None
+    if len(s) != 10:
+        return None
+
+    return s
 
 
 def extract_unique_cprs(
     df: pd.DataFrame,
-    column: str = DEFAULT_CPR_COLUMN,
+    column: str = "ID-nummer",
 ) -> list[str]:
     """
     Extract unique CPR numbers from an Excel DataFrame column.
@@ -123,13 +111,9 @@ def extract_unique_cprs(
     if column not in df.columns:
         raise ValueError(f'Expected column "{column}" not found. Columns: {df.columns.tolist()}')
 
-    cprs: list[str] = []
-    for raw in df[column].tolist():
-        normalized = _normalize_cpr(raw)
-        if normalized:
-            cprs.append(normalized)
-
-    unique = sorted(set(cprs))
+    normalized = df[column].map(_normalize_cpr)
+    # `dropna()` removes None/NaN, then `unique()` is faster than `set(...)` for large Series.
+    unique = sorted(str(cpr) for cpr in normalized.dropna().unique())
     logger.info(f"Extracted {len(unique)} unique CPRs from Excel")
     return unique
 
@@ -156,7 +140,7 @@ def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tu
         for ydelse in ydelse_list:
             found_any_ydelse = True
 
-            navn = (ydelse.get("BevilgetYdelse", {}) or {}).get("YdelseNavn", "")
+            navn = ydelse.get("BevilgetYdelse", {}).get("YdelseNavn", "")
             if not isinstance(navn, str):
                 continue
 
@@ -164,7 +148,7 @@ def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tu
             if not navn:
                 continue
 
-            if navn in EXCLUDED_YDELSE_NAVNE:
+            if navn in excluded_ydelse_name:
                 continue
 
             ydelser.add(navn)
@@ -192,11 +176,13 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes
         for col_idx, col_name in enumerate(df.columns, start=1):
             series = df[col_name].fillna("").astype(str)
 
-            max_len = series.map(len).max() if not series.empty else 0
-            if pd.isna(max_len):
+            if series.empty:
                 max_len = 0
+            else:
+                max_len_raw = series.map(len).max()
+                max_len = int(max_len_raw) if pd.notna(max_len_raw) else 0
 
-            max_len = max(int(max_len), len(str(col_name)))
+            max_len = max(max_len, len(str(col_name)))
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + padding, max_width)
 
     return output.getvalue()
