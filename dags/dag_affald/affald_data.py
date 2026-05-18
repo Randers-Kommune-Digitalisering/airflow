@@ -51,7 +51,7 @@ def _normalize_name(value: Any) -> str:
 
 def sheet_specs_requires_carrier() -> bool:
     """
-    Check whether any entry in ``SHEET_SPECS`` requires carrier (CarrierName) data.
+    Check whether any entry in ``sheet_specs`` in affald_report_config variable requires carrier (CarrierName) data.
 
     :return: True if carrier is needed (grouping/filtering uses carrier), otherwise False.
     """
@@ -78,13 +78,13 @@ def sheet_specs_requires_carrier() -> bool:
             if isinstance(g, dict) and g.get("carrier_names"):
                 return True
 
-    logger.debug("Carrier not needed based on SHEET_SPECS.")
+    logger.debug("Carrier not needed based on sheet_specs in affald_report_config variable.")
     return False
 
 
 def _default_articles_from_sheet_specs() -> list[str]:
     """
-    Collect the default set of article numbers from ``SHEET_SPECS``.
+    Collect the default set of article numbers from ``sheet_specs`` in affald_report_config variable.
 
     :return: Sorted list of unique article numbers.
     """
@@ -851,7 +851,7 @@ def _normalize_material_groups_for_sheet(
     """
     Normalize material_groups for a sheet (optionally auto-append vare nr. to labels).
 
-    :param material_groups: Material group config from ``SHEET_SPECS``.
+    :param material_groups: Material group config from ``sheet_specs`` in affald_report_config variable.
     :param auto_append_vare_nr: Default behaviour for auto-appending vare nr. (can be overridden per group).
     :return: Normalized copy of material_groups (or None).
     """
@@ -879,10 +879,10 @@ def _normalize_material_groups_for_sheet(
 
 def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
     """
-    Build the affald Excel workbook from a DataFrame and ``SHEET_SPECS``.
+    Build the affald Excel workbook from a DataFrame and ``sheet_specs`` in affald_report_config variable.
 
     :param df: Input DataFrame (typically output from fetch_affald_registration_monthly_df).
-    :return: openpyxl Workbook with one sheet per entry in ``SHEET_SPECS``.
+    :return: openpyxl Workbook with one sheet per entry in ``sheet_specs`` in affald_report_config variable.
     """
     df2 = df.copy()
     df2["ArticleNumber"] = df2["ArticleNumber"].astype(str)
