@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, text  # , or_
 from sqlalchemy.orm import selectinload
 from airflow.models import Variable
-from rkdigi import DatabaseManager
+from rkdigi.database_manager import DatabaseManager
 
 from dag_sbsys_luk.model import (
     CivilstandOpslag,
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 ENV = "Test" if Variable.get("SBSYS_LUK_TEST_ENV", default_var="False").lower() == "true" else "Drift"
 
 USER_ID = 202653  # User: "Autoafslutsag"
-# TODO: Consider dynamic appraoch instead of hard code values for SAG_STATUS_CLOSED
+# TODO: Consider a dynamic approach instead of hard-coded values for SAG_STATUS_CLOSED
 SAG_STATUS_CLOSED = 8 if ENV == "Test" else 5  # 5 corresponds to 'Lukket' in production, 8 in test
 DOKUMENT_ART_ID = 6  # Dokumentart 6: "Andet"
 DOKUMENT_TYPE_ID = 0  # Dokumenttype 0: "Uspecificeret"
