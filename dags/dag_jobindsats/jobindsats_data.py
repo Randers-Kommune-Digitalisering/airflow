@@ -9,8 +9,8 @@ from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
-
-def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]]) -> bool:
+# TODO: update doc string with new parameters(id)
+def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]], id: str = None) -> bool:
     """
     Fetch data from the Jobindsats API, transform it into a DataFrame, and store it in the database.
 
@@ -32,6 +32,7 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
             return False
 
         period = _dynamic_period(latest_period=latest_period, years_back=years_back, period_format=period_format)
+
         if not period:
             logger.error("Failed to generate periods")
             return False
@@ -64,7 +65,7 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
         }
         df.rename(columns=rename_map, inplace=True)
 
-        output_table = f"jobindsats_{dataset.replace('_', '').lower()}"
+        output_table = f"jobindsats_{dataset.replace('', '').lower()}{f'{id.lower()}' if id else ''}"
 
         df.to_sql(name=output_table, con=db_engine, if_exists='replace', index=False)
         logger.info(f"Successfully saved {output_table} to the database")
@@ -99,11 +100,11 @@ def _dynamic_period(latest_period: str, years_back: int, period_format: str) -> 
             current_year = int(latest_period[:4])
             current_quarter = int(latest_period[5:])
             for quarter in range(1, current_quarter + 1):
-                period.append(f"{current_year}Q{quarter}")
+                period.append(f"{current_year}Q0{quarter}")
             if years_back:
                 for year in range(current_year - years_back, current_year):
                     for quarter in range(1, 5):
-                        period.append(f"{year}Q{quarter}")
+                        period.append(f"{year}Q0{quarter}")
         elif period_format == 'M' and 'M' in latest_period:
             current_year = int(latest_period[:4])
             current_month = int(latest_period[5:])
@@ -161,7 +162,7 @@ def _period_request(http_hook: HttpHook, dataset: str, period_format: str) -> Op
         if period_format == 'QMAT':
             valid_periods = [p for p in periods if len(p) == 10 and p[4:8] == 'QMAT' and p[8:].isdigit()]
         elif period_format == 'Q':
-            valid_periods = [p for p in periods if len(p) == 6 and p[4] == 'Q' and p[5:].isdigit()]
+            valid_periods = [p for p in periods if len(p) == 7 and p[4] == 'Q' and p[5:].isdigit()]
         elif period_format == 'M':
             valid_periods = [p for p in periods if len(p) == 7 and p[4] == 'M' and p[5:].isdigit()]
         else:
