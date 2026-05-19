@@ -171,22 +171,6 @@ class KladdeData(Base):
     Kladde = relationship('Kladde', uselist=False, back_populates='KladdeData')
 
 
-# class Bilag(Base):
-#     __tablename__ = 'Bilag'
-#     __table_args__ = (
-#         ForeignKeyConstraint(['KladdeRegistreringID'], [f'SbsysNet{ENV}.dbo.KladdeRegistrering.ID'], name='Bilag_KladdeRegistrering'),
-#         ForeignKeyConstraint(['DokumentRegistreringID'], [f'SbsysNet{ENV}.dbo.DokumentRegistrering.ID'], name='Bilag_DokumentRegistrering'),
-#         PrimaryKeyConstraint('ID', name='PK_Bilag'),
-#         {"schema": f"SbsysNet{ENV}.dbo"}
-#     )
-
-#     ID = Column(Integer, Identity(start=1, increment=1), primary_key=True)
-#     KladdeRegistreringID = Column(Integer)
-#     DokumentRegistreringID = Column(Integer)
-
-#     DokumentRegistrering = relationship('DokumentRegistrering')
-
-
 class DokumentRegistrering(Base):
     __tablename__ = 'DokumentRegistrering'
     __table_args__ = (
