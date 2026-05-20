@@ -43,7 +43,7 @@ def process_jobindsats() -> None:
             "years_back": job['years_back'],
             "dataset": job['dataset'],
             "period_format": job['period_format'],
-            "data_to_get": job['data_to_get'],
+            "params": job['params'],
         }
         if job.get('id'):
             kwargs["id"] = job['id']
