@@ -277,8 +277,10 @@ def _get_jobindsats_api_headers(http_hook: HttpHook) -> dict:
     :return: Dictionary with HTTP headers.
     """
     conn = http_hook.get_connection(http_hook.http_conn_id)
-    api_key = conn.extra_dejson.get("api_key")
+    if not conn.password:
+        raise ValueError("Missing API Key (connection password) for Jobindsats API connection.")
+
     return {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {conn.password}",
         "Content-Type": "application/json"
     }
