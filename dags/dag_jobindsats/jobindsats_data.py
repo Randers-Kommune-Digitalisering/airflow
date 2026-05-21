@@ -27,20 +27,19 @@ def get_data(
     try:
         logger.info(f"Starting Jobindsats job: {name}")
 
-        latest_period = _period_request(
+        valid_periods = _period_request(
             http_hook=http_hook,
             dataset=dataset,
             period_format=period_format,
         )
 
-        if not latest_period:
+        if not valid_periods:
             logger.error("Failed to get latest period")
             return False
 
         periods = _dynamic_period(
-            latest_period=latest_period,
-            years_back=years_back,
-            period_format=period_format,
+            valid_periods=valid_periods,
+            years_back=years_back
         )
 
         if not periods:
@@ -109,47 +108,38 @@ def get_data(
         return False
 
 
-def _dynamic_period(latest_period: str, years_back: int, period_format: str) -> list[str]:
+def _dynamic_period(
+    valid_periods: list[str],
+    years_back: int,
+) -> list[str]:
     """
-    Generate a list of periods based on the latest period, years back, and period format.
+    Filter valid periods based on years_back.
 
-    :param latest_period: Latest period string from the API.
-    :param years_back: Number of years back.
-    :param period_format: Format of the periods ('QMAT', 'Q', 'M').
-    :return: List of period strings.
+    :param valid_periods: List of valid API periods
+    :param years_back: Number of years back
+    :return: Filtered periods
     """
     try:
-        period: list[str] = []
-        if period_format == 'QMAT' and 'QMAT' in latest_period:
-            current_year = int(latest_period[:4])
-            current_qmat = int(latest_period[8:])
-            for qmat in range(1, current_qmat + 1):
-                period.append(f"{current_year}QMAT{qmat:02d}")
-            if years_back:
-                for year in range(current_year - years_back, current_year):
-                    for qmat in range(1, 13):
-                        period.append(f"{year}QMAT{qmat:02d}")
-        elif period_format == 'Q' and 'Q' in latest_period:
-            current_year = int(latest_period[:4])
-            current_quarter = int(latest_period[5:])
-            for quarter in range(1, current_quarter + 1):
-                period.append(f"{current_year}Q0{quarter}")
-            if years_back:
-                for year in range(current_year - years_back, current_year):
-                    for quarter in range(1, 5):
-                        period.append(f"{year}Q0{quarter}")
-        elif period_format == 'M' and 'M' in latest_period:
-            current_year = int(latest_period[:4])
-            current_month = int(latest_period[5:])
-            for month in range(1, current_month + 1):
-                period.append(f"{current_year}M{month:02d}")
-            if years_back:
-                for year in range(current_year - years_back, current_year):
-                    for month in range(1, 13):
-                        period.append(f"{year}M{month:02d}")
-        return period
+
+        if not valid_periods:
+            return []
+
+        current_year = datetime.now().year
+        min_year = current_year - years_back
+
+        filtered_periods = []
+
+        for period in valid_periods:
+
+            year = int(period[:4])
+
+            if year >= min_year:
+                filtered_periods.append(period)
+
+        return sorted(filtered_periods)
+
     except Exception as e:
-        logger.error(f'Error in dynamic_period: {e}')
+        logger.error(f"Error in dynamic_period: {e}")
         return []
 
 
@@ -176,69 +166,51 @@ def _period_request(
     http_hook: HttpHook,
     dataset: str,
     period_format: str,
-) -> str | None:
+) -> list[str] | None:
     """
-    Fetch latest available period from Jobindsats API v3.
+    Fetch valid periods from Jobindsats API v3.
 
     :param http_hook: HttpHook for Jobindsats API
     :param dataset: Dataset/table id
     :param period_format: M, Q, QMAT, Y, MYTD
-    :return: Latest period string or None
+    :return: List of valid period ids
     """
 
     try:
-        headers = _get_jobindsats_api_headers(
-            http_hook=http_hook
-        )
+        headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
         res = http_hook.run(
-            endpoint="v3/tables?format=json",
+            endpoint=f"v3/table/{dataset}?format=json",
             headers=headers,
         )
 
         data = res.json()
 
-        if not data:
-            logger.error("No table metadata returned")
-            return None
+        periods = data.get("periods", [])
 
-        for subject in data:
+        for periodtype in periods:
 
-            for group in subject.get("table_groups", []):
+            if periodtype.get("periodtype_id") != period_format:
+                continue
 
-                for table in group.get("tables", []):
+            values = periodtype.get("values", [])
 
-                    if table.get("table_id") != dataset:
-                        continue
+            valid_periods = [
+                p.get("period_id")
+                for p in values
+                if p.get("period_id")
+            ]
 
-                    periods = table.get("periods", {})
-                    periodtypes = periods.get("periodtypes", [])
+            logger.info(f"Found {len(valid_periods)} valid periods for dataset={dataset} type={period_format}")
 
-                    for periodtype in periodtypes:
+            return valid_periods
 
-                        if (
-                            periodtype.get("periodtype_id")
-                            == period_format
-                        ):
-
-                            latest_period = periodtype.get(
-                                "period_last"
-                            )
-
-                            logger.debug(f"Found latest period for {dataset}: {latest_period}")
-
-                            return latest_period
-
-        logger.error(
-            f"Dataset {dataset} with period format {period_format} not found"
-        )
+        logger.error(f"No matching period type found for dataset={dataset} with period_format={period_format}")
 
         return None
 
     except Exception as e:
-        logger.exception(
-            f"Error fetching latest period: {e}"
-        )
+        logger.exception(f"Error fetching periods: {e}")
         return None
 
 
