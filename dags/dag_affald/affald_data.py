@@ -1031,13 +1031,8 @@ def mp_waste_amount_data(
 
     page_size = 200
     page = 1
-    CustomerNumbers = customer_numbers
-    from_date = from_date
-    to_date = to_date
-    installation_address_id = installation_address_id
 
-    all_rows: list = []
-    total_count = None
+    all_rows: list[dict[str, Any]] = []
 
     while True:
         logger.debug(f"Fetching MP data page={page} page_size={page_size} ...")
@@ -1045,7 +1040,7 @@ def mp_waste_amount_data(
         payload = {
             "PageSize": page_size,
             "Page": page,
-            "CustomerNumbers": CustomerNumbers,
+            "CustomerNumbers": customer_numbers,
             "FromDate": from_date,
             "ToDate": to_date,
             "InstallationAddressId": installation_address_id,
@@ -1067,12 +1062,12 @@ def mp_waste_amount_data(
         if len(data) == 0:
             break
 
-        if isinstance(total_count, int) and len(all_rows) >= total_count:
-            break
-
         page += 1
 
     logger.info(f"Successfully retrieved data from MP API. Total records: {len(all_rows)} (pages fetched: {page})")
+
+    if not all_rows:
+        raise ValueError(f"No data returned from MP API for customers {customer_numbers} and date range {from_date} to {to_date}.")
 
     return all_rows
 
@@ -1217,45 +1212,61 @@ def build_mp_monthly_excel_bytes(
     for col in range(2, 17):  # B..P
         ws.column_dimensions[get_column_letter(col)].width = 20
 
+    def _write_customer_year_section(
+        start_row: int,
+        unit_divisor: float,
+        number_format: str,
+        prev_year_total_by_customer: dict[int, float],
+    ) -> int:
+        if float(unit_divisor) == 0.0:
+            raise ValueError("unit_divisor must be non-zero")
+
+        r = start_row
+        prev_customer: int | None = None
+
+        for (cust_i, year_i) in keys_sorted:
+            if prev_customer is not None and cust_i != prev_customer:
+                r += 1  # blank row between customers
+
+            ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
+
+            year_total = 0.0
+            for m in range(1, 13):
+                v = float(month_qty[(cust_i, year_i)].get(m, 0.0)) / float(unit_divisor)
+                year_total += v
+
+                cell = ws.cell(row=r, column=1 + m, value=float(v))  # B..M
+                cell.number_format = number_format
+                if newest_year is not None and year_i == newest_year:
+                    cell.fill = current_year_fill
+
+            y_cell = ws.cell(row=r, column=14, value=float(year_total))  # N
+            y_cell.number_format = number_format
+            y_cell.font = Font(bold=True)
+
+            prev_total = prev_year_total_by_customer.get(cust_i)
+            if prev_total is None or prev_total == 0:
+                ws.cell(row=r, column=15, value=None)  # O
+            else:
+                pct = (year_total - prev_total) / prev_total
+                p_cell = ws.cell(row=r, column=15, value=float(pct))
+                p_cell.number_format = num_fmt_pct
+
+            prev_year_total_by_customer[cust_i] = float(year_total)
+            prev_customer = cust_i
+            r += 1
+
+        return r - 1
+
     # KG-section
     start_row = 5
-    r = start_row
-
-    prev_year_total_by_customer: dict[int, float] = {}
-    prev_customer: int | None = None
-
-    for (cust_i, year_i) in keys_sorted:
-        if prev_customer is not None and cust_i != prev_customer:
-            r += 1  # blank row between customers
-
-        ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
-
-        year_total = 0.0
-        for m in range(1, 13):
-            v = float(month_qty[(cust_i, year_i)].get(m, 0.0))
-            year_total += v
-            cell = ws.cell(row=r, column=1 + m, value=v)  # B..M
-            cell.number_format = num_fmt_kg
-            if newest_year is not None and year_i == newest_year:
-                cell.fill = current_year_fill
-
-        y_cell = ws.cell(row=r, column=14, value=year_total)  # N
-        y_cell.number_format = num_fmt_kg
-        y_cell.font = Font(bold=True)
-
-        prev_total = prev_year_total_by_customer.get(cust_i)
-        if prev_total is None or prev_total == 0:
-            ws.cell(row=r, column=15, value=None)  # O
-        else:
-            pct = (year_total - prev_total) / prev_total
-            p_cell = ws.cell(row=r, column=15, value=float(pct))
-            p_cell.number_format = num_fmt_pct
-
-        prev_year_total_by_customer[cust_i] = year_total
-        prev_customer = cust_i
-        r += 1
-
-    last_kg_row = r - 1
+    prev_year_total_by_customer_kg: dict[int, float] = {}
+    last_kg_row = _write_customer_year_section(
+        start_row=start_row,
+        unit_divisor=1.0,
+        number_format=num_fmt_kg,
+        prev_year_total_by_customer=prev_year_total_by_customer_kg,
+    )
 
     # TON-section
     ton_unit_row = last_kg_row + 2  # blank row + unit row
@@ -1279,40 +1290,13 @@ def build_mp_monthly_excel_bytes(
     ws.cell(row=ton_header_row, column=14, value="Årssum").font = Font(bold=True)
     ws.cell(row=ton_header_row, column=15, value="Stigning = +/Fald = -").font = Font(bold=True)
 
-    r = ton_data_row
-    prev_year_total_ton_by_customer: dict[int, float] = {}
-    prev_customer_ton: int | None = None
-
-    for (cust_i, year_i) in keys_sorted:
-        if prev_customer_ton is not None and cust_i != prev_customer_ton:
-            r += 1  # blank række mellem customers
-
-        ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
-
-        year_total_ton = 0.0
-        for m in range(1, 13):
-            v_ton = float(month_qty[(cust_i, year_i)].get(m, 0.0)) / 1000.0
-            year_total_ton += v_ton
-            cell = ws.cell(row=r, column=1 + m, value=v_ton)
-            cell.number_format = num_fmt_ton
-            if newest_year is not None and year_i == newest_year:
-                cell.fill = current_year_fill
-
-        y_cell = ws.cell(row=r, column=14, value=year_total_ton)
-        y_cell.number_format = num_fmt_ton
-        y_cell.font = Font(bold=True)
-
-        prev_total = prev_year_total_ton_by_customer.get(cust_i)
-        if prev_total is None or prev_total == 0:
-            ws.cell(row=r, column=15, value=None)
-        else:
-            pct = (year_total_ton - prev_total) / prev_total
-            p_cell = ws.cell(row=r, column=15, value=float(pct))
-            p_cell.number_format = num_fmt_pct
-
-        prev_year_total_ton_by_customer[cust_i] = year_total_ton
-        prev_customer_ton = cust_i
-        r += 1
+    prev_year_total_by_customer_ton: dict[int, float] = {}
+    _write_customer_year_section(
+        start_row=ton_data_row,
+        unit_divisor=1000.0,
+        number_format=num_fmt_ton,
+        prev_year_total_by_customer=prev_year_total_by_customer_ton,
+    )
 
     buf = BytesIO()
     wb.save(buf)
