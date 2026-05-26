@@ -18,6 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 def process_affald() -> None:
+    """
+    Fetches waste data from Marius Pedersen API + Scanvægt DB, processes it, and sends an email report with the data.
+    """
 
     mp_http_hook = HttpHook(http_conn_id="marius_pedersen_api")
 
