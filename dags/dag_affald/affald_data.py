@@ -1035,7 +1035,7 @@ def mp_waste_amount_data(
     all_rows: list[dict[str, Any]] = []
 
     while True:
-        logger.debug(f"Fetching MP data page={page} page_size={page_size} ...")
+        logger.info(f"Fetching MP data page={page} page_size={page_size} ...")
 
         payload = {
             "PageSize": page_size,
