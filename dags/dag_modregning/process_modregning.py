@@ -3,18 +3,68 @@ from dateutil.relativedelta import relativedelta
 import pandas as pd
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
+from airflow.hooks.base import BaseHook
+from typing import Iterable
 from airflow.operators.python import get_current_context
-from airflow.providers.sftp.hooks.sftp import SFTPHook
-from rkdigi.email_handling import EmailSender
+import io
+from rkdigi.email_handling import EmailSender, EmailReader
+
 from dag_modregning.modregning_data import (
     df_to_excel_bytes,
     extract_unique_cprs,
     extract_ydelser_from_serviceplatform_response,
-    get_latest_excel_info,
-    read_excel_from_sftp,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _find_latest_modregning_excel_attachment(
+    email_reader: EmailReader,
+    mailbox: str = "INBOX",
+    criteria: str = "ALL",
+    filename_prefixes: Iterable[str] = ("Modregning", "DAKT"),
+    max_emails: int = 50,
+) -> tuple[bytes, str, bytes] | None:
+    """
+    Find the newest matching Excel attachment in an IMAP mailbox.
+
+    :param email_reader: EmailReader used to fetch emails.
+    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
+    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
+    :param filename_prefixes: Allowed attachment filename prefixes.
+    :param max_emails: Maximum number of emails to fetch and scan.
+    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
+    """
+    emails, failed = email_reader.get_emails(
+        mailbox=mailbox,
+        criteria=criteria,
+        set_flags=None,
+        max=max_emails,
+        low_to_high=False,  # start med nyeste
+    )
+
+    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
+
+    for msg in emails:
+        uid: bytes = getattr(msg, "uid", None)
+        subject = msg.get("Subject", "")
+        logger.info(f"Email UID: {uid}, Subject: {subject}")
+
+        for part in msg.iter_attachments():
+            filename = part.get_filename() or ""
+            if not filename.lower().endswith(".xlsx"):
+                continue
+
+            if not any(filename.startswith(p) for p in filename_prefixes):
+                continue
+
+            content = part.get_payload(decode=True)  # bytes
+            if not content:
+                continue
+
+            return uid, filename, content
+
+    return None
 
 
 def _resolve_date_range() -> tuple[str, str]:
@@ -43,29 +93,36 @@ def process_modregning() -> None:
     """
     modregning_runtime_config = Variable.get("modregning_runtime_config", deserialize_json=True)
 
-    sftp_dir = modregning_runtime_config["sftp_dir"]
     sender = modregning_runtime_config["sender_email"]
     recipients = modregning_runtime_config["recipient_emails"]
     smtp_server = modregning_runtime_config["smtp_server"]
 
+    modregning_imap_conn = BaseHook.get_connection("modregning_imap")
+
+    email_reader = EmailReader(
+        email=modregning_imap_conn.login,
+        password=modregning_imap_conn.password,
+    )
+
+    found = _find_latest_modregning_excel_attachment(
+        email_reader=email_reader,
+    )
+
+    if not found:
+        raise AirflowFailException("No Modregning Excel attachment found in mailbox")
+
+    uid, attachment_name, excel_bytes = found
+    logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
+
     start_dato, slut_dato = _resolve_date_range()
     logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
 
-    sftp_hook = SFTPHook(ssh_conn_id="shared_sftp")
-    latest_info = get_latest_excel_info(sftp_hook=sftp_hook, directory=sftp_dir)
-    if not latest_info:
-        raise AirflowFailException("No Excel file found on SFTP for Modregning")
-
-    excel_path, modified_at_utc = latest_info
-    logger.info(f"Using Excel file: {excel_path} (modified_at_utc={modified_at_utc.isoformat()})")
-
     try:
-        df = read_excel_from_sftp(
-            sftp_hook=sftp_hook,
-            remote_path=excel_path,
-            dtype={"ID-nummer": str},
-            sheet_name=0,
+        df = pd.read_excel(
+            io.BytesIO(excel_bytes),
+            engine="openpyxl",
         )
+
         cpr_list = extract_unique_cprs(df=df)
         logger.info("Extracted CPR from sftp")
         if not cpr_list:
@@ -120,9 +177,5 @@ def process_modregning() -> None:
 
         logger.info("Modregning processing completed successfully (email sent).")
 
-    finally:
-        try:
-            sftp_hook.delete_file(excel_path)
-            logger.info(f"Deleted SFTP file: {excel_path}")
-        except Exception:
-            logger.exception(f"Could not delete SFTP file: {excel_path}")
+    except Exception as e:
+        raise AirflowFailException("Error processing Modregning") from e
