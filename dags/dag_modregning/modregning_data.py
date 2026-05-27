@@ -1,11 +1,8 @@
-import fnmatch
 import io
 import logging
 import pandas as pd
-from datetime import datetime, timezone
 from typing import Any
 from openpyxl.utils import get_column_letter
-from airflow.providers.sftp.hooks.sftp import SFTPHook
 from airflow.models import Variable
 
 logger = logging.getLogger(__name__)
@@ -24,59 +21,6 @@ excluded_ydelse_name = {
 }
 
 
-def get_latest_excel_info(
-    sftp_hook: SFTPHook,
-    directory: str,
-    pattern: str = "*.xlsx",
-) -> tuple[str, datetime] | None:
-    """
-    Find the newest Excel file on an SFTP matching a filename pattern.
-
-    :param sftp_hook: Airflow SFTPHook for SFTP.
-    :param directory: Remote directory to search in.
-    :param pattern: Glob pattern for matching filenames (default '*.xlsx').
-    :return: (remote_path, modified_at_utc) if a match is found, otherwise None.
-    """
-
-    sftp = sftp_hook.get_conn()
-    files = sftp.listdir_attr(directory)
-
-    matched = [f for f in files if fnmatch.fnmatch(f.filename.lower(), pattern.lower())]
-    if not matched:
-        logger.error(f'No Excel files found in "{directory}" matching "{pattern.lower()}"')
-        return None
-
-    latest = max(matched, key=lambda f: f.st_mtime)
-    remote_path = directory.rstrip("/") + "/" + latest.filename
-    modified_at_utc = datetime.fromtimestamp(latest.st_mtime, tz=timezone.utc)
-    return remote_path, modified_at_utc
-
-
-def read_excel_from_sftp(
-    sftp_hook: SFTPHook,
-    remote_path: str,
-    dtype: dict[str, Any] | None = None,
-    sheet_name: str | int | None = 0,
-) -> pd.DataFrame:
-    """
-    Read an Excel file from SFTP into a pandas DataFrame.
-
-    :param sftp_hook: Airflow SFTPHook used to obtain an SFTP connection.
-    :param remote_path: Full remote path to the Excel file to read.
-    :param dtype: Optional dtype mapping forwarded to `pandas.read_excel`.
-    :param sheet_name: Sheet name or index to read, forwarded to `pandas.read_excel` (default: 0, i.e. first sheet).
-    :return: DataFrame containing the parsed Excel sheet.
-    """
-
-    logger.info(f"Reading Excel file from SFTP: {remote_path}")
-
-    sftp = sftp_hook.get_conn()
-    with sftp.open(remote_path, "rb") as remote_file:
-        data = remote_file.read()
-
-    return pd.read_excel(io.BytesIO(data), dtype=dtype, sheet_name=sheet_name)
-
-
 def _normalize_cpr(value: object) -> str | None:
     """
     Normalize CPR to 10 digits (string). Returns None if invalid.
@@ -91,6 +35,7 @@ def _normalize_cpr(value: object) -> str | None:
     if not s.isdigit():
         return None
 
+    s = s.zfill(10)  # Pad with leading zeros if less than 10 digits (e.g. Excel might read CPR as a number and drop leading zeros)
     if len(s) != 10:
         return None
 
@@ -112,7 +57,6 @@ def extract_unique_cprs(
         raise ValueError(f'Expected column "{column}" not found. Columns: {df.columns.tolist()}')
 
     normalized = df[column].map(_normalize_cpr)
-    # `dropna()` removes None/NaN, then `unique()` is faster than `set(...)` for large Series.
     unique = sorted(str(cpr) for cpr in normalized.dropna().unique())
     logger.info(f"Extracted {len(unique)} unique CPRs from Excel")
     return unique

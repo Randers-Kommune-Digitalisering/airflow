@@ -40,7 +40,7 @@ def _find_latest_modregning_excel_attachment(
         criteria=criteria,
         set_flags=None,
         max=max_emails,
-        low_to_high=False,  # start med nyeste
+        low_to_high=False,  # start with newest emails first
     )
 
     logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
