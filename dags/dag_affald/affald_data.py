@@ -1,20 +1,42 @@
 import logging
+import json
 import pandas as pd
 from io import BytesIO
 from typing import Any, Sequence
-from dag_affald.affald_config import SHEET_SPECS, GENBRUGSPLADSEN_CUSTOMER_NAMES
 from sqlalchemy import bindparam, text
 from sqlalchemy.engine import Engine
-
 from openpyxl import Workbook
+from airflow.providers.http.hooks.http import HttpHook
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.styles import Alignment, Font
+from collections import defaultdict
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+from airflow.models import Variable
+
 
 logger = logging.getLogger(__name__)
 
 
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "Maj", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dec"]
+
+
+def _get_affald_cfg() -> dict[str, Any]:
+    cfg = Variable.get("affald_report_config", default_var=None, deserialize_json=True)
+    if not isinstance(cfg, dict):
+        raise ValueError("Airflow Variable is missing or invalid: 'affald_report_config' (expected JSON object).")
+    return cfg
+
+
+def _get_sheet_specs() -> list[dict[str, Any]]:
+    specs = _get_affald_cfg().get("sheet_specs")
+    if not isinstance(specs, list):
+        raise ValueError("Missing/invalid 'sheet_specs' in Variable 'affald_report_config'.")
+    return specs
+
+
+def _get_default_customers() -> list[str]:
+    names = _get_affald_cfg().get("genbrugspladsen_customer_names") or []
+    return [str(x) for x in names]
 
 
 def _normalize_name(value: Any) -> str:
@@ -29,7 +51,7 @@ def _normalize_name(value: Any) -> str:
 
 def sheet_specs_requires_carrier() -> bool:
     """
-    Check whether any entry in ``SHEET_SPECS`` requires carrier (CarrierName) data.
+    Check whether any entry in ``sheet_specs`` in affald_report_config variable requires carrier (CarrierName) data.
 
     :return: True if carrier is needed (grouping/filtering uses carrier), otherwise False.
     """
@@ -40,9 +62,7 @@ def sheet_specs_requires_carrier() -> bool:
             return spec[-1]
         return {}
 
-    logger.debug(f"Checking SHEET_SPECS for carrier requirements (spec_count={len(SHEET_SPECS)})...")
-
-    for spec in SHEET_SPECS:
+    for spec in _get_sheet_specs():
         options = _options_from_spec(spec=spec)
 
         if bool(options.get("group_by_carrier", False)):
@@ -58,19 +78,19 @@ def sheet_specs_requires_carrier() -> bool:
             if isinstance(g, dict) and g.get("carrier_names"):
                 return True
 
-    logger.debug("Carrier not needed based on SHEET_SPECS.")
+    logger.debug("Carrier not needed based on sheet_specs in affald_report_config variable.")
     return False
 
 
 def _default_articles_from_sheet_specs() -> list[str]:
     """
-    Collect the default set of article numbers from ``SHEET_SPECS``.
+    Collect the default set of article numbers from ``sheet_specs`` in affald_report_config variable.
 
     :return: Sorted list of unique article numbers.
     """
     articles: set[str] = set()
 
-    for spec in SHEET_SPECS:
+    for spec in _get_sheet_specs():
 
         # explicit articles
         for a in spec.get("articles") or []:
@@ -108,7 +128,7 @@ def fetch_affald_registration_monthly_df(
              (+ CarrierName if include_carrier=True).
     """
 
-    default_customers = list(GENBRUGSPLADSEN_CUSTOMER_NAMES)
+    default_customers = _get_default_customers()
     default_articles = _default_articles_from_sheet_specs()
 
     if customer_names is None:
@@ -313,6 +333,8 @@ def _pivot_material(
     row_label_mode: str = "legacy",  # "legacy" or "generic"
     sort_mode: str = "year_then_material",  # "year_then_material" or "material_then_year"
     group_by_carrier: bool = False,
+    customer_order: Sequence[str] | None = None,
+    material_order: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """
     Pivot monthly weights into 12 month-columns + YearTotal for Excel tables.
@@ -321,6 +343,8 @@ def _pivot_material(
     :param row_label_mode: 'legacy' or 'generic' formatting for RowLabel.
     :param sort_mode: 'year_then_material' or 'material_then_year'.
     :param group_by_carrier: If True, include CarrierKey in pivot index/output.
+    :param customer_order: Optional explicit order for CustomerKey (list of customer names).
+                           Customers not listed will be appended after the listed ones.
     :return: Pivoted DataFrame with columns for months 1..12 and YearTotal.
     """
     base_cols = ["CustomerKey", "year", "MaterialKey"]
@@ -341,7 +365,6 @@ def _pivot_material(
     if "MaterialKey" not in tmp.columns:
         tmp["MaterialKey"] = tmp["ArticleNumber"].astype(str)
     if group_by_carrier and "CarrierKey" not in tmp.columns:
-
         if "CarrierName" in tmp.columns:
             tmp["CarrierKey"] = tmp["CarrierName"].astype(str)
         else:
@@ -363,6 +386,42 @@ def _pivot_material(
     pivot = pivot[[m for m in range(1, 13)]]
     pivot["YearTotal"] = pivot.sum(axis=1)
     pivot = pivot.reset_index()
+
+    # Apply customer ordering
+    if customer_order:
+        order = [_normalize_name(x) for x in customer_order]
+        order = [x for x in order if x]
+
+        present = pivot["CustomerKey"].astype(str).tolist()
+        present_unique = list(dict.fromkeys(present))  # keep first-seen order
+        present_set = set(present_unique)
+
+        known = [x for x in order if x in present_set]
+        known_set = set(known)
+        unknown = [x for x in present_unique if x not in known_set]
+        cats = known + unknown
+
+        pivot["CustomerKey"] = pd.Categorical(pivot["CustomerKey"], categories=cats, ordered=True)
+
+    # Apply material ordering
+    if material_order:
+        order = [_normalize_name(x) for x in material_order]
+        order = [x for x in order if x]
+
+        present = pivot["MaterialKey"].astype(str).tolist()
+        present_unique = list(dict.fromkeys(present))
+        present_set = set(present_unique)
+
+        known = [x for x in order if x in present_set]
+        known_set = set(known)
+        unknown = [x for x in present_unique if x not in known_set]
+        cats = known + unknown
+
+        pivot["MaterialKey"] = pd.Categorical(
+            pivot["MaterialKey"],
+            categories=cats,
+            ordered=True
+        )
 
     if group_by_carrier:
         if sort_mode == "material_then_year":
@@ -403,26 +462,37 @@ def _write_sheet(
     ton_label_mode: str = "legacy",
     blank_between: str = "customer",
     group_by_carrier: bool = False,
+    material_order: Sequence[str] | None = None,
+    ytd_year: int | None = None,
+    ytd_end_month: int | None = None,
 ) -> None:
     """
     Write a pivoted table (from ``_pivot_material``) into an Excel worksheet.
 
-    :param ws: openpyxl worksheet to write into.
-    :param table: Pivoted DataFrame from ``_pivot_material``.
-    :param title: Sheet title written in the header.
-    :param ton_label_mode: Label mode for the tons section ('legacy' or 'generic').
-    :param blank_between: Insert blank rows between groups ('customer', 'material', 'customer_and_material', 'none').
-    :param group_by_carrier: If True, include CarrierKey in grouping/labels.
-    :return: None.
+    Adds an extra YTD % column for the newest year (e.g. 2026), comparing Jan..M vs same Jan..M last year.
+    Keeps the existing annual % column unchanged.
     """
-    # A..O (1 label + 12 months + 1 year total + 1 pct)
-    ws.merge_cells("A1:O1")
+    end_m: int | None = None
+    if ytd_end_month is not None:
+        try:
+            end_m = int(ytd_end_month)
+        except Exception:
+            end_m = None
+    if end_m is not None:
+        end_m = max(1, min(12, end_m))
+
+    ytd_caption = "YTD"
+    if end_m is not None:
+        ytd_caption = f"YTD (Jan-{MONTH_NAMES[end_m - 1]})"
+
+    # A..P (1 label + 12 months + 1 year total + 1 pct + 1 ytd pct)
+    ws.merge_cells("A1:P1")
     c = ws["A1"]
     c.value = title
     c.font = Font(bold=True, size=14)
     c.alignment = Alignment(horizontal="left", vertical="center")
 
-    ws.merge_cells("N2:O2")
+    ws.merge_cells("N2:P2")
     ws["N2"].value = "Årssummer"
     ws["N2"].font = Font(bold=True)
 
@@ -433,6 +503,8 @@ def _write_sheet(
     ws["N3"].font = Font(bold=True)
     ws["O3"].value = "i %"
     ws["O3"].font = Font(bold=True)
+    ws["P3"].value = "i %"
+    ws["P3"].font = Font(bold=True)
 
     # Header (row 4)
     for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
@@ -448,14 +520,18 @@ def _write_sheet(
     ws["O4"].font = Font(bold=True)
     ws["O4"].alignment = Alignment(horizontal="center")
 
+    ws["P4"].value = ytd_caption
+    ws["P4"].font = Font(bold=True)
+    ws["P4"].alignment = Alignment(horizontal="center")
+
     num_fmt_kg = "#,##0"
     num_fmt_ton = "#,##0.00"
-    # num_fmt_ton = "#,##0.0"
     num_fmt_pct = "+0.0%;-0.0%;0.0%"
+    current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
 
     if table is None or table.empty:
         ws.column_dimensions["A"].width = 67
-        for col in range(2, 16):  # B..O
+        for col in range(2, 17):  # B..P
             ws.column_dimensions[get_column_letter(col)].width = 20
         return
 
@@ -465,12 +541,36 @@ def _write_sheet(
     prev_customer: str | None = None
     prev_material: str | None = None
 
-    # pct change pr. key
+    # pct change pr. key (annual)
     prev_year_total_by_key: dict[tuple[str, str, str] | tuple[str, str], float] = {}
 
     records = table.to_dict(orient="records")
 
+    # Precompute YTD totals per (key, year) for KG section
+    ytd_total_by_key_year: dict[tuple[Any, int], float] = {}
+    if ytd_year is not None and end_m is not None:
+        for rec in records:
+            year_val = rec.get("year", None)
+            if year_val is None:
+                continue
+            year_int = int(year_val)
+
+            customer = str(rec.get("CustomerKey", ""))
+            material = str(rec.get("MaterialKey", ""))
+            carrier = str(rec.get("CarrierKey", "")) if group_by_carrier else ""
+            key = (customer, material, carrier) if group_by_carrier else (customer, material)
+
+            ytd_sum = 0.0
+            for m in range(1, end_m + 1):
+                v = rec.get(m, 0.0)
+                if v is None or (isinstance(v, float) and pd.isna(v)):
+                    v = 0.0
+                ytd_sum += float(v)
+            ytd_total_by_key_year[(key, year_int)] = float(ytd_sum)
+
     for rec in records:
+        year_val = rec.get("year", None)
+        year_int = int(year_val) if year_val is not None else None
         customer = str(rec.get("CustomerKey", ""))
         material = str(rec.get("MaterialKey", ""))
         carrier = str(rec.get("CarrierKey", "")) if group_by_carrier else ""
@@ -484,7 +584,6 @@ def _write_sheet(
             if prev_material is not None and material != prev_material:
                 insert_blank = True
         if group_by_carrier and blank_between in ("material", "customer_and_material", "none"):
-            # carrier blanking styres ikke eksplicit af config; men vi indsætter ikke ekstra ved carrier-skift
             pass
 
         if insert_blank:
@@ -499,25 +598,45 @@ def _write_sheet(
             cell = ws.cell(row=excel_row, column=1 + m, value=float(val))
             cell.number_format = num_fmt_kg
 
+            if ytd_year is not None and year_int == int(ytd_year):
+                cell.fill = current_year_fill
+
         y_val = rec.get("YearTotal", 0.0)
         if pd.isna(y_val):
             y_val = 0.0
         y_total = float(y_val)
 
-        y = ws.cell(row=excel_row, column=14, value=y_total)
+        y = ws.cell(row=excel_row, column=14, value=y_total)  # N
         y.number_format = num_fmt_kg
         y.font = Font(bold=True)
 
         key = (customer, material, carrier) if group_by_carrier else (customer, material)
+
+        # Annual % (existing behavior) -> O
         prev_total = prev_year_total_by_key.get(key)
         if prev_total is None or prev_total == 0:
-            ws.cell(row=excel_row, column=15, value=None)
+            ws.cell(row=excel_row, column=15, value=None)  # O
         else:
             pct = (y_total - prev_total) / prev_total
             cell_pct = ws.cell(row=excel_row, column=15, value=float(pct))
             cell_pct.number_format = num_fmt_pct
 
         prev_year_total_by_key[key] = y_total
+
+        # YTD % (only for newest year) -> P
+        ytd_cell = ws.cell(row=excel_row, column=16, value=None)  # P
+        if ytd_year is not None and end_m is not None:
+            year_val = rec.get("year", None)
+            if year_val is not None and int(year_val) == int(ytd_year):
+                curr_ytd = ytd_total_by_key_year.get((key, int(ytd_year)))
+                prev_ytd = ytd_total_by_key_year.get((key, int(ytd_year) - 1))
+                if prev_ytd is None or prev_ytd == 0 or curr_ytd is None:
+                    ytd_cell.value = None
+                else:
+                    ytd_pct = (float(curr_ytd) - float(prev_ytd)) / float(prev_ytd)
+                    ytd_cell.value = float(ytd_pct)
+                    ytd_cell.number_format = num_fmt_pct
+
         prev_customer = customer
         prev_material = material
         excel_row += 1
@@ -557,14 +676,43 @@ def _write_sheet(
 
         ton_df[months + ["YearTotal"]] = ton_df[months + ["YearTotal"]] / 1000.0
 
-        # pct change year-over-year
+        # Apply material ordering for TON-section
+        if material_order:
+            order = [_normalize_name(x) for x in material_order]
+            order = [x for x in order if x]
+
+            present = ton_df["MaterialKey"].astype(str).tolist()
+            present_unique = list(dict.fromkeys(present))
+            present_set = set(present_unique)
+
+            known = [x for x in order if x in present_set]
+            known_set = set(known)
+            unknown = [x for x in present_unique if x not in known_set]
+            cats = known + unknown
+
+            ton_df["MaterialKey"] = pd.Categorical(
+                ton_df["MaterialKey"],
+                categories=cats,
+                ordered=True,
+            )
+
+        # Compute YTD totals (tons)
+        if end_m is not None:
+            ytd_month_cols = [m for m in range(1, end_m + 1)]
+            ton_df["YTDTotal"] = ton_df[ytd_month_cols].sum(axis=1)
+        else:
+            ton_df["YTDTotal"] = 0.0
+
+        # pct change year-over-year (annual + ytd)
         if group_by_carrier:
             ton_df = ton_df.sort_values(["MaterialKey", "CarrierKey", "year"], kind="stable")
             ton_df["PctChange"] = ton_df.groupby(["MaterialKey", "CarrierKey"])["YearTotal"].pct_change()
+            ton_df["YTDChange"] = ton_df.groupby(["MaterialKey", "CarrierKey"])["YTDTotal"].pct_change()
             ton_df = ton_df.sort_values(["year", "MaterialKey", "CarrierKey"], kind="stable")
         else:
             ton_df = ton_df.sort_values(["MaterialKey", "year"], kind="stable")
             ton_df["PctChange"] = ton_df.groupby("MaterialKey")["YearTotal"].pct_change()
+            ton_df["YTDChange"] = ton_df.groupby("MaterialKey")["YTDTotal"].pct_change()
             ton_df = ton_df.sort_values(["year", "MaterialKey"], kind="stable")
 
         def _ton_label(r: pd.Series) -> str:
@@ -593,6 +741,9 @@ def _write_sheet(
         ws.cell(row=ton_unit_row, column=15, value="i %")
         ws.cell(row=ton_unit_row, column=15).font = Font(bold=True)
 
+        ws.cell(row=ton_unit_row, column=16, value="i %")
+        ws.cell(row=ton_unit_row, column=16).font = Font(bold=True)
+
         for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
             cell = ws.cell(row=ton_header_row, column=i, value=name)
             cell.font = Font(bold=True)
@@ -605,6 +756,10 @@ def _write_sheet(
         o_cell = ws.cell(row=ton_header_row, column=15, value="Stigning = +/Fald = -")
         o_cell.font = Font(bold=True)
         o_cell.alignment = Alignment(horizontal="center")
+
+        p_cell = ws.cell(row=ton_header_row, column=16, value=ytd_caption)
+        p_cell.font = Font(bold=True)
+        p_cell.alignment = Alignment(horizontal="center")
 
         r = ton_data_row
         prev_year: int | None = None
@@ -622,6 +777,9 @@ def _write_sheet(
                 cell = ws.cell(row=r, column=1 + m, value=float(val))
                 cell.number_format = num_fmt_ton
 
+                if ytd_year is not None and year_int == int(ytd_year):
+                    cell.fill = current_year_fill
+
             y_val = rec.get("YearTotal", 0.0)
             if pd.isna(y_val):
                 y_val = 0.0
@@ -636,11 +794,22 @@ def _write_sheet(
                 cell_pct = ws.cell(row=r, column=15, value=float(pct_val))
                 cell_pct.number_format = num_fmt_pct
 
+            # YTD % only for newest year
+            ytd_val = rec.get("YTDChange", None)
+            if ytd_year is None or year_int != int(ytd_year):
+                ws.cell(row=r, column=16, value=None)
+            else:
+                if ytd_val is None or (isinstance(ytd_val, float) and pd.isna(ytd_val)):
+                    ws.cell(row=r, column=16, value=None)
+                else:
+                    cell_ytd = ws.cell(row=r, column=16, value=float(ytd_val))
+                    cell_ytd.number_format = num_fmt_pct
+
             prev_year = year_int
             r += 1
 
     ws.column_dimensions["A"].width = 67
-    for col in range(2, 16):  # B..O
+    for col in range(2, 17):  # B..P
         ws.column_dimensions[get_column_letter(col)].width = 20
 
 
@@ -682,7 +851,7 @@ def _normalize_material_groups_for_sheet(
     """
     Normalize material_groups for a sheet (optionally auto-append vare nr. to labels).
 
-    :param material_groups: Material group config from ``SHEET_SPECS``.
+    :param material_groups: Material group config from ``sheet_specs`` in affald_report_config variable.
     :param auto_append_vare_nr: Default behaviour for auto-appending vare nr. (can be overridden per group).
     :return: Normalized copy of material_groups (or None).
     """
@@ -710,10 +879,10 @@ def _normalize_material_groups_for_sheet(
 
 def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
     """
-    Build the affald Excel workbook from a DataFrame and ``SHEET_SPECS``.
+    Build the affald Excel workbook from a DataFrame and ``sheet_specs`` in affald_report_config variable.
 
     :param df: Input DataFrame (typically output from fetch_affald_registration_monthly_df).
-    :return: openpyxl Workbook with one sheet per entry in ``SHEET_SPECS``.
+    :return: openpyxl Workbook with one sheet per entry in ``sheet_specs`` in affald_report_config variable.
     """
     df2 = df.copy()
     df2["ArticleNumber"] = df2["ArticleNumber"].astype(str)
@@ -721,7 +890,7 @@ def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
     if "CarrierName" in df2.columns:
         df2["CarrierName"] = df2["CarrierName"].astype(str)
 
-    sheet_specs: list[Any] = SHEET_SPECS
+    sheet_specs: list[Any] = _get_sheet_specs()
 
     wb = Workbook()
     default_ws = wb.active
@@ -775,11 +944,32 @@ def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
             drop_unmapped_group_rows=drop_unmapped_group_rows,
         )
 
+        ytd_year: int | None = None
+        ytd_end_month: int | None = None
+        if subset is not None and (not subset.empty) and ("year_month" in subset.columns):
+            ym = subset["year_month"].astype(str)
+            years = ym.str.slice(0, 4).astype(int)
+            months = ym.str.slice(5, 7).astype(int)
+
+            if not years.empty:
+                ytd_year = int(years.max())
+                months_in_ytd_year = months[years == ytd_year]
+                if not months_in_ytd_year.empty:
+                    ytd_end_month = int(months_in_ytd_year.max())
+
+        customer_order = spec.get("customer_order")
+        if customer_order is None:
+            customer_order = spec.get("customer_names")
+
+        material_order = spec.get("material_order")
+
         table = _pivot_material(
             df=subset,
             row_label_mode=row_label_mode,
             sort_mode=sort_mode,
             group_by_carrier=group_by_carrier,
+            customer_order=customer_order,
+            material_order=material_order,
         )
         _write_sheet(
             ws=ws,
@@ -788,6 +978,9 @@ def _build_affald_excel_by_article_workbook(df: pd.DataFrame) -> Workbook:
             ton_label_mode=ton_label_mode,
             blank_between=blank_between,
             group_by_carrier=group_by_carrier,
+            material_order=material_order,
+            ytd_year=ytd_year,
+            ytd_end_month=ytd_end_month,
         )
 
     return wb
@@ -804,3 +997,307 @@ def build_affald_excel_bytes(df: pd.DataFrame) -> bytes:
     buffer = BytesIO()
     wb.save(buffer)
     return buffer.getvalue()
+
+
+def mp_waste_amount_data(
+    http_hook: HttpHook,
+    customer_numbers: list[int],
+    from_date: str,
+    to_date: str,
+    installation_address_id: list[int],
+) -> list[dict[str, Any]]:
+    """
+    Fetch waste amount statistics from the MP API
+
+    :param http_hook: Airflow HttpHook configured for the MP API base URL/connection.
+    :param customer_numbers: Customer number filter sent to the API payload.
+    :param from_date: Start date (string) sent to the API payload (expected format per API, e.g. YYYY-MM-DD).
+    :param to_date: End date (string) sent to the API payload (expected format per API, e.g. YYYY-MM-DD).
+    :param installation_address_id: Installation address id filter sent to the API payload.
+    :return: List of raw row dicts returned from the API (concatenated across pages).
+    """
+    logger.info("Fetching waste amount data from MP API...")
+
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+    if not conn.password:
+        raise ValueError("Missing MP_ApiKey (connection password) for marius_pedersen_api connection.")
+
+    headers = {
+        "MP_ApiKey": conn.password,
+        "Content-Type": "application/json",
+    }
+
+    http_hook.method = "POST"
+
+    page_size = 200
+    page = 1
+
+    all_rows: list[dict[str, Any]] = []
+
+    while True:
+        logger.info(f"Fetching MP data page={page} page_size={page_size} ...")
+
+        payload = {
+            "PageSize": page_size,
+            "Page": page,
+            "CustomerNumbers": customer_numbers,
+            "FromDate": from_date,
+            "ToDate": to_date,
+            "InstallationAddressId": installation_address_id,
+        }
+
+        res = http_hook.run(
+            endpoint="/umbraco/api/wastestatistic/GetWasteamountStatistic",
+            data=json.dumps(payload),
+            headers=headers,
+        )
+
+        body = res.json()
+        data = body.get("data", [])
+
+        all_rows.extend(data)
+
+        logger.debug(f"Fetched {len(data)} records from page {page}. Total so far: {len(all_rows)}")
+
+        if len(data) == 0:
+            break
+
+        page += 1
+
+    logger.info(f"Successfully retrieved data from MP API. Total records: {len(all_rows)} (pages fetched: {page})")
+
+    if not all_rows:
+        raise ValueError(f"No data returned from MP API for customers {customer_numbers} and date range {from_date} to {to_date}.")
+
+    return all_rows
+
+
+def aggregate_taxes_quantity_by_month(
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Aggregate MP ``taxesQuantity(Mængde kg)`` per (customerNumber, activityYear, activityMonth).
+
+    :param rows: List of API rows (dict-like) containing customerNumber/activityYear/activityMonth/taxesQuantity.
+    :return: List of dicts with keys: customerNumber, activityYear, activityMonth, taxesQuantity.
+    """
+    monthly_totals = defaultdict(float)
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        cust = row.get("customerNumber")
+        year = row.get("activityYear")
+        month = row.get("activityMonth")
+        quantity = row.get("taxesQuantity") or 0
+
+        if cust is None or year is None or month is None:
+            continue
+
+        monthly_totals[(int(cust), int(year), int(month))] += float(quantity)
+
+    return [
+        {
+            "customerNumber": cust,
+            "activityYear": year,
+            "activityMonth": month,
+            "taxesQuantity": total,
+        }
+        for (cust, year, month), total in sorted(monthly_totals.items())
+    ]
+
+
+def build_mp_monthly_excel_bytes(
+    monthly_data: list[dict[str, Any]],
+) -> bytes:
+    """
+    Build the MP Excel report file for MP monthly quantities and return it as bytes.
+
+    :param monthly_data: Monthly records containing customerNumber/activityYear/activityMonth/taxesQuantity.
+                         Values are summed per (customer, year, month) before writing.
+    :return: Excel file content as bytes.
+    """
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Marius Pedersen udtræk"
+
+    customer_number_name_map: dict[int, str] = {
+        80067523: "MP A/S Undergrund Århus VIP",
+        80070490: "Brændbart, direkte Aarhus MP (mini aff.)",
+        80070170: "Pap - indsamlet i containere MP (pap)",
+    }
+
+    def _row_label(cust_i: int, year_i: int) -> str:
+        name = customer_number_name_map.get(cust_i)
+        if name:
+            return f"{name} {year_i}"
+        return f"{cust_i} {year_i}"
+
+    # Find max-år til highlight (som i _write_sheet)
+    years_present: list[int] = []
+    for rec in (monthly_data or []):
+        y = rec.get("activityYear")
+        if y is not None:
+            try:
+                years_present.append(int(y))
+            except Exception:
+                pass
+    newest_year = max(years_present) if years_present else None
+
+    # Header/top som _write_sheet (A..P)
+    ws.merge_cells("A1:P1")
+    ws["A1"].value = "Marius Pedersen API - Mængder"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
+
+    ws.merge_cells("N2:P2")
+    ws["N2"].value = "Årssummer"
+    ws["N2"].font = Font(bold=True)
+
+    ws["A3"].value = "i kg."
+    ws["A3"].font = Font(bold=True)
+
+    ws["N3"].value = "i kg"
+    ws["N3"].font = Font(bold=True)
+    ws["O3"].value = "i %"
+    ws["O3"].font = Font(bold=True)
+
+    # Header-row 4: months + year total + pct change
+    for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
+        cell = ws.cell(row=4, column=i, value=name)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+
+    ws["N4"].value = "Årssum"
+    ws["N4"].font = Font(bold=True)
+    ws["N4"].alignment = Alignment(horizontal="center")
+
+    ws["O4"].value = "Stigning = +/Fald = -"
+    ws["O4"].font = Font(bold=True)
+    ws["O4"].alignment = Alignment(horizontal="center")
+
+    num_fmt_kg = "#,##0"
+    num_fmt_ton = "#,##0.00"
+    num_fmt_pct = "+0.0%;-0.0%;0.0%"
+    current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
+
+    # Build pivot: (customer, year) -> month -> qty
+    month_qty: dict[tuple[int, int], dict[int, float]] = defaultdict(lambda: defaultdict(float))
+
+    for rec in (monthly_data or []):
+        cust = rec.get("customerNumber")
+        year = rec.get("activityYear")
+        month = rec.get("activityMonth")
+        qty = rec.get("taxesQuantity") or 0
+
+        if cust is None or year is None or month is None:
+            continue
+
+        try:
+            cust_i = int(cust)
+            year_i = int(year)
+            month_i = int(month)
+        except Exception:
+            continue
+
+        if not (1 <= month_i <= 12):
+            continue
+
+        month_qty[(cust_i, year_i)][month_i] += float(qty)
+
+    keys_sorted = sorted(month_qty.keys(), key=lambda t: (t[0], t[1]))
+
+    ws.column_dimensions["A"].width = 67
+    for col in range(2, 17):  # B..P
+        ws.column_dimensions[get_column_letter(col)].width = 20
+
+    def _write_customer_year_section(
+        start_row: int,
+        unit_divisor: float,
+        number_format: str,
+        prev_year_total_by_customer: dict[int, float],
+    ) -> int:
+        if float(unit_divisor) == 0.0:
+            raise ValueError("unit_divisor must be non-zero")
+
+        r = start_row
+        prev_customer: int | None = None
+
+        for (cust_i, year_i) in keys_sorted:
+            if prev_customer is not None and cust_i != prev_customer:
+                r += 1  # blank row between customers
+
+            ws.cell(row=r, column=1, value=_row_label(cust_i, year_i))
+
+            year_total = 0.0
+            for m in range(1, 13):
+                v = float(month_qty[(cust_i, year_i)].get(m, 0.0)) / float(unit_divisor)
+                year_total += v
+
+                cell = ws.cell(row=r, column=1 + m, value=float(v))  # B..M
+                cell.number_format = number_format
+                if newest_year is not None and year_i == newest_year:
+                    cell.fill = current_year_fill
+
+            y_cell = ws.cell(row=r, column=14, value=float(year_total))  # N
+            y_cell.number_format = number_format
+            y_cell.font = Font(bold=True)
+
+            prev_total = prev_year_total_by_customer.get(cust_i)
+            if prev_total is None or prev_total == 0:
+                ws.cell(row=r, column=15, value=None)  # O
+            else:
+                pct = (year_total - prev_total) / prev_total
+                p_cell = ws.cell(row=r, column=15, value=float(pct))
+                p_cell.number_format = num_fmt_pct
+
+            prev_year_total_by_customer[cust_i] = float(year_total)
+            prev_customer = cust_i
+            r += 1
+
+        return r - 1
+
+    # KG-section
+    start_row = 5
+    prev_year_total_by_customer_kg: dict[int, float] = {}
+    last_kg_row = _write_customer_year_section(
+        start_row=start_row,
+        unit_divisor=1.0,
+        number_format=num_fmt_kg,
+        prev_year_total_by_customer=prev_year_total_by_customer_kg,
+    )
+
+    # TON-section
+    ton_unit_row = last_kg_row + 2  # blank row + unit row
+    ton_header_row = ton_unit_row + 1  # header row with month names, year total, pct change
+    ton_data_row = ton_header_row + 1  # first data row for tons
+
+    ws.cell(row=ton_unit_row, column=1, value="i tons.")
+    ws.cell(row=ton_unit_row, column=1).font = Font(bold=True)
+
+    ws.cell(row=ton_unit_row, column=14, value="i tons")
+    ws.cell(row=ton_unit_row, column=14).font = Font(bold=True)
+
+    ws.cell(row=ton_unit_row, column=15, value="i %")
+    ws.cell(row=ton_unit_row, column=15).font = Font(bold=True)
+
+    for i, name in enumerate(MONTH_NAMES, start=2):  # B..M
+        cell = ws.cell(row=ton_header_row, column=i, value=name)
+        cell.font = Font(bold=True)
+        cell.alignment = Alignment(horizontal="center")
+
+    ws.cell(row=ton_header_row, column=14, value="Årssum").font = Font(bold=True)
+    ws.cell(row=ton_header_row, column=15, value="Stigning = +/Fald = -").font = Font(bold=True)
+
+    prev_year_total_by_customer_ton: dict[int, float] = {}
+    _write_customer_year_section(
+        start_row=ton_data_row,
+        unit_divisor=1000.0,
+        number_format=num_fmt_ton,
+        prev_year_total_by_customer=prev_year_total_by_customer_ton,
+    )
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

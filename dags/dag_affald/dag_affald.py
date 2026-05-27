@@ -11,11 +11,11 @@ dag_args["retries"] = 1
 with DAG(
     dag_id="dag_affald",
     start_date=datetime(year=2026, month=3, day=9, tz=timezone("Europe/Copenhagen")),
-    schedule="@monthly",
+    schedule="0 7 5 * *",
     catchup=False,
     default_args=dag_args,
     description="Fetch Affald data from Scanvaegt DB and store results in Excel, then email to recipients",
-    tags=["affald", "scanvaegt_db", "excel", "email"],
+    tags=["affald", "scanvaegt_db", "excel", "email", "mp_api"],
 ) as dag:
 
     run_affald = PythonOperator(
