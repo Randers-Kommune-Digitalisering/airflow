@@ -248,15 +248,15 @@ def _parse_department(dept_elem: etree._Element) -> dict:
     return dept
 
 
-def _check_if_mobile_number_and_clean(number: str) -> str | bool:
+def _check_if_mobile_number_and_clean(number: str) -> str | None:
     """
     Check if the given number is a valid mobile number and clean it.
     Based on Danish mobile number rules: https://guldnummer.com/tjek-nummer
 
     :param number: Phone number to check
     :type number: str
-    :return: Cleaned mobile number if valid, otherwise False
-    :rtype: str | bool
+    :return: Cleaned mobile number if valid, otherwise None
+    :rtype: str | None
     """
     FIRST_NUMBER_FOR_MOBILE = [2, 30, 31, 40, 41, 42, 50, 51, 52, 53, 60, 61, 71, 81, 91, 92, 93]
 
@@ -266,7 +266,8 @@ def _check_if_mobile_number_and_clean(number: str) -> str | bool:
     if len(number) == 8 and (int(number[0]) in FIRST_NUMBER_FOR_MOBILE or int(number[:2]) in FIRST_NUMBER_FOR_MOBILE):
         return number
     else:
-        return False
+        logger.warning(f"Number {number} is not a valid mobile number")
+        return None
 
 
 def _find_level3_parent_code(org: list[dict], child_code: str) -> str | None:
