@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at understøtte Betalingskontorets behov for at sammenholde personer (fra en CPR-liste) med oplysninger om ydelsesudbetalinger hentet via Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)) i et givent dato-interval. Jobbet henter den nyeste CPR-liste (Excel) fra SFTP, slår relevante ydelsestyper op pr. CPR i Serviceplatformen og genererer en Excel-rapport, som sendes på email. Rapporten bruges som grundlag for kontrol og opfølgning på personer, der modtager bestemte ydelsestyper (herunder at kunne frasortere ydelsestyper via excluded-listen).
+Formålet med jobbet er at understøtte Betalingskontorets behov for at sammenholde personer (fra en CPR-liste) med oplysninger om ydelsesudbetalinger hentet via Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)) i et givent dato-interval. Jobbet henter den nyeste CPR-liste (Excel) fra en postkasse, slår relevante ydelsestyper op pr. CPR i Serviceplatformen og genererer en Excel-rapport, som sendes på email. Rapporten bruges som grundlag for kontrol og opfølgning på personer, der modtager bestemte ydelsestyper (herunder at kunne frasortere ydelsestyper via excluded-listen).
 
 
 ## Beskrivelse
@@ -13,7 +13,9 @@ Koden består af et DAG-job, der udfører følgende trin:
 - Beregner dato-interval ud fra Airflow `logical_date`:
   - `start_dato`: 1. dag i forrige måned
   - `slut_dato`: `logical_date` (dagens dato i DAG’ens timezone)
-- Finder nyeste Excel-fil på SFTP (default mønster `*.xlsx`) i den mappe, der er angivet i `modregning_config["sftp_dir"]`
+- Finder nyeste Excel-vedhæftning i en IMAP Modregning-postkassen (default `INBOX`)
+  - Email hentes via IMAP (EmailReader)
+  - Jobbet scanner de seneste emails (nyeste først) og leder efter en `.xlsx`-vedhæftning, hvor filnavnet starter med et af de konfigurerede prefixes (fx `Modregning` eller `DAKT`)
 - Læser Excel-arket og udtrækker unikke CPR-numre fra kolonnen `ID-nummer`
   - CPR normaliseres til 10 cifre (ugyldige værdier ignoreres)
 - Kalder Serviceplatform (SF1491) for hver CPR i dato-intervallet og udtrækker `YdelseNavn`
@@ -23,13 +25,13 @@ Koden består af et DAG-job, der udfører følgende trin:
 - Sender rapporten som vedhæftet fil via SMTP (filnavn: `Modregning_YYYY-MM-DD.xlsx`)
 
 **Dataflow:**
-- Excel på SFTP → CPR-liste → Serviceplatform-opslag → Excel-rapport → Email
+- Modregning Postkasse Email (IMAP) + Excel vedhæftning → CPR-liste → Serviceplatform-opslag → Excel-rapport → Email
 
 **Forudsætning(manuel proces):**
 
-Den 15. i hver måned uploader Betalingskontoret en ny CPR-liste (Excel) til SFTP-mappen. CPR-listen bruges eom input til modregningsopslag.
+Den 15. i hver måned sender Betalingskontoret en ny CPR-liste (Excel) til Modregning Postkassen. CPR-listen bruges eom input til modregningsopslag.
 Excel-filen skal indeholde kolonnen `ID-nummer` (CPR). 
-Jobbet bruger den nyeste tilgængelige Excel-fil på SFTP; hvis der ikke ligger en opdateret fil, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov).
+Jobbet bruger den nyeste matchende vedhæftning i postkassen, hvis der ikke ligger en relevant mail med vedhæftet Excel, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov).
 
 ## Afhængigheder
 
@@ -41,15 +43,13 @@ Da koden anvender kombit_client pakken kræver det at man sætter **`CLIENT_CERT
 ### Airflow Connections
 :key: | **Airflow Connections**
 
-**SFTP:**
-- **`shared_sftp`**
+**IMAP (Postkasse til Modregning):**
+- **`modregning_imap`**
 
-**Conn Type**: SFTP
-
-Bruges som `Connection id` i Airflow til at hente host, user, pass og port til SFTP’en.
+Bruges til at hente login/password til Modregning postkassen, som DAG’en læser input fra.
 
 *Required felter*:
-  - Connection id, Host, Username, Password og Port(22)
+  - Connection id, Username(Login) og Password
 
 
 ### Airflow Variables 
