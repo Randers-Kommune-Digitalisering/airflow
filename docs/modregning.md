@@ -23,9 +23,9 @@ Koden består af et DAG-job, der udfører følgende trin:
   - Hvis der ingen ydelser findes i svaret sættes feltet til `Ingen Ydelse`
 - Bygger en Excel-rapport (in-memory) med kolonnerne `cpr` og `YdelseNavn`
 - Sender rapporten som vedhæftet fil via SMTP (filnavn: `Modregning_YYYY-MM-DD.xlsx`)
-- Sletter input-emailen fra IMAP-postkassen efter vellykket gennemførsel (rapport sendt)
+- Sletter input-emailen fra Modregning-postkassen efter vellykket gennemførsel (rapport sendt)
   - Emailen slettes via UID i `INBOX` og expunges med det samme. Det vil sige at input mailen hverken kan findes under
-  `INBOX` eller `Deleted Items`. Den bliver slettet permanent
+  `INBOX` eller `Deleted Items`. Den bliver slettet permanent.
 
 **Dataflow:**
 - Modregning Postkasse Email (IMAP) + Excel vedhæftning → CPR-liste → Serviceplatform-opslag → Excel-rapport → Email
@@ -61,11 +61,10 @@ Bruges til at hente login/password til Modregning postkassen, som DAG’en læse
 ### Airflow Variables 
 :key: | **Airflow Variables**
 
-**Modregning Runtime Konfiguration (SFTP + email + SMTP ):**
+**Modregning Runtime Konfiguration (email + SMTP ):**
 - **Key**: `modregning_runtime_config`
 
 *Required felter*:
-  - `sftp_dir` (remote mappe på SFTP)
   - `sender_email`
   - `recipient_emails`
   - `smtp_server`
@@ -73,7 +72,6 @@ Bruges til at hente login/password til Modregning postkassen, som DAG’en læse
 Eksempel:
 ```json
 {
-  "sftp_dir": "/Modregning/",
   "sender_email": "no-reply@randers.dk",
   "recipient_emails": ["modtager1@randers.dk", "modtager2@randers.dk"],
   "smtp_server": "smtp.example.local"
