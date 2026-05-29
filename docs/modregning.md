@@ -23,9 +23,15 @@ Koden består af et DAG-job, der udfører følgende trin:
   - Hvis der ingen ydelser findes i svaret sættes feltet til `Ingen Ydelse`
 - Bygger en Excel-rapport (in-memory) med kolonnerne `cpr` og `YdelseNavn`
 - Sender rapporten som vedhæftet fil via SMTP (filnavn: `Modregning_YYYY-MM-DD.xlsx`)
+- Sletter input-emailen fra IMAP-postkassen efter vellykket gennemførsel (rapport sendt)
+  - Emailen slettes via UID i `INBOX` og expunges med det samme. Det vil sige at input mailen hverken kan findes under
+  `INBOX` eller `Deleted Items`. Den bliver slettet permanent
 
 **Dataflow:**
 - Modregning Postkasse Email (IMAP) + Excel vedhæftning → CPR-liste → Serviceplatform-opslag → Excel-rapport → Email
+
+**Bemærk (datahåndtering):**
+- Når rapporten er sendt, slettes den behandlede email (med CPR-listen som vedhæftning) fra postkassen for at minimere unødig opbevaring af inputdata.
 
 **Forudsætning(manuel proces):**
 
