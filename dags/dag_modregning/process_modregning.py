@@ -22,7 +22,7 @@ def _find_latest_modregning_excel_attachment(
     email_reader: EmailReader,
     mailbox: str = "INBOX",
     criteria: str = "ALL",
-    filename_prefixes: Iterable[str] = ("Modregning", "DAKT"),
+    filename_prefixes: Iterable[str] = ("Modregning", "2026", "DAKT"),
     max_emails: int = 50,
 ) -> tuple[bytes, str, bytes] | None:
     """
@@ -176,6 +176,10 @@ def process_modregning() -> None:
         )
 
         logger.info("Modregning processing completed successfully (email sent).")
+
+        # Delete the input email right after successful processing (report sent)
+        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+        logger.info(f"Deleted input email UID {uid!r} from INBOX")
 
     except Exception as e:
         raise AirflowFailException("Error processing Modregning") from e
