@@ -133,7 +133,7 @@ def process_modregning() -> None:
         rows: list[list[str]] = []
 
         from utils.kombit import TempClientCert
-        from kombit_client.integrations.sf1491 import YdelseListeHentClient # Import lazily to avoid Airflow freezing issue
+        from kombit_client.integrations.sf1491 import YdelseListeHentClient  # Import lazily to avoid Airflow freezing issue
 
         with TempClientCert() as client_cert_path:
             ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
@@ -144,7 +144,7 @@ def process_modregning() -> None:
                     ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
 
                     if ydelser:
-                        cell_value = ", ".join(sorted(ydelser)) # Join sorted ydelser into a single string(e.g. Forhøjet sats , Grund sats)
+                        cell_value = ", ".join(sorted(ydelser))  # Join sorted ydelser into a single string(e.g. Forhøjet sats , Grund sats)
                     elif found_any:
                         cell_value = ""  # Only filtered ydelser -> empty cell only
                     else:
