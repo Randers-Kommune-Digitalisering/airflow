@@ -75,8 +75,7 @@ def _resolve_date_range() -> tuple[str, str]:
     - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
     - `slut_dato` is set to `logical_date`.
 
-    Returns:
-        (start_dato, slut_dato) as ISO date strings.
+    :return: (start_dato, slut_dato) as ISO date strings.
     """
     ctx = get_current_context()
     logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
