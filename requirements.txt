@@ -4,6 +4,7 @@ lxml==6.1.0
 msgraph-sdk==1.49.0
 openpyxl==3.1.5
 pandas==2.1.4
+PyMuPDF==1.24.14
 pycurl==7.45.7
 requests==2.32.5
 pyproj==3.7.2
