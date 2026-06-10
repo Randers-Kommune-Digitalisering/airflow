@@ -2,8 +2,9 @@ import io
 import pandas as pd
 import logging
 from openpyxl.utils import get_column_letter
-from typing import Any
+from typing import Any, Iterable
 from airflow.providers.http.hooks.http import HttpHook
+from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
@@ -482,3 +483,47 @@ def enrich_vehicles_with_customer_levels(
             df[f"Level{i}"] = ""
 
     return df
+
+
+def find_latest_motorstyrelsen_excel_attachment(
+    email_reader: EmailReader,
+    mailbox: str = "INBOX",
+    criteria: str = "UNSEEN",
+    filename_prefixes: Iterable[str] = ("Aktindsigt",),
+    max_emails: int = 50,
+) -> tuple[bytes, str, bytes] | None:
+    """
+    Find the newest Motorstyrelsen Excel attachment in a mailbox.
+
+    :param email_reader: EmailReader used to fetch emails.
+    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
+    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
+    :param filename_prefixes: Allowed attachment filename prefixes.
+    :param max_emails: Maximum number of emails to fetch
+    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
+    """
+    emails, failed = email_reader.get_emails(
+        mailbox=mailbox,
+        criteria=criteria,
+        set_flags=None,
+        max=max_emails,
+        low_to_high=False,
+    )
+
+    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
+
+    for msg in emails:
+        uid: bytes = getattr(msg, "uid", None)
+
+        for part in msg.iter_attachments():
+            filename = part.get_filename() or ""
+            if not filename.lower().endswith(".xlsx"):
+                continue
+            if filename_prefixes and not any(filename.startswith(p) for p in filename_prefixes):
+                continue
+
+            content = part.get_payload(decode=True)
+            if content:
+                return uid, filename, content
+
+    return None

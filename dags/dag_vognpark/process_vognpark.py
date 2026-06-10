@@ -2,60 +2,25 @@ import logging
 import pandas as pd
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.http.hooks.http import HttpHook
-from dag_vognpark.vognpark_data import INSUBIZ_EXCEL_FIELDS, compare_motorstyrelsen_vs_insubiz, dfs_to_excel_bytes, fetch_insubiz_customers, fetch_insubiz_vehicles, normalize_insubiz_df, read_motorstyrelsen_excel_bytes, enrich_vehicles_with_customer_levels
+from dag_vognpark.vognpark_data import (
+    INSUBIZ_EXCEL_FIELDS,
+    compare_motorstyrelsen_vs_insubiz,
+    dfs_to_excel_bytes,
+    fetch_insubiz_customers,
+    fetch_insubiz_vehicles,
+    normalize_insubiz_df,
+    read_motorstyrelsen_excel_bytes,
+    enrich_vehicles_with_customer_levels,
+    find_latest_motorstyrelsen_excel_attachment
+) 
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from airflow.hooks.base import BaseHook
 from rkdigi.email_handling import EmailSender, EmailReader
-from typing import Iterable
 from airflow.exceptions import AirflowFailException
 
 
 logger = logging.getLogger(__name__)
-
-
-def _find_latest_motorstyrelsen_excel_attachment(
-    email_reader: EmailReader,
-    mailbox: str = "INBOX",
-    criteria: str = "UNSEEN",
-    filename_prefixes: Iterable[str] = ("Aktindsigt",),
-    max_emails: int = 50,
-) -> tuple[bytes, str, bytes] | None:
-    """
-    Find the newest Motorstyrelsen Excel attachment in a mailbox.
-
-    :param email_reader: EmailReader used to fetch emails.
-    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
-    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
-    :param filename_prefixes: Allowed attachment filename prefixes.
-    :param max_emails: Maximum number of emails to fetch
-    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
-    """
-    emails, failed = email_reader.get_emails(
-        mailbox=mailbox,
-        criteria=criteria,
-        set_flags=None,
-        max=max_emails,
-        low_to_high=False,
-    )
-
-    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
-
-    for msg in emails:
-        uid: bytes = getattr(msg, "uid", None)
-
-        for part in msg.iter_attachments():
-            filename = part.get_filename() or ""
-            if not filename.lower().endswith(".xlsx"):
-                continue
-            if filename_prefixes and not any(filename.startswith(p) for p in filename_prefixes):
-                continue
-
-            content = part.get_payload(decode=True)
-            if content:
-                return uid, filename, content
-
-    return None
 
 
 def process_vognpark() -> None:
@@ -81,7 +46,7 @@ def process_vognpark() -> None:
         password=vognpark_imap_conn.password,
     )
 
-    found = _find_latest_motorstyrelsen_excel_attachment(email_reader=email_reader, criteria="UNSEEN")
+    found = find_latest_motorstyrelsen_excel_attachment(email_reader=email_reader, criteria="UNSEEN")
 
     if not found:
         raise AirflowFailException("No Motorstyrelsen Excel attachment found")
@@ -141,3 +106,10 @@ def process_vognpark() -> None:
 
     with engine.begin() as conn:
         df.to_sql("vognpark_data", con=conn, if_exists="replace", index=False)
+
+        # latest report date is stored in audit_table
+        audit_df = pd.DataFrame({
+            "report_date": [report_date]
+        })
+
+        audit_df.to_sql("vognpark_run_audit", con=conn, if_exists="replace", index=False)
