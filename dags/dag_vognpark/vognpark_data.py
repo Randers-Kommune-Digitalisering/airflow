@@ -46,6 +46,13 @@ INSUBIZ_MAX_LEVELS = 6
 
 
 def _format_datetime_column(df: pd.DataFrame, col: str) -> None:
+    """
+    If the column does not exist, the function returns without changes.
+
+    :param df: DataFrame containing the column to format.
+    :param col: Name of the column to parse and format as datetime.
+    :return: None. The DataFrame is modified in place.
+    """
     if col not in df.columns:
         return
     dt = pd.to_datetime(df[col], errors="coerce")
@@ -53,6 +60,13 @@ def _format_datetime_column(df: pd.DataFrame, col: str) -> None:
 
 
 def normalize_insubiz_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Renames source columns to the internal export naming and formats known
+    datetime columns to a consistent timestamp string format.
+
+    :param df: Raw Insubiz DataFrame.
+    :return: Normalized DataFrame with renamed and formatted columns.
+    """
     out = df.rename(columns=INSUBIZ_COLUMN_RENAME_MAP)
 
     for col in ("Reg.dato", "Afg.dato", "start_date"):
