@@ -2,7 +2,7 @@ import logging
 import pandas as pd
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.http.hooks.http import HttpHook
-from dag_vognpark.vognpark_data import INSUBIZ_EXCEL_FIELDS, compare_motorstyrelsen_vs_insubiz, dfs_to_excel_bytes, fetch_insubiz_customers, fetch_insubiz_vehicles, normalize_insubiz_df, read_motorstyrelsen_excel_bytes, build_customer_levels, enrich_vehicles_with_customer_levels
+from dag_vognpark.vognpark_data import INSUBIZ_EXCEL_FIELDS, compare_motorstyrelsen_vs_insubiz, dfs_to_excel_bytes, fetch_insubiz_customers, fetch_insubiz_vehicles, normalize_insubiz_df, read_motorstyrelsen_excel_bytes, enrich_vehicles_with_customer_levels
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from airflow.hooks.base import BaseHook
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 def _find_latest_motorstyrelsen_excel_attachment(
     email_reader: EmailReader,
     mailbox: str = "INBOX",
-    criteria: str = "ALL",
+    criteria: str = "UNSEEN",
     filename_prefixes: Iterable[str] = ("Aktindsigt",),
     max_emails: int = 50,
 ) -> tuple[bytes, str, bytes] | None:
@@ -65,11 +65,11 @@ def process_vognpark() -> None:
     insubiz_hook = HttpHook(http_conn_id="insubiz_cloud_api")
     vognpark_hook = PostgresHook(postgres_conn_id="vognpark_db")
 
-    vehicles = fetch_insubiz_vehicles(insubiz_hook)
+    vehicles = fetch_insubiz_vehicles(http_hook=insubiz_hook)
     df = pd.json_normalize(vehicles, sep="_")
 
-    customers = fetch_insubiz_customers(insubiz_hook, page_size=150)
-    df = enrich_vehicles_with_customer_levels(df, customers)
+    customers = fetch_insubiz_customers(http_hook=insubiz_hook)
+    df = enrich_vehicles_with_customer_levels(vehicles_df=df, customers=customers)
 
     df = df.reindex(columns=INSUBIZ_EXCEL_FIELDS)
     df = normalize_insubiz_df(df=df)
@@ -81,7 +81,7 @@ def process_vognpark() -> None:
         password=vognpark_imap_conn.password,
     )
 
-    found = _find_latest_motorstyrelsen_excel_attachment(email_reader=email_reader)
+    found = _find_latest_motorstyrelsen_excel_attachment(email_reader=email_reader, criteria="UNSEEN")
 
     if not found:
         raise AirflowFailException("No Motorstyrelsen Excel attachment found")

@@ -168,8 +168,6 @@ def fetch_insubiz_vehicles(
             headers=headers,
         )
 
-        logger.info(f"Status code: {response.status_code}")
-
         response.raise_for_status()
 
         body: Any = response.json()
@@ -335,17 +333,17 @@ def compare_motorstyrelsen_vs_insubiz(
     :param exclude_prefix: Exclude registration numbers starting with this prefix.
     :return: (need_to_delete_df, need_to_add_df)
     """
-    motor_key = _norm_reg(motor_df[motor_reg_col])
-    insubiz_key = _norm_reg(insubiz_df[insubiz_reg_col])
+    motor_key = _norm_reg(series=motor_df[motor_reg_col])
+    insubiz_key = _norm_reg(series=insubiz_df[insubiz_reg_col])
 
-    motor_mask = ~motor_key.str.startswith(exclude_prefix, na=False)
-    insubiz_mask = ~insubiz_key.str.startswith(exclude_prefix, na=False)
+    motor_mask = ~motor_key.str.startswith(pat=exclude_prefix, na=False)
+    insubiz_mask = ~insubiz_key.str.startswith(pat=exclude_prefix, na=False)
 
     motor_df2 = motor_df.loc[motor_mask].copy()
     insubiz_df2 = insubiz_df.loc[insubiz_mask].copy()
 
-    motor_key2 = _norm_reg(motor_df2[motor_reg_col])
-    insubiz_key2 = _norm_reg(insubiz_df2[insubiz_reg_col])
+    motor_key2 = _norm_reg(series=motor_df2[motor_reg_col])
+    insubiz_key2 = _norm_reg(series=insubiz_df2[insubiz_reg_col])
 
     need_to_add = motor_df2.loc[~motor_key2.isin(set(insubiz_key2))].copy()
     logger.info(f"Found {len(need_to_add)} vehicles that needs to be added (in Insubiz)")
@@ -454,7 +452,7 @@ def enrich_vehicles_with_customer_levels(
         unique_customer_ids = df["customer_id"].dropna().astype(int).unique().tolist()
 
         levels_map = {
-            cid: build_customer_levels(cid, customer_by_id)
+            cid: build_customer_levels(customer_id=cid, customer_by_id=customer_by_id)
             for cid in unique_customer_ids
         }
 
