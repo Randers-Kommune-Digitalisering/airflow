@@ -113,3 +113,5 @@ def process_vognpark() -> None:
         })
 
         audit_df.to_sql("vognpark_run_audit", con=conn, if_exists="replace", index=False)
+
+    logger.info("Vognpark data processed successfully")
