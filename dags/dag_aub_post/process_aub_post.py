@@ -5,7 +5,7 @@ from airflow.models import Variable
 
 try:
     from airflow.exceptions import AirflowFailException
-except Exception:
+except ImportError:
     class AirflowFailException(Exception):
         pass
 
@@ -36,7 +36,7 @@ def process_aub_post() -> None:
     3. Initializes email reader and sender.
     4. Fetches emails from the specified mailbox based on search criteria.
     5. For each email, it finds the target PDF attachment, extracts the education, resolves the contact email, forwards the email to the contact, and deletes the original email from the mailbox.
-    Note: If any failures occur during processing, it raises an AirflowFailException with details of the failures.    
+    Note: If any failures occur during processing, it raises an AirflowFailException and logs per-email details.
     """
     # Fetch job configuration from Airflow Variable
     config = Variable.get(_AUB_POST_CONFIG_VAR, deserialize_json=True)
@@ -127,7 +127,11 @@ def process_aub_post() -> None:
                 if body_part is not None:
                     body = body_part.get_content()
             else:
-                body = message.get_content()
+                payload = message.get_payload(decode=True)
+                if isinstance(payload, bytes):
+                    body = payload.decode(message.get_content_charset() or "utf-8", errors="replace")
+                else:
+                    body = payload or ""
 
             email_sender.send_email(
                 sender=sender_email.strip(),

@@ -28,7 +28,7 @@ Hvis et eller flere trin fejler for en email, bliver den ikke slettet, og tasken
 :key: | **Airflow Connections**
 
 **Postkasse (IMAP):**
-- **`aub_post_mailbox`**
+- **`aub_post_imap`**
 
 **Conn Type**: IMAP
 
@@ -49,7 +49,7 @@ Bruges i rk-digi `EmailReader` til at hente host, login, password og port.
   "sender_email": "no-reply@randers.dk",
   "mailbox": "INBOX",
   "mail_search_criteria": "ALL",
-  "contact_mappings": [
+  "contacts_map": [
     {
       "email": "kontakt1@randers.dk",
       "educations": [
