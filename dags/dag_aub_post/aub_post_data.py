@@ -4,7 +4,7 @@ from email.message import Message
 
 EDUCATION_REGEX = re.compile(r"Uddannelse\s*\n(.*)", re.IGNORECASE)
 
-
+# TODO: Privat funktion som kun bliver brugt i denne fil
 def normalize_education(value: str) -> str:
     """
     Normalize the education value by removing extra whitespace and converting to lowercase.
@@ -55,6 +55,7 @@ def build_education_contact_map(contact_mappings: list[dict]) -> dict[str, str]:
     return contact_map
 
 
+# TODO: Privat funktion som kun bliver brugt i denne fil
 def extract_education_from_text(text: str) -> str:
     """
     Extract the education name from the provided text using a regex pattern.
