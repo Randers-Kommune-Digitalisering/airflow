@@ -80,8 +80,6 @@ def process_aub_post() -> None:
     emails, failed_ids = email_reader.get_emails(
         mailbox=mailbox.strip(),
         criteria=search_criteria.strip(),
-        set_flags=None,
-        del_flags=None,
     )
 
     failures: list[str] = []
