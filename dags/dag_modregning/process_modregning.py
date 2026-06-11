@@ -22,7 +22,7 @@ def _find_latest_modregning_excel_attachment(
     email_reader: EmailReader,
     mailbox: str = "INBOX",
     criteria: str = "ALL",
-    filename_prefixes: Iterable[str] = ("Modregning", "2026", "DAKT"),
+    filename_prefixes: Iterable[str] = ("Modregning"),
     max_emails: int = 50,
 ) -> tuple[bytes, str, bytes] | None:
     """
@@ -52,10 +52,11 @@ def _find_latest_modregning_excel_attachment(
 
         for part in msg.iter_attachments():
             filename = part.get_filename() or ""
-            if not filename.lower().endswith(".xlsx"):
+            filename_lc = filename.lower()
+            if not filename_lc.endswith(".xlsx"):
                 continue
 
-            if not any(filename.startswith(p) for p in filename_prefixes):
+            if not any(filename_lc.startswith(p.lower()) for p in filename_prefixes):
                 continue
 
             content = part.get_payload(decode=True)  # bytes
@@ -120,6 +121,8 @@ def process_modregning() -> None:
         df = pd.read_excel(
             io.BytesIO(excel_bytes),
             engine="openpyxl",
+            dtype={"ID-nummer": str},
+            sheet_name=0,
         )
 
         cpr_list = extract_unique_cprs(df=df)
