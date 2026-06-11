@@ -87,7 +87,7 @@ def _resolve_date_range() -> tuple[str, str]:
 
 def process_modregning() -> None:
     """
-    1) Read newest Excel from SFTP (CPR list)
+    1) Read newest Excel from Modregning Mailbox (CPR list)
     2) Call Serviceplatform for each CPR in date range
     3) Email an Excel report
     """
@@ -126,7 +126,7 @@ def process_modregning() -> None:
         )
 
         cpr_list = extract_unique_cprs(df=df)
-        logger.info("Extracted CPR from sftp")
+        logger.info("Extracted CPR from Modregning Excel")
         if not cpr_list:
             raise AirflowFailException("No CPR values found in the Excel file")
 
@@ -181,7 +181,7 @@ def process_modregning() -> None:
 
         # Delete the input email right after successful processing (report sent)
         email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
-        logger.info(f"Deleted input email UID {uid!r} from INBOX")
+        logger.info(f"Deleted input email {attachment_name} with UID {uid!r} from INBOX")
 
     except Exception as e:
         raise AirflowFailException("Error processing Modregning") from e
