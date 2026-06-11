@@ -6,7 +6,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_modregning.process_modregning import process_modregning
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 1
+dag_args["retries"] = 0
 
 with DAG(
     dag_id="dag_modregning",
@@ -15,8 +15,8 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
-    description="Fetch CPR list from SFTP, query Serviceplatform, and email Modregning report",
-    tags=["modregning", "sftp", "serviceplatform", "email"],
+    description="Fetch CPR list from Mailbox, query Serviceplatform, and email Modregning report",
+    tags=["modregning", "mailbox", "serviceplatform", "email"],
 ) as dag:
 
     run_modregning = PythonOperator(

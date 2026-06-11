@@ -1,12 +1,10 @@
-import fnmatch
 import io
 import logging
 import pandas as pd
-from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterable
 from openpyxl.utils import get_column_letter
-from airflow.providers.sftp.hooks.sftp import SFTPHook
 from airflow.models import Variable
+from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
@@ -24,72 +22,21 @@ excluded_ydelse_name = {
 }
 
 
-def get_latest_excel_info(
-    sftp_hook: SFTPHook,
-    directory: str,
-    pattern: str = "*.xlsx",
-) -> tuple[str, datetime] | None:
-    """
-    Find the newest Excel file on an SFTP matching a filename pattern.
-
-    :param sftp_hook: Airflow SFTPHook for SFTP.
-    :param directory: Remote directory to search in.
-    :param pattern: Glob pattern for matching filenames (default '*.xlsx').
-    :return: (remote_path, modified_at_utc) if a match is found, otherwise None.
-    """
-
-    sftp = sftp_hook.get_conn()
-    files = sftp.listdir_attr(directory)
-
-    matched = [f for f in files if fnmatch.fnmatch(f.filename.lower(), pattern.lower())]
-    if not matched:
-        logger.error(f'No Excel files found in "{directory}" matching "{pattern.lower()}"')
-        return None
-
-    latest = max(matched, key=lambda f: f.st_mtime)
-    remote_path = directory.rstrip("/") + "/" + latest.filename
-    modified_at_utc = datetime.fromtimestamp(latest.st_mtime, tz=timezone.utc)
-    return remote_path, modified_at_utc
-
-
-def read_excel_from_sftp(
-    sftp_hook: SFTPHook,
-    remote_path: str,
-    dtype: dict[str, Any] | None = None,
-    sheet_name: str | int | None = 0,
-) -> pd.DataFrame:
-    """
-    Read an Excel file from SFTP into a pandas DataFrame.
-
-    :param sftp_hook: Airflow SFTPHook used to obtain an SFTP connection.
-    :param remote_path: Full remote path to the Excel file to read.
-    :param dtype: Optional dtype mapping forwarded to `pandas.read_excel`.
-    :param sheet_name: Sheet name or index to read, forwarded to `pandas.read_excel` (default: 0, i.e. first sheet).
-    :return: DataFrame containing the parsed Excel sheet.
-    """
-
-    logger.info(f"Reading Excel file from SFTP: {remote_path}")
-
-    sftp = sftp_hook.get_conn()
-    with sftp.open(remote_path, "rb") as remote_file:
-        data = remote_file.read()
-
-    return pd.read_excel(io.BytesIO(data), dtype=dtype, sheet_name=sheet_name)
-
-
-def _normalize_cpr(value: object) -> str | None:
+def _normalize_cpr(value: str | None) -> str | None:
     """
     Normalize CPR to 10 digits (string). Returns None if invalid.
 
-    :param value: Raw CPR cell value from Excel.
-    :return: 10-digit CPR string or None.
+    :param value: CPR value to normalize.
+    :return: Normalized CPR string or None if invalid.
     """
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None:
         return None
 
-    s = str(value).strip().replace("-", "").replace(" ", "")
+    s = value.strip().replace("-", "").replace(" ", "")
     if not s.isdigit():
         return None
+
+    s = s.zfill(10)
 
     if len(s) != 10:
         return None
@@ -112,7 +59,6 @@ def extract_unique_cprs(
         raise ValueError(f'Expected column "{column}" not found. Columns: {df.columns.tolist()}')
 
     normalized = df[column].map(_normalize_cpr)
-    # `dropna()` removes None/NaN, then `unique()` is faster than `set(...)` for large Series.
     unique = sorted(str(cpr) for cpr in normalized.dropna().unique())
     logger.info(f"Extracted {len(unique)} unique CPRs from Excel")
     return unique
@@ -186,3 +132,53 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + padding, max_width)
 
     return output.getvalue()
+
+
+def find_latest_modregning_excel_attachment(
+    email_reader: EmailReader,
+    mailbox: str = "INBOX",
+    criteria: str = "UNSEEN",
+    filename_prefixes: Iterable[str] = ("Modregning"),
+    max_emails: int = 50,
+) -> tuple[bytes, str, bytes] | None:
+    """
+    Find the newest matching Excel attachment in an IMAP mailbox.
+
+    :param email_reader: EmailReader used to fetch emails.
+    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
+    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
+    :param filename_prefixes: Allowed attachment filename prefixes.
+    :param max_emails: Maximum number of emails to fetch and scan.
+    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
+    """
+    emails, failed = email_reader.get_emails(
+        mailbox=mailbox,
+        criteria=criteria,
+        set_flags=None,
+        max=max_emails,
+        low_to_high=False,  # start with newest emails first
+    )
+
+    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
+
+    for msg in emails:
+        uid: bytes = getattr(msg, "uid", None)
+        subject = msg.get("Subject", "")
+        logger.info(f"Email UID: {uid}, Subject: {subject}")
+
+        for part in msg.iter_attachments():
+            filename = part.get_filename() or ""
+            filename_lc = filename.lower()
+            if not filename_lc.endswith(".xlsx"):
+                continue
+
+            if not any(filename_lc.startswith(p.lower()) for p in filename_prefixes):
+                continue
+
+            content = part.get_payload(decode=True)  # bytes
+            if not content:
+                continue
+
+            return uid, filename, content
+
+    return None
