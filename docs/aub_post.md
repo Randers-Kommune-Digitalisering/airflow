@@ -29,6 +29,7 @@ Hvis et eller flere trin fejler for en email, bliver den ikke slettet, og tasken
 
 **Postkasse (IMAP):**
 - **`aub_post_imap`**
+# TODO: Mangler i bitwarden
 
 **Conn Type**: IMAP
 
