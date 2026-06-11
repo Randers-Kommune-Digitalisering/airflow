@@ -1,20 +1,18 @@
 import logging
-from dateutil.relativedelta import relativedelta
+import io
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
+from airflow.hooks.base import BaseHook
 from airflow.operators.python import get_current_context
-from airflow.providers.sftp.hooks.sftp import SFTPHook
-from rkdigi.email_handling import EmailSender
-from kombit_client.integrations.sf1491.ydelse_liste_hent import YdelseListeHentClient
+from rkdigi.email_handling import EmailSender, EmailReader
 
 from dag_modregning.modregning_data import (
     df_to_excel_bytes,
     extract_unique_cprs,
     extract_ydelser_from_serviceplatform_response,
-    get_latest_excel_info,
-    mask_cpr,
-    read_excel_from_sftp,
+    find_latest_modregning_excel_attachment,
 )
 
 logger = logging.getLogger(__name__)
@@ -22,8 +20,13 @@ logger = logging.getLogger(__name__)
 
 def _resolve_date_range() -> tuple[str, str]:
     """
-    Resolve startDato/slutDato as ISO dates based on logical_date (default: month-to-date).
-    Can be overridden by Airflow Variable modregning_config: {"start_date": "...", "end_date": "..."}.
+    Resolve start_dato/slut_dato as ISO dates (YYYY-MM-DD) based on Airflow `logical_date`.
+
+    - `logical_date` is converted to the DAG timezone and truncated to a date.
+    - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
+    - `slut_dato` is set to `logical_date`.
+
+    :return: (start_dato, slut_dato) as ISO date strings.
     """
     ctx = get_current_context()
     logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
@@ -34,57 +37,81 @@ def _resolve_date_range() -> tuple[str, str]:
 
 def process_modregning() -> None:
     """
-    1) Read newest Excel from SFTP (CPR list)
+    Process CPRs from the Modregning mailbox and generate a report.
+
+    1) Read newest Excel from Modregning Mailbox (CPR list)
     2) Call Serviceplatform for each CPR in date range
     3) Email an Excel report
     """
-    modregning_config = Variable.get("modregning_config", deserialize_json=True)
+    modregning_runtime_config = Variable.get("modregning_runtime_config", deserialize_json=True)
 
-    sftp_dir = modregning_config["sftp_dir"]
+    sender = modregning_runtime_config["sender_email"]
+    recipients = modregning_runtime_config["recipient_emails"]
+    smtp_server = modregning_runtime_config["smtp_server"]
 
-    sender = modregning_config["sender_email"]
-    recipients = modregning_config["recipient_emails"]
-    smtp_server = modregning_config["smtp_server"]
+    modregning_imap_conn = BaseHook.get_connection("modregning_imap")
+
+    email_reader = EmailReader(
+        email=modregning_imap_conn.login,
+        password=modregning_imap_conn.password,
+    )
+
+    found = find_latest_modregning_excel_attachment(
+        email_reader=email_reader,
+    )
+
+    if not found:
+        raise AirflowFailException("No Modregning Excel attachment found in mailbox")
+
+    uid, attachment_name, excel_bytes = found
+    logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
 
     start_dato, slut_dato = _resolve_date_range()
     logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
 
-    sftp_hook = SFTPHook(ssh_conn_id="shared_sftp")
-    latest_info = get_latest_excel_info(sftp_hook, directory=sftp_dir)
-    if not latest_info:
-        raise AirflowFailException("No Excel file found on SFTP for Modregning")
-
-    excel_path, modified_at_utc = latest_info
-    logger.info(f"Using Excel file: {excel_path} (modified_at_utc={modified_at_utc.isoformat()})")
-
     try:
-        df = read_excel_from_sftp(
-            sftp_hook,
-            excel_path,
+        df = pd.read_excel(
+            io.BytesIO(excel_bytes),
+            engine="openpyxl",
             dtype={"ID-nummer": str},
             sheet_name=0,
         )
-        cpr_list = extract_unique_cprs(df, column="ID-nummer")
+
+        cpr_list = extract_unique_cprs(df=df)
+        logger.info("Extracted CPR from Modregning Excel")
         if not cpr_list:
             raise AirflowFailException("No CPR values found in the Excel file")
 
         logger.info("After extracting unique CPRs")
 
         rows: list[list[str]] = []
-        for cpr in cpr_list:
-            logger.info(f"Processing CPR: {mask_cpr(cpr)}")
-            try:
-                logger.info("Before calling YdelseListeHentClient")
-                ydelse_client = YdelseListeHentClient(cvr="29189668")
-                payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
-                ydelser = extract_ydelser_from_serviceplatform_response(payload=payload)
-                rows.append([cpr, ", ".join(sorted(ydelser)) if ydelser else ""])
-            except Exception as e:
-                logger.error(f"Failed for CPR {mask_cpr(cpr)}: {e}")
-                rows.append([cpr, ""])
+
+        from utils.kombit import TempClientCert
+        from kombit_client.integrations.sf1491 import YdelseListeHentClient  # Import lazily to avoid Airflow freezing issue
+
+        with TempClientCert() as client_cert_path:
+            ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
+            for cpr in cpr_list:
+                try:
+                    payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
+
+                    ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
+
+                    if ydelser:
+                        cell_value = ", ".join(sorted(ydelser))  # Join sorted ydelser into a single string(e.g. Forhøjet sats , Grund sats)
+                    elif found_any:
+                        cell_value = ""  # Only filtered ydelser -> empty cell only
+                    else:
+                        cell_value = "Ingen Ydelse"  # No ydelser in response -> "Ingen Ydelse"
+
+                    rows.append([cpr, cell_value])
+
+                except Exception as e:
+                    logger.error(f"Error during processing: {e}")
+                    rows.append([cpr, "Error"])
 
         out_df = pd.DataFrame(rows, columns=["cpr", "YdelseNavn"])
-        excel_bytes = df_to_excel_bytes(out_df)
+        excel_bytes = df_to_excel_bytes(df=out_df)
 
         ctx = get_current_context()
         logical_date = ctx["logical_date"]
@@ -104,9 +131,9 @@ def process_modregning() -> None:
 
         logger.info("Modregning processing completed successfully (email sent).")
 
-    finally:
-        try:
-            # sftp_hook.delete_file(excel_path)
-            logger.info(f"Deleted SFTP file: {excel_path}")
-        except Exception:
-            logger.exception(f"Could not delete SFTP file: {excel_path}")
+        # Delete the input email right after successful processing (report sent)
+        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+        logger.info(f"Deleted input email {attachment_name} with UID {uid!r} from INBOX")
+
+    except Exception as e:
+        raise AirflowFailException("Error processing Modregning") from e
