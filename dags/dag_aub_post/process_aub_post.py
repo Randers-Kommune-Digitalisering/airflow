@@ -23,7 +23,6 @@ _AUB_POST_CONFIG_VAR = "aub_post_config"
 _DEFAULT_MAILBOX = "INBOX"
 _DEFAULT_SEARCH_CRITERIA = "ALL"
 _TARGET_ATTACHMENT_NAME = "maindoc.pdf"
-_CONNECTION_ID = "aub_post_imap"
 
 
 def process_aub_post() -> None:
@@ -63,21 +62,18 @@ def process_aub_post() -> None:
     education_contact_map = build_education_contact_map(contact_mappings=contact_mappings)
 
     # Initialize email reader and sender
-    connection = BaseHook.get_connection(_CONNECTION_ID)
-    if not connection.host or not connection.login or not connection.password:
+    aub_post_conn = BaseHook.get_connection("aub_post_imap")
+
+    if not aub_post_conn.login or not aub_post_conn.password:
         raise ValueError(
-            f"Connection '{_CONNECTION_ID}' must include host, login, and password"
+            "Connection 'aub_post_imap' must include login and password"
         )
 
-    er_init_kwargs = {
-        "email": connection.login,
-        "password": connection.password,
-        "imap_server": connection.host,
-    }
-    if connection.port:
-        er_init_kwargs["imap_port"] = connection.port
+    email_reader = EmailReader(
+        email=aub_post_conn.login,
+        password=aub_post_conn.password,
+    )
 
-    email_reader = EmailReader(**er_init_kwargs)
     email_sender = EmailSender(smtp_server=smtp_server.strip())
 
     # Fetch emails from the mailbox based on the search criteria
