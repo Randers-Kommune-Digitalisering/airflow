@@ -39,16 +39,16 @@ def process_aub_post() -> None:
     Note: If any failures occur during processing, it raises an AirflowFailException and logs per-email details.
     """
     # Fetch job configuration from Airflow Variable
-    config = Variable.get(_AUB_POST_CONFIG_VAR, deserialize_json=True)
-    if not isinstance(config, dict):
+    aub_post_config = Variable.get(_AUB_POST_CONFIG_VAR, deserialize_json=True)
+    if not isinstance(aub_post_config, dict):
         raise ValueError(f"Airflow Variable '{_AUB_POST_CONFIG_VAR}' must be a JSON object")
 
-    smtp_server = config.get("smtp_server")
-    sender_email = config.get("sender_email")
-    contact_mappings = config.get("contacts_map")
+    smtp_server = aub_post_config.get("smtp_server")
+    sender_email = aub_post_config.get("sender_email")
+    contact_mappings = aub_post_config.get("contacts_map")
 
-    mailbox = config.get("mailbox", _DEFAULT_MAILBOX)  # Use default if not provided
-    search_criteria = config.get("mail_search_criteria", _DEFAULT_SEARCH_CRITERIA)  # Use default if not provided
+    mailbox = aub_post_config.get("mailbox", _DEFAULT_MAILBOX)  # Use default if not provided
+    search_criteria = aub_post_config.get("mail_search_criteria", _DEFAULT_SEARCH_CRITERIA)  # Use default if not provided
 
     if not isinstance(smtp_server, str) or not smtp_server.strip():
         raise ValueError("'smtp_server' must be a non-empty string")
