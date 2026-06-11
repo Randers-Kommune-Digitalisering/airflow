@@ -21,21 +21,22 @@ excluded_ydelse_name = {
 }
 
 
-def _normalize_cpr(value: object) -> str | None:
+def _normalize_cpr(value: str | None) -> str | None:
     """
     Normalize CPR to 10 digits (string). Returns None if invalid.
 
-    :param value: Raw CPR cell value from Excel.
-    :return: 10-digit CPR string or None.
+    :param value: CPR value to normalize.
+    :return: Normalized CPR string or None if invalid.
     """
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None:
         return None
 
-    s = str(value).strip().replace("-", "").replace(" ", "")
+    s = value.strip().replace("-", "").replace(" ", "")
     if not s.isdigit():
         return None
 
-    s = s.zfill(10)  # Pad with leading zeros if less than 10 digits (e.g. Excel might read CPR as a number and drop leading zeros)
+    s = s.zfill(10)
+
     if len(s) != 10:
         return None
 
