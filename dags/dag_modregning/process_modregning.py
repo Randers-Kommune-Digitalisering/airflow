@@ -37,6 +37,8 @@ def _resolve_date_range() -> tuple[str, str]:
 
 def process_modregning() -> None:
     """
+    Process CPRs from the Modregning mailbox and generate a report.
+
     1) Read newest Excel from Modregning Mailbox (CPR list)
     2) Call Serviceplatform for each CPR in date range
     3) Email an Excel report
