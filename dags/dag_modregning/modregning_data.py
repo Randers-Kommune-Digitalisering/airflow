@@ -1,9 +1,10 @@
 import io
 import logging
 import pandas as pd
-from typing import Any
+from typing import Any, Iterable
 from openpyxl.utils import get_column_letter
 from airflow.models import Variable
+from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
@@ -131,3 +132,53 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes
             ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + padding, max_width)
 
     return output.getvalue()
+
+
+def find_latest_modregning_excel_attachment(
+    email_reader: EmailReader,
+    mailbox: str = "INBOX",
+    criteria: str = "UNSEEN",
+    filename_prefixes: Iterable[str] = ("Modregning"),
+    max_emails: int = 50,
+) -> tuple[bytes, str, bytes] | None:
+    """
+    Find the newest matching Excel attachment in an IMAP mailbox.
+
+    :param email_reader: EmailReader used to fetch emails.
+    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
+    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
+    :param filename_prefixes: Allowed attachment filename prefixes.
+    :param max_emails: Maximum number of emails to fetch and scan.
+    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
+    """
+    emails, failed = email_reader.get_emails(
+        mailbox=mailbox,
+        criteria=criteria,
+        set_flags=None,
+        max=max_emails,
+        low_to_high=False,  # start with newest emails first
+    )
+
+    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
+
+    for msg in emails:
+        uid: bytes = getattr(msg, "uid", None)
+        subject = msg.get("Subject", "")
+        logger.info(f"Email UID: {uid}, Subject: {subject}")
+
+        for part in msg.iter_attachments():
+            filename = part.get_filename() or ""
+            filename_lc = filename.lower()
+            if not filename_lc.endswith(".xlsx"):
+                continue
+
+            if not any(filename_lc.startswith(p.lower()) for p in filename_prefixes):
+                continue
+
+            content = part.get_payload(decode=True)  # bytes
+            if not content:
+                continue
+
+            return uid, filename, content
+
+    return None

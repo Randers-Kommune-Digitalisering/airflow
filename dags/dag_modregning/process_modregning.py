@@ -1,71 +1,21 @@
 import logging
-from dateutil.relativedelta import relativedelta
+import io
 import pandas as pd
+from dateutil.relativedelta import relativedelta
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
 from airflow.hooks.base import BaseHook
-from typing import Iterable
 from airflow.operators.python import get_current_context
-import io
 from rkdigi.email_handling import EmailSender, EmailReader
 
 from dag_modregning.modregning_data import (
     df_to_excel_bytes,
     extract_unique_cprs,
     extract_ydelser_from_serviceplatform_response,
+    find_latest_modregning_excel_attachment,
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _find_latest_modregning_excel_attachment(
-    email_reader: EmailReader,
-    mailbox: str = "INBOX",
-    criteria: str = "ALL",
-    filename_prefixes: Iterable[str] = ("Modregning"),
-    max_emails: int = 50,
-) -> tuple[bytes, str, bytes] | None:
-    """
-    Find the newest matching Excel attachment in an IMAP mailbox.
-
-    :param email_reader: EmailReader used to fetch emails.
-    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
-    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
-    :param filename_prefixes: Allowed attachment filename prefixes.
-    :param max_emails: Maximum number of emails to fetch and scan.
-    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
-    """
-    emails, failed = email_reader.get_emails(
-        mailbox=mailbox,
-        criteria=criteria,
-        set_flags=None,
-        max=max_emails,
-        low_to_high=False,  # start with newest emails first
-    )
-
-    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
-
-    for msg in emails:
-        uid: bytes = getattr(msg, "uid", None)
-        subject = msg.get("Subject", "")
-        logger.info(f"Email UID: {uid}, Subject: {subject}")
-
-        for part in msg.iter_attachments():
-            filename = part.get_filename() or ""
-            filename_lc = filename.lower()
-            if not filename_lc.endswith(".xlsx"):
-                continue
-
-            if not any(filename_lc.startswith(p.lower()) for p in filename_prefixes):
-                continue
-
-            content = part.get_payload(decode=True)  # bytes
-            if not content:
-                continue
-
-            return uid, filename, content
-
-    return None
 
 
 def _resolve_date_range() -> tuple[str, str]:
@@ -104,7 +54,7 @@ def process_modregning() -> None:
         password=modregning_imap_conn.password,
     )
 
-    found = _find_latest_modregning_excel_attachment(
+    found = find_latest_modregning_excel_attachment(
         email_reader=email_reader,
     )
 
