@@ -140,11 +140,11 @@ def process_aub_post() -> None:
                 mailbox=mailbox.strip(),
                 expunge=True,
             )
-            logger.info("Processed and deleted mailbox email uid=%s", uid_text)
+            logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
         except Exception as exc:
             failures.append(f"uid={uid_text}: {exc}")
-            logger.exception("AUB processing failed for uid=%s", uid_text)
+            logger.exception("AUB processing failed for filename %s uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
     if failures:
         raise AirflowFailException(
