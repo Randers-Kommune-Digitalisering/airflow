@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at understøtte Betalingskontorets behov for at sammenholde personer (fra en CPR-liste) med oplysninger om ydelsesudbetalinger hentet via Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)) i et givent dato-interval. Jobbet henter den nyeste CPR-liste (Excel) fra en postkasse, slår relevante ydelsestyper op pr. CPR i Serviceplatformen og genererer en Excel-rapport, som sendes på email. Rapporten bruges som grundlag for kontrol og opfølgning på personer, der modtager bestemte ydelsestyper (herunder at kunne frasortere ydelsestyper via excluded-listen).
+Formålet med jobbet er at understøtte Betalingskontorets behov for at sammenholde personer (fra en CPR-liste) med oplysninger om ydelsesudbetalinger hentet via Serviceplatform pakken: ([kombit_client](https://pypi.org/project/kombit-client/)) i et givent dato-interval. Jobbet henter den nyeste uset CPR-liste (Excel) fra en postkasse, slår relevante ydelsestyper op pr. CPR i Serviceplatformen og genererer en Excel-rapport, som sendes på email. Rapporten bruges som grundlag for kontrol og opfølgning på personer, der modtager bestemte ydelsestyper (herunder at kunne frasortere ydelsestyper via excluded-listen).
 
 
 ## Beskrivelse
@@ -15,11 +15,11 @@ Koden består af et DAG-job, der udfører følgende trin:
   - `slut_dato`: `logical_date` (dagens dato i DAG’ens timezone)
 - Finder nyeste Excel-vedhæftning i en IMAP Modregning-postkassen (default `INBOX`)
   - Email hentes via IMAP (EmailReader)
-  - Jobbet scanner de seneste emails (nyeste først) og leder efter en `.xlsx`-vedhæftning, hvor filnavnet starter med et af de konfigurerede prefixes (fx `Modregning` eller `DAKT`)
+  - Jobbet scanner de seneste emails (nyeste først) og leder efter en `.xlsx`-vedhæftning, hvor filnavnet starter med et af de konfigurerede prefixes (fx `Modregning`)
 - Læser Excel-arket og udtrækker unikke CPR-numre fra kolonnen `ID-nummer`
   - CPR normaliseres til 10 cifre (ugyldige værdier ignoreres)
 - Kalder Serviceplatform (SF1491) for hver CPR i dato-intervallet og udtrækker `YdelseNavn`
-  - Visse ydelsestyper filtreres fra via `EXCLUDED_YDELSE_NAVNE` listen i koden, hvorved YdelseNavn vil være tom
+  - Visse ydelsestyper filtreres fra via `EXCLUDED_YDELSE_NAVNE` listen i Airflow Variablen `modregning_excluded_ydelse_list`, hvorved YdelseNavn vil være tom
   - Hvis der ingen ydelser findes i svaret sættes feltet til `Ingen Ydelse`
 - Bygger en Excel-rapport (in-memory) med kolonnerne `cpr` og `YdelseNavn`
 - Sender rapporten som vedhæftet fil via SMTP (filnavn: `Modregning_YYYY-MM-DD.xlsx`)
@@ -35,7 +35,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 **Forudsætning(manuel proces):**
 
-Den 15. i hver måned sender Betalingskontoret en ny CPR-liste (Excel) til Modregning Postkassen. CPR-listen bruges eom input til modregningsopslag.
+Den 15. i hver måned sender Betalingskontoret en ny CPR-liste (Excel) til Modregning Postkassen. CPR-listen bruges som input til modregningsopslag.
 Excel-filen skal indeholde kolonnen `ID-nummer` (CPR). 
 Jobbet bruger den nyeste matchende vedhæftning i postkassen, hvis der ikke ligger en relevant mail med vedhæftet Excel, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov).
 
