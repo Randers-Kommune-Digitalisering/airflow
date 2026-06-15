@@ -39,7 +39,7 @@ class CPRClient:
 
         is_valid_uuid = isinstance(address_uuid, str) and len(address_uuid) == 36
         if not isinstance(protected, bool) or (address_uuid is not None and not is_valid_uuid):
-            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX, got: {data}")
+            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX (protected={protected!r}, address_uuid={address_uuid!r})")
 
         return {
             'address_uuid': address_uuid,
