@@ -68,13 +68,15 @@ Bruges til at hente login/password til Modregning postkassen, som DAG’en læse
   - `sender_email`
   - `recipient_emails`
   - `smtp_server`
+  - 
 
 Eksempel:
 ```json
 {
   "sender_email": "no-reply@randers.dk",
   "recipient_emails": ["modtager1@randers.dk", "modtager2@randers.dk"],
-  "smtp_server": "smtp.example.local"
+  "smtp_server": "smtp.example.local",
+  "imap_server": "imap.example.local"
 }
 ```
 
