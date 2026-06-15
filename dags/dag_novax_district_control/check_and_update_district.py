@@ -181,7 +181,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
             if address_info is None:
                 logger.warning(
-                    "Skipping address lookup and clearing district for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
+                    "Skipping address lookup and clearing district for Name ID %s due to unexpected address information (address_uuid=%s)",
                     entry.ID,
                     address_uuid,
                 )
