@@ -8,7 +8,6 @@ from dag_novax_district_control.clients.district_map_client import DistrictMapDB
 from dag_novax_district_control.clients.cpr_client import CPRClient
 from dag_novax_district_control.model import Name, NameDetails, Remind
 from dag_novax_district_control.district_update_helpers import (
-    clear_district_due_to_missing_address,
     ensure_active,
     is_valid_cpr,
     update_address_from_dataforsyning,
@@ -81,7 +80,10 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                 is_protected_address=bool(cpr_info["is_protected_address"]),
             )
 
-            address_info = dataforsyning_client.get_address_by_id(cpr_info["address_uuid"])
+            address_uuid = cpr_info['address_uuid']
+            address_info = None
+            if address_uuid is not None:
+                address_info = dataforsyning_client.get_address_by_id(address_uuid)
 
             # Address + district updates
             is_new_address_set = False
@@ -92,15 +94,9 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
 
             if address_info is None:
                 logger.warning(
-                    "Skipping address lookup and clearing district for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
+                    "Skipping address lookup + district update for Name ID %s due to unexpected address information (address_uuid=%s)",
                     entry.ID,
-                    cpr_info["address_uuid"],
-                )
-
-                is_new_district = clear_district_due_to_missing_address(
-                    entry=entry,
-                    now_dt=now_dt,
-                    now_time=now_time,
+                    address_uuid,
                 )
 
             else:
