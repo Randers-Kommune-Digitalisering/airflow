@@ -34,11 +34,12 @@ class CPRClient:
         res.raise_for_status()
         data = res.json()
 
-        address_uuid = data['aktuelAdresse'].get('adresseUUID', '')
+        address_uuid = data.get('aktuelAdresse', {}).get('adresseUUID')
         protected = data.get('adressebeskyttelse', {}).get('beskyttet')
 
-        if not isinstance(protected, bool) or not isinstance(address_uuid, str) or not len(address_uuid) == 36:
-            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX")
+        is_valid_uuid = isinstance(address_uuid, str) and len(address_uuid) == 36
+        if not isinstance(protected, bool) or (address_uuid is not None and not is_valid_uuid):
+            raise ValueError(f"Unexpected response format for CPR {cpr_number[:6]}-XXXX, got: {data}")
 
         return {
             'address_uuid': address_uuid,

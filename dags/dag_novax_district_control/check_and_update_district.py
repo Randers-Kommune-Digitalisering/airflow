@@ -167,7 +167,10 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 is_protected_address=bool(cpr_info["is_protected_address"]),
             )
 
-            address_info = dataforsyning_client.get_address_by_id(cpr_info['address_uuid'])
+            address_uuid = cpr_info['address_uuid']
+            address_info = None
+            if address_uuid is not None:
+                address_info = dataforsyning_client.get_address_by_id(address_uuid)
 
             # Address + district updates
             is_new_address_set = False
@@ -180,7 +183,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 logger.warning(
                     "Skipping address lookup and clearing district for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
                     entry.ID,
-                    cpr_info["address_uuid"],
+                    address_uuid,
                 )
 
                 is_new_district = clear_district_due_to_missing_address(
