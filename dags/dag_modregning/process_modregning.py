@@ -48,12 +48,14 @@ def process_modregning() -> None:
     sender = modregning_runtime_config["sender_email"]
     recipients = modregning_runtime_config["recipient_emails"]
     smtp_server = modregning_runtime_config["smtp_server"]
+    imap_server = modregning_runtime_config["imap_server"]
 
     modregning_imap_conn = BaseHook.get_connection("modregning_imap")
 
     email_reader = EmailReader(
         email=modregning_imap_conn.login,
         password=modregning_imap_conn.password,
+        imap_server=imap_server,
     )
 
     found = find_latest_modregning_excel_attachment(
