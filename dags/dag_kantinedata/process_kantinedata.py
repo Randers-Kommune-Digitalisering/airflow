@@ -2,6 +2,7 @@ import logging
 import xml.etree.ElementTree as ET
 from io import BytesIO
 
+from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 from rkdigi.email_handling import EmailReader
@@ -44,11 +45,27 @@ def _mark_email_seen(email_reader: EmailReader, uid: bytes, mailbox: str = "INBO
 def process_kantinedata(sftp_hook: SFTPHook) -> None:
     """Fetch unseen emails, extract XML attachments, validate, and upload to SFTP."""
     imap_conn = BaseHook.get_connection("kantinedata_imap")
+    imap_host = imap_conn.host
+    imap_port = imap_conn.port
+    imap_extra = imap_conn.extra_dejson or {}
+
+    if not imap_host:
+        raise AirflowFailException("Connection 'kantinedata_imap' is missing host. Cannot initialize EmailReader.")
+
+    if not imap_port:
+        raise AirflowFailException("Connection 'kantinedata_imap' is missing port. Cannot initialize EmailReader.")
+
+    if imap_extra.get("use_ssl"):
+        raise AirflowFailException(
+            "Connection 'kantinedata_imap' has use_ssl=true. rkdigi EmailReader uses IMAP + STARTTLS and does not support IMAP SSL mode. "
+            "Set use_ssl=false with STARTTLS-compatible endpoint, or switch back to Airflow ImapHook for SSL mode."
+        )
 
     email_reader = EmailReader(
         email=imap_conn.login,
         password=imap_conn.password,
-        imap_server=imap_conn.host,
+        imap_server=imap_host,
+        imap_port=int(imap_port),
     )
 
     emails, failed = email_reader.get_emails(
