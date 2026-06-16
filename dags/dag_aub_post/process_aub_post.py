@@ -2,13 +2,7 @@ import logging
 
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
-
-# TODO: Forstår ikke helt formålet med denne fallback?
-try:
-    from airflow.exceptions import AirflowFailException
-except ImportError:
-    class AirflowFailException(Exception):
-        pass
+from airflow.exceptions import AirflowFailException
 
 from rkdigi.email_handling import EmailReader, EmailSender
 from dag_aub_post.aub_post_data import (
