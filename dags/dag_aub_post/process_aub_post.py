@@ -2,12 +2,7 @@ import logging
 
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
-
-try:
-    from airflow.exceptions import AirflowFailException
-except ImportError:
-    class AirflowFailException(Exception):
-        pass
+from airflow.exceptions import AirflowFailException
 
 from rkdigi.email_handling import EmailReader, EmailSender
 from dag_aub_post.aub_post_data import (
@@ -23,7 +18,6 @@ _AUB_POST_CONFIG_VAR = "aub_post_config"
 _DEFAULT_MAILBOX = "INBOX"
 _DEFAULT_SEARCH_CRITERIA = "ALL"
 _TARGET_ATTACHMENT_NAME = "maindoc.pdf"
-_CONNECTION_ID = "aub_post_imap"
 
 
 def process_aub_post() -> None:
@@ -39,16 +33,16 @@ def process_aub_post() -> None:
     Note: If any failures occur during processing, it raises an AirflowFailException and logs per-email details.
     """
     # Fetch job configuration from Airflow Variable
-    config = Variable.get(_AUB_POST_CONFIG_VAR, deserialize_json=True)
-    if not isinstance(config, dict):
+    aub_post_config = Variable.get(_AUB_POST_CONFIG_VAR, deserialize_json=True)
+    if not isinstance(aub_post_config, dict):
         raise ValueError(f"Airflow Variable '{_AUB_POST_CONFIG_VAR}' must be a JSON object")
 
-    smtp_server = config.get("smtp_server")
-    sender_email = config.get("sender_email")
-    contact_mappings = config.get("contacts_map")
+    smtp_server = aub_post_config.get("smtp_server")
+    sender_email = aub_post_config.get("sender_email")
+    contact_mappings = aub_post_config.get("contacts_map")
 
-    mailbox = config.get("mailbox", _DEFAULT_MAILBOX)  # Use default if not provided
-    search_criteria = config.get("mail_search_criteria", _DEFAULT_SEARCH_CRITERIA)  # Use default if not provided
+    mailbox = aub_post_config.get("mailbox", _DEFAULT_MAILBOX)  # Use default if not provided
+    search_criteria = aub_post_config.get("mail_search_criteria", _DEFAULT_SEARCH_CRITERIA)  # Use default if not provided
 
     if not isinstance(smtp_server, str) or not smtp_server.strip():
         raise ValueError("'smtp_server' must be a non-empty string")
@@ -63,29 +57,24 @@ def process_aub_post() -> None:
     education_contact_map = build_education_contact_map(contact_mappings=contact_mappings)
 
     # Initialize email reader and sender
-    connection = BaseHook.get_connection(_CONNECTION_ID)
-    if not connection.host or not connection.login or not connection.password:
+    aub_post_conn = BaseHook.get_connection("aub_post_imap")
+
+    if not aub_post_conn.login or not aub_post_conn.password:
         raise ValueError(
-            f"Connection '{_CONNECTION_ID}' must include host, login, and password"
+            "Connection 'aub_post_imap' must include login and password"
         )
 
-    er_init_kwargs = {
-        "email": connection.login,
-        "password": connection.password,
-        "imap_server": connection.host,
-    }
-    if connection.port:
-        er_init_kwargs["imap_port"] = connection.port
+    email_reader = EmailReader(
+        email=aub_post_conn.login,
+        password=aub_post_conn.password,
+    )
 
-    email_reader = EmailReader(**er_init_kwargs)
     email_sender = EmailSender(smtp_server=smtp_server.strip())
 
     # Fetch emails from the mailbox based on the search criteria
     emails, failed_ids = email_reader.get_emails(
         mailbox=mailbox.strip(),
         criteria=search_criteria.strip(),
-        set_flags=None,
-        del_flags=None,
     )
 
     failures: list[str] = []
@@ -146,11 +135,11 @@ def process_aub_post() -> None:
                 mailbox=mailbox.strip(),
                 expunge=True,
             )
-            logger.info("Processed and deleted mailbox email uid=%s", uid_text)
+            logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
         except Exception as exc:
             failures.append(f"uid={uid_text}: {exc}")
-            logger.exception("AUB processing failed for uid=%s", uid_text)
+            logger.exception("AUB processing failed for filename %s uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
     if failures:
         raise AirflowFailException(

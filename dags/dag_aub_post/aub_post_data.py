@@ -5,7 +5,7 @@ from email.message import Message
 EDUCATION_REGEX = re.compile(r"Uddannelse\s*\n(.*)", re.IGNORECASE)
 
 
-def normalize_education(value: str) -> str:
+def _normalize_education(value: str) -> str:
     """
     Normalize the education value by removing extra whitespace and converting to lowercase.
 
@@ -44,7 +44,7 @@ def build_education_contact_map(contact_mappings: list[dict]) -> dict[str, str]:
             if not isinstance(education, str) or not education.strip():
                 raise ValueError("Each education value must be a non-empty string")
 
-            education_key = normalize_education(education)
+            education_key = _normalize_education(education)
             previous_email = contact_map.get(education_key)
             if previous_email and previous_email != resolved_email:
                 raise ValueError(
@@ -55,7 +55,7 @@ def build_education_contact_map(contact_mappings: list[dict]) -> dict[str, str]:
     return contact_map
 
 
-def extract_education_from_text(text: str) -> str:
+def _extract_education_from_text(text: str) -> str:
     """
     Extract the education name from the provided text using a regex pattern.
 
@@ -91,7 +91,7 @@ def extract_education_from_pdf(pdf_bytes: bytes) -> str:
     with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
         pdf_text = "\n".join(page.get_text() for page in document)
 
-    return extract_education_from_text(pdf_text)
+    return _extract_education_from_text(pdf_text)
 
 
 def find_attachment_by_name(message: Message, target_filename: str = "maindoc.pdf") -> tuple[str, bytes]:
@@ -134,7 +134,7 @@ def resolve_contact_email(education: str, education_contact_map: dict[str, str])
     :param education_contact_map: A dictionary mapping normalized education names to contact emails.
     :return: The resolved contact email.
     """
-    resolved_email = education_contact_map.get(normalize_education(education))
+    resolved_email = education_contact_map.get(_normalize_education(education))
     if not resolved_email:
         raise ValueError("No contact email configured for extracted education")
     return resolved_email

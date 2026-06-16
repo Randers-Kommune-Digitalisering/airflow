@@ -4,7 +4,7 @@ import pytest
 
 from dag_aub_post.aub_post_data import (
     build_education_contact_map,
-    extract_education_from_text,
+    _extract_education_from_text,
     find_attachment_by_name,
 )
 
@@ -44,14 +44,14 @@ def test_build_education_contact_map_rejects_duplicate_education_across_contacts
         )
 
 
-def test_extract_education_from_text_matches_expected_regex() -> None:
+def test__extract_education_from_text_matches_expected_regex() -> None:
     text = "Header\nUddannelse\nSocial- og sundhedsassistent\nFooter"
-    assert extract_education_from_text(text) == "Social- og sundhedsassistent"
+    assert _extract_education_from_text(text) == "Social- og sundhedsassistent"
 
 
-def test_extract_education_from_text_raises_when_regex_not_found() -> None:
+def test__extract_education_from_text_raises_when_regex_not_found() -> None:
     with pytest.raises(ValueError, match="Could not find education"):
-        extract_education_from_text("Ingen relevant tekst")
+        _extract_education_from_text("Ingen relevant tekst")
 
 
 def test_find_attachment_by_name_is_case_insensitive() -> None:
