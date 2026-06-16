@@ -1,4 +1,6 @@
 import io
+import re
+import fitz
 import pandas as pd
 import logging
 from openpyxl.utils import get_column_letter
@@ -41,6 +43,16 @@ INSUBIZ_COLUMN_RENAME_MAP = {
     "usageCategory_text": "Anvendelse",
     "usage_text": "Art",
 }
+
+MOTORSTYRELSEN_PDF_COLUMNS = [
+    "Nummer (DPRN)",
+    "Stelnummer (DKKO)",
+    "Køretøj art beskrivelse (DKRG)",
+    "Mærke beskrivelse (DKKØ)",
+    "Variant beskrivelse (DKKO)",
+    "Dato - første registrering (DKKØ)",
+    "Model år (DKKØ)",
+]
 
 INSUBIZ_ROOT_CUSTOMER_ID = 216146  # RK
 INSUBIZ_MAX_LEVELS = 6
@@ -289,32 +301,107 @@ def dfs_to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
 
             ws = writer.sheets[sheet_name]
 
-            # Dynamisk column width
             for idx, col in enumerate(frame.columns, start=1):
-                max_length = max(
-                    frame[col].astype(str).map(len).max(),
-                    len(str(col))
-                )
-
-                ws.column_dimensions[get_column_letter(idx)].width = min(
-                    max_length + 2,
-                    50,  # max width
-                )
+                max_length = max(frame[col].astype(str).map(len).max(), len(str(col)))
+                ws.column_dimensions[get_column_letter(idx)].width = min(max_length + 2, 50) # max width of 50
 
     return output.getvalue()
 
 
-def read_motorstyrelsen_excel_bytes(excel_bytes: bytes) -> pd.DataFrame:
+def _norm_header(value: str) -> str:
     """
-    Read a Motorstyrelsen Excel file from bytes and return it as a DataFrame.
+    Normalize a header value for tolerant matching.
 
-    :param excel_bytes: Raw .xlsx file content.
-    :return: Parsed Motorstyrelsen DataFrame.
+    :param value: Header text to normalize.
+    :return: Normalized header string.
     """
-    return (
-        pd.read_excel(io.BytesIO(excel_bytes), dtype={"Nummer (DPRN)": str})
-        .rename(columns={"Nummer (DPRN)": "registreringsnummer"})
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def read_motorstyrelsen_pdf_bytes(pdf_bytes: bytes) -> pd.DataFrame:
+    """
+    Parse Motorstyrelsen PDF bytes and extract vehicle table data.
+
+    :param pdf_bytes: Raw PDF content as bytes.
+    :return: DataFrame containing MOTORSTYRELSEN_PDF_COLUMNS plus "registreringsnummer".
+    """
+    expected_norm = {_norm_header(value=c): c for c in MOTORSTYRELSEN_PDF_COLUMNS}
+    frames: list[pd.DataFrame] = []
+
+    def _promote_first_row_as_header(frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty:
+            return frame
+        new_cols = [str(v).strip() for v in frame.iloc[0].tolist()]
+        out = frame.iloc[1:].copy()
+        out.columns = new_cols
+        return out.reset_index(drop=True)
+
+    def _header_match_count(cols: list[str]) -> int:
+        return sum(1 for c in cols if _norm_header(value=c) in expected_norm)
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+        for page in doc:
+            table_finder = page.find_tables()
+            if not table_finder or not table_finder.tables:
+                continue
+
+            for table in table_finder.tables:
+                table_df = table.to_pandas()
+                if table_df is None or table_df.empty:
+                    continue
+
+                current_cols = [str(c).strip() for c in table_df.columns]
+                col_matches = _header_match_count(cols=current_cols)
+
+                # If headers are not detected in column names, try first row as header.
+                # if col_matches < 3 and len(table_df) > 0:
+                if col_matches < 3:
+                    promoted = _promote_first_row_as_header(frame=table_df)
+                    promoted_cols = [str(c).strip() for c in promoted.columns]
+                    promoted_matches = _header_match_count(cols=promoted_cols)
+                    if promoted_matches > col_matches:
+                        table_df = promoted
+                        current_cols = promoted_cols
+
+                rename_map: dict[str, str] = {}
+                for col in current_cols:
+                    norm = _norm_header(value=col)
+                    if norm in expected_norm:
+                        rename_map[col] = expected_norm[norm]
+
+                table_df = table_df.rename(columns=rename_map)
+
+                keep_cols = [c for c in MOTORSTYRELSEN_PDF_COLUMNS if c in table_df.columns]
+                if not keep_cols:
+                    continue
+
+                frames.append(table_df[keep_cols].copy())
+
+    if not frames:
+        raise ValueError("No tabular data found in Motorstyrelsen PDF")
+
+    motor_df = pd.concat(frames, ignore_index=True)
+
+    for col in MOTORSTYRELSEN_PDF_COLUMNS:
+        if col not in motor_df.columns:
+            motor_df[col] = pd.NA
+
+    reg = (
+        motor_df["Nummer (DPRN)"]
+        .astype("string")
+        .str.strip()
+        .str.upper()
     )
+
+    reg = reg.where(reg.str.fullmatch(r"[A-Z0-9]{1,7}", na=False))
+
+    motor_df["registreringsnummer"] = reg
+    motor_df = motor_df.loc[motor_df["registreringsnummer"].notna()].copy()
+
+    if motor_df.empty:
+        raise ValueError("PDF parse produced zero valid registreringsnummer")
+
+    return motor_df[MOTORSTYRELSEN_PDF_COLUMNS + ["registreringsnummer"]]
 
 
 def _norm_reg(series: pd.Series) -> pd.Series:
@@ -351,8 +438,17 @@ def compare_motorstyrelsen_vs_insubiz(
     motor_key = _norm_reg(series=motor_df[motor_reg_col])
     insubiz_key = _norm_reg(series=insubiz_df[insubiz_reg_col])
 
-    motor_mask = ~motor_key.str.startswith(pat=exclude_prefix, na=False)
-    insubiz_mask = ~insubiz_key.str.startswith(pat=exclude_prefix, na=False)
+    # Only keep valid Reg.nr that contains at most 7 alphanumeric characters
+    insubiz_valid = insubiz_key.str.fullmatch(
+        r"^[A-Z0-9]{1,7}$",
+        na=False,
+    )
+
+    motor_prefix_ok = ~motor_key.str.startswith(pat=exclude_prefix, na=False)
+    insubiz_prefix_ok = ~insubiz_key.str.startswith(pat=exclude_prefix, na=False)
+
+    motor_mask = motor_prefix_ok
+    insubiz_mask = insubiz_valid & insubiz_prefix_ok
 
     motor_df2 = motor_df.loc[motor_mask].copy()
     insubiz_df2 = insubiz_df.loc[insubiz_mask].copy()
@@ -391,16 +487,6 @@ def build_customer_levels(
     root_id: int = INSUBIZ_ROOT_CUSTOMER_ID,
     max_levels: int = INSUBIZ_MAX_LEVELS,
 ) -> dict[str, str]:
-    """
-    Build Level1..LevelN (names) for a customer by walking the parent hierarchy.
-
-    :param customer_id: Customer id from vehicle payload (e.g. customer.id).
-    :param customer_by_id: Lookup mapping customer id -> customer dict from
-                           ``Customer/GetCustomersPagedAsync``.
-    :param root_id: The id that must exist in the chain for levels to be populated.
-    :param max_levels: Maximum number of Level columns to populate (default 6).
-    :return: Dict with keys "Level1".."LevelN" (strings). Missing/unknown => "".
-    """
     levels = {f"Level{i}": "" for i in range(1, max_levels + 1)}
 
     current_id = _to_valid_id_or_none(value=customer_id)
@@ -429,13 +515,17 @@ def build_customer_levels(
     chain_root_to_leaf = list(reversed(chain_leaf_to_root))
 
     root_index = next(
-        (i for i, c in enumerate(chain_root_to_leaf) if _to_valid_id_or_none(value=c.get("id")) == root_id),
+        (
+            i
+            for i, c in enumerate(chain_root_to_leaf)
+            if _to_valid_id_or_none(value=c.get("id")) == root_id
+        ),
         None,
     )
     if root_index is None:
-        return levels  # root ikke i kæden => tomme levels
+        return levels
 
-    path = chain_root_to_leaf[root_index:]  # root -> leaf
+    path = chain_root_to_leaf[root_index:]
     for i, node in enumerate(path[:max_levels], start=1):
         levels[f"Level{i}"] = (node.get("name") or "").strip()
 
@@ -446,13 +536,6 @@ def enrich_vehicles_with_customer_levels(
     vehicles_df: pd.DataFrame,
     customers: list[dict[str, Any]],
 ) -> pd.DataFrame:
-    """
-    Enrich a vehicles DataFrame with Level1..Level6 based on customer hierarchy.
-
-    :param vehicles_df: Vehicles DataFrame (output from json_normalize).
-    :param customers: Raw customer rows from ``fetch_insubiz_customers``.
-    :return: Copy of vehicles_df with Level1..Level6 columns added.
-    """
     df = vehicles_df.copy()
 
     customer_by_id = {
@@ -463,7 +546,6 @@ def enrich_vehicles_with_customer_levels(
 
     if "customer_id" in df.columns:
         df["customer_id"] = pd.to_numeric(df["customer_id"], errors="coerce").astype("Int64")
-
         unique_customer_ids = df["customer_id"].dropna().astype(int).unique().tolist()
 
         levels_map = {
@@ -471,10 +553,7 @@ def enrich_vehicles_with_customer_levels(
             for cid in unique_customer_ids
         }
 
-        levels_df = (
-            pd.DataFrame.from_dict(levels_map, orient="index")
-            .reset_index(names="customer_id")
-        )
+        levels_df = pd.DataFrame.from_dict(levels_map, orient="index").reset_index(names="customer_id")
         levels_df["customer_id"] = levels_df["customer_id"].astype("Int64")
 
         df = df.merge(levels_df, on="customer_id", how="left")
@@ -485,15 +564,15 @@ def enrich_vehicles_with_customer_levels(
     return df
 
 
-def find_latest_motorstyrelsen_excel_attachment(
+def find_latest_motorstyrelsen_pdf_attachment(
     email_reader: EmailReader,
     mailbox: str = "INBOX",
     criteria: str = "UNSEEN",
-    filename_prefixes: Iterable[str] = ("Aktindsigt",),
+    filename_prefixes: Iterable[str] = ("maindoc",),
     max_emails: int = 50,
 ) -> tuple[bytes, str, bytes] | None:
     """
-    Find the newest Motorstyrelsen Excel attachment in a mailbox.
+    Find the newest Motorstyrelsen PDF attachment in a mailbox.
 
     :param email_reader: EmailReader used to fetch emails.
     :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
@@ -517,7 +596,7 @@ def find_latest_motorstyrelsen_excel_attachment(
 
         for part in msg.iter_attachments():
             filename = part.get_filename() or ""
-            if not filename.lower().endswith(".xlsx"):
+            if not filename.lower().endswith(".pdf"):
                 continue
             if filename_prefixes and not any(filename.startswith(p) for p in filename_prefixes):
                 continue

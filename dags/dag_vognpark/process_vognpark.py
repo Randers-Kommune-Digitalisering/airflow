@@ -9,10 +9,10 @@ from dag_vognpark.vognpark_data import (
     fetch_insubiz_customers,
     fetch_insubiz_vehicles,
     normalize_insubiz_df,
-    read_motorstyrelsen_excel_bytes,
+    read_motorstyrelsen_pdf_bytes,
     enrich_vehicles_with_customer_levels,
-    find_latest_motorstyrelsen_excel_attachment
-) 
+    find_latest_motorstyrelsen_pdf_attachment,
+)
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from airflow.hooks.base import BaseHook
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def process_vognpark() -> None:
     """
-    Fetch Excel from Mailbox + Insubiz API and load into Postgres.
+    Fetch PDF from mailbox + Insubiz API and load into Postgres.
     """
     insubiz_hook = HttpHook(http_conn_id="insubiz_cloud_api")
     vognpark_hook = PostgresHook(postgres_conn_id="vognpark_db")
@@ -46,20 +46,29 @@ def process_vognpark() -> None:
         password=vognpark_imap_conn.password,
     )
 
-    found = find_latest_motorstyrelsen_excel_attachment(email_reader=email_reader, criteria="UNSEEN")
+    found = find_latest_motorstyrelsen_pdf_attachment(email_reader=email_reader)
 
     if not found:
-        raise AirflowFailException("No Motorstyrelsen Excel attachment found")
+        raise AirflowFailException("No Motorstyrelsen PDF attachment found")
 
-    uid, attachment_name, excel_bytes = found
+    uid, attachment_name, pdf_bytes = found
 
-    logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
+    logger.info(f"Found PDF attachment in email UID {uid.decode()}: {attachment_name} ({len(pdf_bytes)} bytes)")
 
     afg_dato = pd.to_datetime(df["Afg.dato"], errors="coerce")
     inactive_mask = (afg_dato == pd.Timestamp("1900-01-01 00:00:00"))
+
     insubiz_inactive_df = df.loc[inactive_mask].copy()
 
-    motor_df = read_motorstyrelsen_excel_bytes(excel_bytes=excel_bytes)
+    motor_df = read_motorstyrelsen_pdf_bytes(pdf_bytes=pdf_bytes)
+    motor_set = set(motor_df["registreringsnummer"].astype(str).str.strip().str.upper())
+    insubiz_set = set(
+        insubiz_inactive_df["Reg.nr."]
+        .astype(str).str.strip().str.upper()
+    )
+
+    logger.info(f"Motorstyrelsen PDF Reg NR count= {len(motor_set)} Insubiz Reg NR count= {len(insubiz_set)} overlap={len(motor_set & insubiz_set)}")
+    logger.info(f"Motorstyrelsen PDF Reg NR not in Insubiz={len(motor_set - insubiz_set)}")
 
     # Only compare with udgåede (1900) in Insubiz
     need_to_delete, need_to_add = compare_motorstyrelsen_vs_insubiz(
@@ -67,20 +76,12 @@ def process_vognpark() -> None:
         insubiz_df=insubiz_inactive_df,
     )
 
-    # Only keep valid Reg.nr that contains at most 7 digits in "Skal slettes"
-    reg_pattern = r"^[A-Za-z0-9]{1,7}$"
-
-    need_to_delete = need_to_delete.loc[
-        need_to_delete["Reg.nr."]
-        .astype(str)
-        .str.strip()
-        .str.fullmatch(reg_pattern, na=False)
-        ].copy()
-
-    report_bytes = dfs_to_excel_bytes({
-        "Skal slettes": need_to_delete,
-        "Skal tilføjes": need_to_add,
-    })
+    report_bytes = dfs_to_excel_bytes(
+        {
+            "Skal slettes": need_to_delete,
+            "Skal tilføjes": need_to_add,
+        }
+    )
 
     cfg = Variable.get("vognpark_runtime_config", deserialize_json=True)
     sender = cfg["sender_email"]
@@ -107,11 +108,8 @@ def process_vognpark() -> None:
     with engine.begin() as conn:
         df.to_sql("vognpark_data", con=conn, if_exists="replace", index=False)
 
-        # latest report date is stored in audit_table
-        audit_df = pd.DataFrame({
-            "report_date": [report_date]
-        })
-
+        # latest report date is stored in audit table
+        audit_df = pd.DataFrame({"report_date": [report_date]})
         audit_df.to_sql("vognpark_run_audit", con=conn, if_exists="replace", index=False)
 
     logger.info("Vognpark data processed successfully")
