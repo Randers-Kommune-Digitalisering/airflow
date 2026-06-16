@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at sammenholde køretøjsdata fra Insubiz med den nyeste Motorstyrelsen Excel-vedhæftning fra en postkasse, sende en afvigelsesrapport på email, samt gemme et komplet Insubiz-udtræk i PostgreSQL til videre brug(Vognpark-Dashboard)
+Formålet med jobbet er at sammenholde køretøjsdata fra Insubiz med den nyeste Motorstyrelsen PDF-vedhæftning fra en postkasse, sende en afvigelsesrapport på email, samt gemme et komplet Insubiz-udtræk i PostgreSQL til videre brug(Vognpark-Dashboard)
 
 ## Beskrivelse
 
@@ -13,9 +13,9 @@ Kode består af et DAG-job, der udfører følgende trin:
 
 - Henter alle kunder fra Insubiz API og beriger køretøjer med Level1 til Level6 baseret på kundehierarki.
 
-- Finder nyeste ulæste Motorstyrelsen Excel-vedhæftning i Vognpark IMAP postkassen.
+- Finder nyeste ulæste Motorstyrelsen PDF-vedhæftning i Vognpark IMAP postkassen.
 
-- Læser Motorstyrelsen Excel og sammenligner mod Insubiz køretøjer med Afg.dato lig 1900-01-01 ---> Det vil sige aktive køretøjer
+- Læser og parser Motorstyrelsen PDF og sammenligner mod Insubiz køretøjer med Afg.dato lig 1900-01-01 ---> Det vil sige aktive køretøjer
 
 - Danner to afvigelseslister:
   - `Skal slettes`: Køretøj findes i Insubiz men ikke i Motorstyrelsen.
@@ -30,7 +30,7 @@ Kode består af et DAG-job, der udfører følgende trin:
 
 **Dataflow:**
 - Motorstyrelsen + Insubiz sammenligning Flow:
-  - Insubiz API → Motorstyrelsen email vedhæftning (IMAP) → sammenligning → Excel rapport → Email
+  - Insubiz API → Motorstyrelsen email vedhæftning (IMAP/PDF) → PDF parsing → sammenligning → Excel rapport → Email
 
 - Insubiz Data flow:
   - Insubiz APi → PostgreSQL tabel vognpark_data
@@ -38,9 +38,9 @@ Kode består af et DAG-job, der udfører følgende trin:
 
 **Bemærk:**
 
-- Jobbet bruger criteria UNSEEN ved søgning efter input mail, så der forventes en ulæst matchende email for at kunne gennemføre.
+- Jobbet bruger criteria UNSEEN ved søgning efter input mail, så der forventes en ulæst matchende email med PDF-vedhæftning for at kunne gennemføre.
 
-- Hvis der ikke findes en relevant vedhæftning, fejler jobbet med AirflowFailException.
+- Hvis der ikke findes en relevant PDF-vedhæftning, fejler jobbet med AirflowFailException.
 
 ## Afhængigheder
 
