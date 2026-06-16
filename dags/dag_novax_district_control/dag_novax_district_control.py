@@ -8,7 +8,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_novax_district_control.check_and_update_district import check_and_update_district
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 # DRY_RUN: set to True to log intended updates without making changes, False to perform updates
 DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"
@@ -16,7 +16,7 @@ IGNORE_CPRS = Variable.get("NOVAX_IGNORE_CPRS", default_var="").split(",")
 
 with DAG(
     dag_id="dag_novax_district_control",
-    start_date=datetime(year=2026, month=4, day=25, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=6, day=15, tz=timezone("Europe/Copenhagen")),
     schedule="@daily",  # midnight every day
     default_args=dag_args,
     catchup=False,

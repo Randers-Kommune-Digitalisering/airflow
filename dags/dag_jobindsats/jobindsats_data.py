@@ -1,58 +1,89 @@
 import logging
-import json
 import pandas as pd
 
 from datetime import datetime
-from typing import List, Optional
 from airflow.providers.http.hooks.http import HttpHook
 from sqlalchemy.engine import Engine
 
 logger = logging.getLogger(__name__)
 
-# TODO: update doc string with new parameters(id)
-def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int, dataset: str, period_format: str, data_to_get: dict[str, list[str]], id: str = None) -> bool:
-    """
-    Fetch data from the Jobindsats API, transform it into a DataFrame, and store it in the database.
 
-    :param http_hook: HttpHook for the Jobindsats API.
-    :param db_engine: SQLAlchemy Engine for the database.
-    :param name: Name of the jobindsats
-    :param years_back: Number of years back to fetch data for.
-    :param dataset: Dataset name in the Jobindsats API.
-    :param period_format: Format of the periods ('QMAT', 'Q', 'M').
-    :param data_to_get: Dictionary with additional data fields for the API call.
-    :return: True if data was fetched and stored successfully, otherwise False.
+def get_data(
+    http_hook: HttpHook,
+    db_engine: Engine,
+    name: str,
+    years_back: int,
+    dataset: str,
+    period_format: str,
+    params: dict[str, list[str] | str],
+    id: str = None,
+) -> bool:
     """
+    Fetch data from Jobindsats API v3,
+    transform to DataFrame,
+    and store in database.
+    """
+
     try:
-        logger.info(f"Starting jobindsats: {name}")
+        logger.info(f"Starting Jobindsats job: {name}")
 
-        latest_period = _period_request(http_hook=http_hook, dataset=dataset, period_format=period_format)
-        if not latest_period:
-            logger.error("Failed to get the latest period")
-            return False
-
-        period = _dynamic_period(latest_period=latest_period, years_back=years_back, period_format=period_format)
-
-        if not period:
-            logger.error("Failed to generate periods")
-            return False
-
-        payload = {"area": "*", "period": period} | data_to_get
-        headers = _get_jobindsats_api_headers(http_hook=http_hook)
-
-        res = http_hook.run(
-            endpoint=f'v2/data/{dataset}/json',
-            headers=headers,
-            data=json.dumps(payload)
+        valid_periods = _period_request(
+            http_hook=http_hook,
+            dataset=dataset,
+            period_format=period_format,
         )
 
-        data = res.json()
-        variables = data[0]['Variables']
-        data = data[0]['Data']
+        if not valid_periods:
+            logger.error("Failed to get latest period")
+            return False
 
-        column_names = [var['Label'] for var in variables]
-        df = pd.DataFrame(data, columns=column_names)
-        df[f'Periode {name}'] = df['Periode'].apply(_convert_to_datetime)
+        periods = _dynamic_period(
+            valid_periods=valid_periods,
+            years_back=years_back
+        )
+
+        if not periods:
+            logger.error("Failed generating periods")
+            return False
+
+        headers = _get_jobindsats_api_headers(http_hook=http_hook)
+
+        payload = {
+            f"period.{period_format}": ",".join(periods),
+            "format": "json",
+        }
+
+        payload.update(params)
+
+        query_string = "&".join(
+            f"{key}={value if not isinstance(value, list) else ','.join(value)}"
+            for key, value in payload.items()
+        )
+
+        endpoint = f"v3/data/{dataset}?{query_string}"
+
+        logger.info(f"Jobindsats request: dataset={dataset} endpoint={endpoint}")
+
+        res = http_hook.run(
+            endpoint=endpoint,
+            headers=headers,
+        )
+
+        response_data = res.json()
+
+        columns = response_data.get("columns")
+        rows = response_data.get("rows")
+
+        if not columns or not rows:
+            logger.error("No columns or rows in response")
+            return False
+
+        df = pd.DataFrame(rows, columns=columns)
+
+        if "Periode" in df.columns:
+            df[f"Periode {name}"] = df["Periode"].apply(
+                _convert_to_datetime
+            )
 
         rename_map = {
             "Area": "Område",
@@ -63,6 +94,7 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
             "Forventet og faktisk andel fuldtidspersoner på offentlig forsørgelse: Faktisk andel (pct.)": "Faktisk andel (pct.)",
             "Forventet og faktisk andel fuldtidspersoner på offentlig forsørgelse: Forskel mellem forventet og faktisk andel (pct. point)": "Forskel mellem forventet og faktisk andel (pct. point)"
         }
+
         df.rename(columns=rename_map, inplace=True)
 
         output_table = f"jobindsats_{dataset.replace('', '').lower()}{f'{id.lower()}' if id else ''}"
@@ -72,51 +104,42 @@ def get_data(http_hook: HttpHook, db_engine: Engine, name: str, years_back: int,
         return True
 
     except Exception as e:
-        logger.error(f'Error {e}')
+        logger.exception(f"Error in get_data: {e}")
         return False
 
 
-def _dynamic_period(latest_period: str, years_back: int, period_format: str) -> List[str]:
+def _dynamic_period(
+    valid_periods: list[str],
+    years_back: int,
+) -> list[str]:
     """
-    Generate a list of periods based on the latest period, years back, and period format.
+    Filter valid periods based on years_back.
 
-    :param latest_period: Latest period string from the API.
-    :param years_back: Number of years back.
-    :param period_format: Format of the periods ('QMAT', 'Q', 'M').
-    :return: List of period strings.
+    :param valid_periods: List of valid API periods
+    :param years_back: Number of years back
+    :return: Filtered periods
     """
     try:
-        period: List[str] = []
-        if period_format == 'QMAT' and 'QMAT' in latest_period:
-            current_year = int(latest_period[:4])
-            current_qmat = int(latest_period[8:])
-            for qmat in range(1, current_qmat + 1):
-                period.append(f"{current_year}QMAT{qmat:02d}")
-            if years_back:
-                for year in range(current_year - years_back, current_year):
-                    for qmat in range(1, 13):
-                        period.append(f"{year}QMAT{qmat:02d}")
-        elif period_format == 'Q' and 'Q' in latest_period:
-            current_year = int(latest_period[:4])
-            current_quarter = int(latest_period[5:])
-            for quarter in range(1, current_quarter + 1):
-                period.append(f"{current_year}Q0{quarter}")
-            if years_back:
-                for year in range(current_year - years_back, current_year):
-                    for quarter in range(1, 5):
-                        period.append(f"{year}Q0{quarter}")
-        elif period_format == 'M' and 'M' in latest_period:
-            current_year = int(latest_period[:4])
-            current_month = int(latest_period[5:])
-            for month in range(1, current_month + 1):
-                period.append(f"{current_year}M{month:02d}")
-            if years_back:
-                for year in range(current_year - years_back, current_year):
-                    for month in range(1, 13):
-                        period.append(f"{year}M{month:02d}")
-        return period
+
+        if not valid_periods:
+            return []
+
+        current_year = datetime.now().year
+        min_year = current_year - years_back
+
+        filtered_periods = []
+
+        for period in valid_periods:
+
+            year = int(period[:4])
+
+            if year >= min_year:
+                filtered_periods.append(period)
+
+        return sorted(filtered_periods)
+
     except Exception as e:
-        logger.error(f'Error in dynamic_period: {e}')
+        logger.error(f"Error in dynamic_period: {e}")
         return []
 
 
@@ -139,81 +162,102 @@ def _convert_to_datetime(period_str: str) -> datetime:
     return datetime(year, month, 1)
 
 
-def _period_request(http_hook: HttpHook, dataset: str, period_format: str) -> Optional[str]:
+def _period_request(
+    http_hook: HttpHook,
+    dataset: str,
+    period_format: str,
+) -> list[str] | None:
     """
-    Fetch the latest period for a dataset from the Jobindsats API.
+    Fetch valid periods from Jobindsats API v3.
 
-    :param http_hook: HttpHook for the Jobindsats API.
-    :param dataset: Name of the dataset.
-    :param period_format: Format of the periods ('QMAT', 'Q', 'M').
-    :return: Latest period as a string, or None if not found.
+    :param http_hook: HttpHook for Jobindsats API
+    :param dataset: Dataset/table id
+    :param period_format: M, Q, QMAT, Y, MYTD
+    :return: List of valid period ids
     """
+
     try:
         headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
         res = http_hook.run(
-            endpoint=f'v2/tables/{dataset}/json/',
+            endpoint=f"v3/table/{dataset}?format=json",
             headers=headers,
-            data="{}"
         )
+
         data = res.json()
-        periods = data[0]['Period']
 
-        if period_format == 'QMAT':
-            valid_periods = [p for p in periods if len(p) == 10 and p[4:8] == 'QMAT' and p[8:].isdigit()]
-        elif period_format == 'Q':
-            valid_periods = [p for p in periods if len(p) == 7 and p[4] == 'Q' and p[5:].isdigit()]
-        elif period_format == 'M':
-            valid_periods = [p for p in periods if len(p) == 7 and p[4] == 'M' and p[5:].isdigit()]
-        else:
-            valid_periods = []
+        periods = data.get("periods", [])
 
-        if not valid_periods:
-            logger.error("No valid periods found")
-            return None
+        for periodtype in periods:
 
-        latest_period = max(valid_periods)
-        return latest_period
+            if periodtype.get("periodtype_id") != period_format:
+                continue
+
+            values = periodtype.get("values", [])
+
+            valid_periods = [
+                p.get("period_id")
+                for p in values
+                if p.get("period_id")
+            ]
+
+            logger.info(f"Found {len(valid_periods)} valid periods for dataset={dataset} type={period_format}")
+
+            return valid_periods
+
+        logger.error(f"No matching period type found for dataset={dataset} with period_format={period_format}")
+
+        return None
+
     except Exception as e:
-        logger.error(f'Error fetching period for dataset {dataset}: {e}')
+        logger.exception(f"Error fetching periods: {e}")
         return None
 
 
 def fetch_and_store_table_updates(http_hook: HttpHook, db_engine: Engine) -> bool:
     """
-    Fetch table metadata from the Jobindsats API and store it in the database.
+    Fetch table metadata from the Jobindsats API v3 and store it in the database.
 
     :param http_hook: HttpHook for the Jobindsats API.
     :param db_engine: SQLAlchemy Engine for the database.
     :return: True if metadata was fetched and stored successfully, otherwise False.
     """
+
     try:
-        logger.info("Fetching tables metadata from jobindsats API")
+        logger.info("Fetching tables metadata from Jobindsats API v3")
+
         headers = _get_jobindsats_api_headers(http_hook=http_hook)
 
         response = http_hook.run(
-            endpoint='v2/tables/json',
+            endpoint="v3/tables?format=json",
             headers=headers,
-            data="{}"
         )
-        tables_data = response.json()
 
-        if not tables_data:
+        data = response.json()
+
+        if not data:
             logger.error("No tables data received")
             return False
 
-        updates = []
-        for table in tables_data:
-            updates.append({
-                "TableID": table.get("TableID"),
-                "TableName": table.get("TableName"),
-                "SubjectName": table.get("SubjectName"),
-                "LatestUpdate": table.get("LatestUpdate"),
-                "NextUpdate": table.get("NextUpdate"),
-                "UpdateFrequency": table.get("UpdateFrequency"),
-            })
+        rows = []
 
-        df_updates = pd.DataFrame(updates)
+        for subject in data:
+            subject_name = subject.get("subject_name")
+
+            for grp in subject.get("table_groups", []):
+
+                for t in grp.get("tables", []):
+
+                    rows.append({
+                        "TableID": t.get("table_id"),
+                        "TableName": t.get("table_name"),
+                        "SubjectName": subject_name,
+                        "LatestUpdate": t.get("update_latest"),
+                        "NextUpdate": t.get("update_next"),
+                        "UpdateFrequency": t.get("update_freq"),
+                    })
+
+        df_updates = pd.DataFrame(rows)
         output_table = "jobindsats_table_updates"
 
         df_updates.to_sql(name=output_table, con=db_engine, if_exists='replace', index=False)
@@ -233,8 +277,10 @@ def _get_jobindsats_api_headers(http_hook: HttpHook) -> dict:
     :return: Dictionary with HTTP headers.
     """
     conn = http_hook.get_connection(http_hook.http_conn_id)
-    api_key = conn.extra_dejson.get("api_key")
+    if not conn.password:
+        raise ValueError("Missing API Key (connection password) for Jobindsats API connection.")
+
     return {
-        "Authorization": api_key,
+        "Authorization": f"Bearer {conn.password}",
         "Content-Type": "application/json"
     }

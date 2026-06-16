@@ -3,7 +3,6 @@ from pendulum import datetime, timezone
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.providers.imap.hooks.imap import ImapHook
 from airflow.providers.sftp.hooks.sftp import SFTPHook
 
 from utils.config import DEFAULT_DAG_ARGS
@@ -15,9 +14,8 @@ dag_args["retry_delay"] = timedelta(hours=12)
 
 
 def get_config_start_main_flow() -> None:
-    imap_hook = ImapHook(imap_conn_id="kantinedata_imap")
     sftp_hook = SFTPHook(ssh_conn_id="kantinedata_sftp")
-    process_kantinedata(imap_hook=imap_hook, sftp_hook=sftp_hook)
+    process_kantinedata(sftp_hook=sftp_hook)
 
 
 with DAG(
