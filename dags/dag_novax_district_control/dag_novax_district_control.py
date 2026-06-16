@@ -8,7 +8,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_novax_district_control.check_and_update_district import check_and_update_district
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 # DRY_RUN: set to True to log intended updates without making changes, False to perform updates
 DRY_RUN = Variable.get("NOVAX_DRY_RUN", default_var="True").lower() == "true"
