@@ -49,6 +49,18 @@ def _normalize_name(value: Any) -> str:
     return " ".join(str(value).split()).strip()
 
 
+def _to_float(value: Any, default: float = 1.0) -> float:
+    """
+    Parse numeric value allowing both comma and dot decimal separators.
+    """
+    if value is None:
+        return default
+    try:
+        return float(str(value).strip().replace(",", "."))
+    except Exception:
+        return default
+
+
 def sheet_specs_requires_carrier() -> bool:
     """
     Check whether any entry in ``sheet_specs`` in affald_report_config variable requires carrier (CarrierName) data.
@@ -248,6 +260,7 @@ def _apply_customer_and_material_view(
     out = df.copy()
     out["CustomerName"] = out["CustomerName"].map(_normalize_name)
     out["ArticleNumber"] = out["ArticleNumber"].astype(str).str.strip()
+    out["weightnet_sum"] = pd.to_numeric(out["weightnet_sum"], errors="coerce").fillna(0.0)
 
     if "CarrierName" not in out.columns:
         out["CarrierName"] = "Ukendt"
@@ -316,6 +329,23 @@ def _apply_customer_and_material_view(
                 if gc:
                     mask = mask & out["CarrierName"].isin(gc)
 
+            # Optional per-article weighting inside this material group.
+            article_weights_raw = g.get("article_weights") or {}
+            if isinstance(article_weights_raw, dict) and article_weights_raw:
+                article_weights: dict[str, float] = {
+                    str(k).strip(): _to_float(v, default=1.0)
+                    for k, v in article_weights_raw.items()
+                }
+
+                weighted_articles = set(article_weights.keys())
+                weight_mask = mask & out["ArticleNumber"].isin(weighted_articles)
+
+                if weight_mask.any():
+                    factors = out.loc[weight_mask, "ArticleNumber"].map(article_weights).fillna(1.0)
+                    out.loc[weight_mask, "weightnet_sum"] = (
+                        out.loc[weight_mask, "weightnet_sum"].astype(float) * factors.astype(float)
+                    )
+
             out.loc[mask, "MaterialKey"] = label
 
     # Remove “rest” rows that would otherwise appear as “Randers YYYY - xx.
@@ -324,7 +354,7 @@ def _apply_customer_and_material_view(
         not_mapped = out["MaterialKey"].eq(out["ArticleNumber"])
         out = out[~(in_grouped_article & not_mapped)]
 
-    logger.debug("After applying customer/material view: %s records (grouped articles: %s)", len(out), sorted(grouped_articles))
+    logger.debug(f"After applying customer/material view: {len(out)} records (grouped articles: {sorted(grouped_articles)})")
     return out
 
 
