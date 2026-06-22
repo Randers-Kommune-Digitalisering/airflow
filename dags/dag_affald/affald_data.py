@@ -1,6 +1,7 @@
 import logging
 import json
 import pandas as pd
+import math
 from io import BytesIO
 from typing import Any, Sequence
 from sqlalchemy import bindparam, text
@@ -1064,6 +1065,9 @@ def mp_waste_amount_data(
 
     all_rows: list[dict[str, Any]] = []
 
+    total_count: int | None = None
+    max_pages: int | None = None
+
     while True:
         logger.info(f"Fetching MP data page={page} page_size={page_size} ...")
 
@@ -1085,11 +1089,36 @@ def mp_waste_amount_data(
         body = res.json()
         data = body.get("data", [])
 
-        all_rows.extend(data)
+        # find totalcount on first page and compute expected max pages
+        if total_count is None:
+            total_count = int(body.get("totalCount", 0))
+            max_pages = math.ceil(total_count / page_size) if total_count else 0
 
-        logger.debug(f"Fetched {len(data)} records from page {page}. Total so far: {len(all_rows)}")
+            logger.info(f"MP totalCount={total_count}, expected_pages={max_pages}")
 
-        if len(data) == 0:
+        years = [
+            row.get("activityYear")
+            for row in data
+            if row.get("activityYear") is not None
+        ]
+
+        months = [
+            int(row.get("activityMonth"))
+            for row in data
+            if row.get("activityMonth") is not None
+        ]
+
+        logger.info(f"MP page={page} status={res.status_code} rows={len(data)} years={sorted(set(years)) if years else []} months={sorted(set(months)) if months else []} total_so_far={len(all_rows)}")
+
+        # save data if the page is not empty
+        if data:
+            all_rows.extend(data)
+        else:
+            logger.warning(f"MP page={page} returned 0 rows although totalCount={total_count}")
+
+        # stop when reaching the last expected page
+        if max_pages is not None and page >= max_pages:
+            logger.info(f"Reached last expected page {page}/{max_pages}")
             break
 
         page += 1
