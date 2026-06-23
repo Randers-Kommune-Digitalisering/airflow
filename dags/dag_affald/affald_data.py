@@ -1107,12 +1107,16 @@ def mp_waste_amount_data(
             if row.get("activityMonth") is not None
         ]
 
-        logger.info(f"MP page={page} status={res.status_code} rows={len(data)} years={sorted(set(years)) if years else []} months={sorted(set(months)) if months else []} total_so_far={len(all_rows)}")
+        total_so_far_after = len(all_rows) + len(data)
+        logger.info(
+            f"MP page={page} status={res.status_code} rows={len(data)} years={sorted(set(years)) if years else []} "
+            f"months={sorted(set(months)) if months else []} total_so_far={total_so_far_after}"
+        )
 
         # save data if the page is not empty
         if data:
             all_rows.extend(data)
-        else:
+        elif (total_count or 0) > 0:
             logger.warning(f"MP page={page} returned 0 rows although totalCount={total_count}")
 
         # stop when reaching the last expected page
