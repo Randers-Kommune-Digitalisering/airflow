@@ -56,7 +56,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 and_(
                     Note.NAVNID == Godkommu.NAVNID,
                     Note.DATO == Godkommu.JOURNALDATO,
-                    Note.NOTE.like('%Orientering - Gravid%')
+                    Note.NOTE.like('%>> Orientering - Gravid <<%')
                 )
             )
             .filter(
@@ -121,11 +121,10 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
             # Phone number update
             journal_phone = entry.journal.get('phone')
-            normalized_journal_phone = normalize_phone_number(journal_phone)
-            if normalized_journal_phone:
+            if journal_phone:
                 matching_phones = [
                     p for p in entry.phones
-                    if normalize_phone_number(p.TELEFONNUMMER) == normalized_journal_phone
+                    if normalize_phone_number(p.TELEFONNUMMER) == journal_phone
                 ]
 
                 existing_primary_phone = next(
@@ -155,7 +154,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     else:
                         new_phone = Phone(
                             NAVNID=entry.ID,
-                            TELEFONNUMMER=normalized_journal_phone,
+                            TELEFONNUMMER=journal_phone,
                             PRIMAER=1,
                             TS_DATE=now_dt,
                             TS_TIME=now_time,
