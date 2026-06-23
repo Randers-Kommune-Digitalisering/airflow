@@ -46,6 +46,7 @@ def process_affald() -> None:
 
     # Fetch each customer separately so one failing customer does not drop all MP data.
     for customer_number in customer_numbers:
+        try:
             customer_rows = mp_waste_amount_data(
                 http_hook=mp_http_hook,
                 customer_numbers=[customer_number],
