@@ -114,8 +114,8 @@ class PersonUsers(Base):
     __tablename__ = 'PERSONUSERS'
     __table_args__ = {'schema': 'dbo'}
     RECNUM = Column(Integer, nullable=False, primary_key=True)
-    USERID = Column(CHAR(36), nullable=False, default='')
-    NAVNID = Column(CHAR(8), nullable=False, default='')
+    USERID = Column(CHAR(8), nullable=False, default='')
+    NAVNID = Column(CHAR(36), nullable=False, default='')
     PRIMARY = Column(SmallInteger, nullable=False, default=0)
     TS_DATE = Column(DATETIME, nullable=False, default='1753-01-01')
     TS_TIME = Column(CHAR(5), nullable=False, default='')
