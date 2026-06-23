@@ -27,6 +27,7 @@ AUTH_ROLES_MAPPING = {
     "Viewer": ["Viewer"],
     "Public": ["Public"],
     "Nexus": ["Nexus"],
+    "Affaldsterminal": ["Affaldsterminal"],
 }
 
 PROVIDER_NAME = "keycloak"
