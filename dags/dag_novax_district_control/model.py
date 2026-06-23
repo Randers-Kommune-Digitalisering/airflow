@@ -40,28 +40,28 @@ class Name(Base):
         "Address",
         primaryjoin="Name.ID == foreign(Address.NAVNID)",
         viewonly=False,
-        lazy="joined",
+        lazy="selectin",
     )
 
     person_districts = relationship(
         "PersonDistrict",
         primaryjoin="Name.ID == foreign(PersonDistrict.NAVNID)",
         viewonly=False,
-        lazy="joined"
+        lazy="selectin"
     )
 
     phones = relationship(
         "Phone",
         primaryjoin="Name.ID == foreign(Phone.NAVNID)",
         viewonly=False,
-        lazy="joined"
+        lazy="selectin"
     )
 
     person_users = relationship(
         "PersonUsers",
         primaryjoin="Name.ID == foreign(PersonUsers.NAVNID)",
         viewonly=False,
-        lazy="joined"
+        lazy="selectin"
     )
 
 
