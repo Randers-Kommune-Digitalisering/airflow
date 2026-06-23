@@ -8,7 +8,7 @@ from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from dag_novax_district_control.clients.cpr_client import CPRClient
 from dag_novax_district_control.clients.district_map_client import DistrictMapDBClient
 from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
-from dag_novax_district_control.novax_utils import parse_journal_data, get_allowed_journal_times
+from dag_novax_district_control.novax_utils import parse_journal_data, get_allowed_journal_times, normalize_phone_number
 from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.model import Name, Godkommu, Note, Phone
 from dag_novax_district_control.district_update_helpers import (
@@ -121,35 +121,41 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
             # Phone number update
             journal_phone = entry.journal.get('phone')
-            if journal_phone:
-                is_phone_already_set = any(
-                    p.TELEFONNUMMER == journal_phone and getattr(p, "PRIMAER", 0) == 1
-                    for p in entry.phones
+            normalized_journal_phone = normalize_phone_number(journal_phone)
+            if normalized_journal_phone:
+                matching_phones = [
+                    p for p in entry.phones
+                    if normalize_phone_number(p.TELEFONNUMMER) == normalized_journal_phone
+                ]
+
+                existing_primary_phone = next(
+                    (p for p in matching_phones if getattr(p, "PRIMAER") == 1),
+                    None,
                 )
-                if not is_phone_already_set:
-                    secondary_phone = next(
-                        (p for p in entry.phones if p.TELEFONNUMMER == journal_phone and getattr(p, "PRIMAER", 0) == 0),
-                        None
+
+                if not existing_primary_phone:
+                    existing_secondary_phone = next(
+                        (p for p in matching_phones if getattr(p, "PRIMAER") == 0),
+                        None,
                     )
-                    if secondary_phone:
-                        for p in entry.phones:
-                            if p.PRIMAER == 1:
-                                p.PRIMAER = 0
-                                p.TS_UPDD = now_dt
-                                p.TS_UPDT = now_time
-                        secondary_phone.PRIMAER = 1
-                        secondary_phone.TS_UPDD = now_dt
-                        secondary_phone.TS_UPDT = now_time
-                        logger.info(f"Updated phone number for Name ID {entry.ID} to {journal_phone} by setting existing secondary phone as primary")
+
+                    for p in entry.phones:
+                        if p.PRIMAER == 1:
+                            p.PRIMAER = 0
+                            p.TS_UPDD = now_dt
+                            p.TS_UPDT = now_time
+
+                    if existing_secondary_phone:
+                        existing_secondary_phone.PRIMAER = 1
+                        existing_secondary_phone.TS_UPDD = now_dt
+                        existing_secondary_phone.TS_UPDT = now_time
+                        logger.info(
+                            f"Updated phone number for Name ID {entry.ID} by setting existing secondary phone as primary"
+                        )
                     else:
-                        for p in entry.phones:
-                            if p.PRIMAER == 1:
-                                p.PRIMAER = 0
-                                p.TS_UPDD = now_dt
-                                p.TS_UPDT = now_time
                         new_phone = Phone(
                             NAVNID=entry.ID,
-                            TELEFONNUMMER=journal_phone,
+                            TELEFONNUMMER=normalized_journal_phone,
                             PRIMAER=1,
                             TS_DATE=now_dt,
                             TS_TIME=now_time,
@@ -157,7 +163,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                             TS_UPDT=now_time
                         )
                         entry.phones.append(new_phone)
-                        logger.info(f"Added new phone number for Name ID {entry.ID}: {journal_phone}")
+                        logger.info(f"Added new phone number for Name ID {entry.ID}")
 
             # CPR lookup: address UUID + protected status
             cpr_info = cpr_client.get_address_uuid_and_protected_status(entry.CPR)
@@ -167,7 +173,10 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 is_protected_address=bool(cpr_info["is_protected_address"]),
             )
 
-            address_info = dataforsyning_client.get_address_by_id(cpr_info['address_uuid'])
+            address_uuid = cpr_info['address_uuid']
+            address_info = None
+            if address_uuid is not None:
+                address_info = dataforsyning_client.get_address_by_id(address_uuid)
 
             # Address + district updates
             is_new_address_set = False
@@ -178,9 +187,9 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
 
             if address_info is None:
                 logger.warning(
-                    "Skipping address lookup and clearing district for Name ID %s due to unexpected Dataforsyning results (adresse_uuid=%s)",
+                    "Skipping address lookup and clearing district for Name ID %s due to unexpected address information (address_uuid=%s)",
                     entry.ID,
-                    cpr_info["address_uuid"],
+                    address_uuid,
                 )
 
                 is_new_district = clear_district_due_to_missing_address(

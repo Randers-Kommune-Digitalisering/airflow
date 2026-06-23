@@ -86,3 +86,11 @@ def get_allowed_journal_times(journal_time: str) -> set[str]:
     base_dt = datetime.strptime(journal_time.strip(), "%H:%M")
     next_dt = base_dt + timedelta(minutes=1)
     return {base_dt.strftime("%H:%M"), next_dt.strftime("%H:%M")}
+
+
+def normalize_phone_number(phone_number: str) -> str:
+    if not phone_number:
+        return ""
+
+    # Keep only digits to avoid false mismatches from formatting/trailing spaces.
+    return "".join(ch for ch in str(phone_number).strip() if ch.isdigit())

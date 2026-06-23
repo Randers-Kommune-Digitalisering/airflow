@@ -36,7 +36,7 @@ def handle_deleted_employments(
                 )
                 if exists_in_sd:
                     logger.warning(f"Employment with Institution={inst_id} EmploymentIdentifier={employment_id} is marked as deleted but still exists in snapshot on activation date {activation_date}.")
-                    return
+                    continue
                 else:
                     engagement_key = f"{inst_id}.{employment_id}.{activation_date.strftime('%Y')}.{cpr[:6]}"
                     uuid = delta_client.get_active_engagement_id(
