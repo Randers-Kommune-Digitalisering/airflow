@@ -51,15 +51,14 @@ def _normalize_name(value: Any) -> str:
 
 
 def _to_float(value: Any, default: float = 1.0) -> float:
-    """
-    Parse numeric value allowing both comma and dot decimal separators.
-    """
+    """Parse numeric value allowing both comma and dot decimal separators."""
     if value is None:
         return default
     try:
-        return float(str(value).strip().replace(",", "."))
-    except Exception:
+        parsed = float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError):
         return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def sheet_specs_requires_carrier() -> bool:
