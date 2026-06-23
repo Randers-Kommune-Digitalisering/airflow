@@ -1120,9 +1120,13 @@ def mp_waste_amount_data(
             logger.warning(f"MP page={page} returned 0 rows although totalCount={total_count}")
 
         # stop when reaching the last expected page
-        if max_pages is not None and page >= max_pages:
-            logger.info(f"Reached last expected page {page}/{max_pages}")
-            break
+        if max_pages is not None:
+            if max_pages == 0:
+                logger.info("MP totalCount=0; no pages to fetch.")
+                break
+            if page >= max_pages:
+                logger.info(f"Reached last expected page {page}/{max_pages}")
+                break
 
         page += 1
 
