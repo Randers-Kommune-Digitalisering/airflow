@@ -10,7 +10,7 @@ from dag_novax_district_control.clients.district_map_client import DistrictMapDB
 from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
 from dag_novax_district_control.novax_utils import parse_journal_data, get_allowed_journal_times, normalize_phone_number
 from dag_novax_district_control.run_utils import determine_date_range
-from dag_novax_district_control.model import Name, Godkommu, Note, Phone
+from dag_novax_district_control.model import Name, Godkommu, Note, PersonUsers, Phone
 from dag_novax_district_control.district_update_helpers import (
     clear_district_due_to_missing_address,
     ensure_active,
@@ -61,7 +61,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
             )
             .filter(
                 Godkommu.JOURNALDATO >= start_date,
-                Godkommu.JOURNALDATO <= end_date,
+                Godkommu.JOURNALDATO < end_date,
                 Godkommu.EMNEBREV.like('%Orientering - Gravid%'),
                 Name.CPR.not_in(ignore_cprs)
             )
@@ -231,15 +231,64 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 is_new_kommunekode, is_new_kommunekode_details = update_kommunekode(entry=entry)
 
             # Always-updates
+            # Ensure that the record is active
             has_changed_active = ensure_active(entry=entry)
 
+            # Set AnsvarsShpl to 'FIKTIV' if not already set
             has_changed_ansvarshpl = False
             if entry.AnsvarsShpl != 'FIKTIV':
                 entry.AnsvarsShpl = 'FIKTIV'
                 has_changed_ansvarshpl = True
                 logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
 
-            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl, is_new_kommunekode]):
+            # Set primary personuser to 'FIKTIV' and demote existing primary personuser
+            has_changed_personusers = False
+            person_users_rows = entry.person_users
+
+            fiktiv_person_user = next(
+                (
+                    person_user for person_user in person_users_rows
+                    if (person_user.USERID or '').strip() == 'FIKTIV'
+                ),
+                None,
+            )
+
+            for person_user in person_users_rows:
+                should_be_primary = fiktiv_person_user is not None and (
+                    person_user.RECNUM == fiktiv_person_user.RECNUM
+                )
+                desired_primary = 1 if should_be_primary else 0
+
+                if person_user.PRIMARY != desired_primary:
+                    person_user.PRIMARY = desired_primary
+                    person_user.TS_UPDD = now_dt
+                    person_user.TS_UPDT = now_time
+                    has_changed_personusers = True
+
+            if fiktiv_person_user is None:
+                new_person_user = PersonUsers(
+                    USERID='FIKTIV',
+                    NAVNID=entry.ID,
+                    PRIMARY=1,
+                    TS_DATE=now_dt,
+                    TS_TIME=now_time,
+                    TS_UPDD=now_dt,
+                    TS_UPDT=now_time,
+                )
+                # session.add(new_person_user)
+                entry.person_users.append(new_person_user)
+                has_changed_personusers = True
+                logger.info(
+                    "Created primary personuser 'FIKTIV' for Name ID %s",
+                    entry.ID,
+                )
+            elif has_changed_personusers:
+                logger.info(
+                    "Updated personusers to keep only 'FIKTIV' as primary for Name ID %s",
+                    entry.ID,
+                )
+
+            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl, has_changed_personusers, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 

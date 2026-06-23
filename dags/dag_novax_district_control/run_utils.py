@@ -6,7 +6,6 @@ from airflow.operators.python import get_current_context
 from airflow.utils import timezone
 from airflow.utils.session import create_session
 from airflow.utils.state import DagRunState
-from airflow.utils.types import DagRunType
 
 logger = logging.getLogger(__name__)
 

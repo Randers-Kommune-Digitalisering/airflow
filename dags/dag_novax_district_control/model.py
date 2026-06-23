@@ -57,6 +57,13 @@ class Name(Base):
         lazy="joined"
     )
 
+    person_users = relationship(
+        "PersonUsers",
+        primaryjoin="Name.ID == foreign(PersonUsers.NAVNID)",
+        viewonly=False,
+        lazy="joined"
+    )
+
 
 class NameDetails(Base):
     __tablename__ = 'NAVNDETALJER'
@@ -97,6 +104,19 @@ class PersonDistrict(Base):
     DISTRICT = Column(CHAR(4), nullable=False, default='')
     DATEFROM = Column(DATETIME, nullable=False, default='1753-01-01')
     DATETO = Column(DATETIME, nullable=False, default='1753-01-01')
+    TS_DATE = Column(DATETIME, nullable=False, default='1753-01-01')
+    TS_TIME = Column(CHAR(5), nullable=False, default='')
+    TS_UPDD = Column(DATETIME, nullable=False, default='1753-01-01')
+    TS_UPDT = Column(CHAR(5), nullable=False, default='')
+
+
+class PersonUsers(Base):
+    __tablename__ = 'PERSONUSERS'
+    __table_args__ = {'schema': 'dbo'}
+    RECNUM = Column(Integer, nullable=False, primary_key=True)
+    USERID = Column(CHAR(36), nullable=False, default='')
+    NAVNID = Column(CHAR(8), nullable=False, default='')
+    PRIMARY = Column(SmallInteger, nullable=False, default=0)
     TS_DATE = Column(DATETIME, nullable=False, default='1753-01-01')
     TS_TIME = Column(CHAR(5), nullable=False, default='')
     TS_UPDD = Column(DATETIME, nullable=False, default='1753-01-01')
