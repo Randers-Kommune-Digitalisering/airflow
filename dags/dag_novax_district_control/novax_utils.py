@@ -39,30 +39,47 @@ def parse_journal_data(journal_string: str) -> dict:
     date_match = re.search(r"Afsendt:\s*(\d{2}-\d{2}-\d{4})\s*kl\.\s*(\d{2}:\d{2})", journal_string)
     journal_date = datetime.strptime(date_match.group(1) + " " + date_match.group(2), "%d-%m-%Y %H:%M").date() if date_match else None
 
-    phone_match = re.search(r'(?:Tlf\.?nr?\.?|Mobil):\s*(\d+)\r?\n', journal_string, re.IGNORECASE)
+    phone_match = re.search(r'(?:(?:Tlf\.*)(?:\s*nr\.*)?|Mobil):*[\s ](?:(?:\+|00)45\s?)?(\d{8}|(?:\d{2}\s){3}\d{2})', journal_string, re.IGNORECASE)
     phone = phone_match.group(1).strip() if phone_match else None
+    normalized_phone = normalize_phone_number(phone)
 
-    gest_match = re.search(r'Gestationsalder\r?\nUge:\s*(\d+),\s*Dag:\s*(\d+)\s', journal_string)
+    gest_match = re.search(r'Gestationsalder\r?\nUge:\s*(\d{1,2})(?:,\s*Dag:\s*(\d)\s?)?', journal_string)
     gest_week = int(gest_match.group(1)) if gest_match else None
-    gest_day = int(gest_match.group(2)) if gest_match else None
+    gest_day = int(gest_match.group(2)) if gest_match and gest_match.group(2) else 0  # Default to 0 if not found, as gestational days may not always be provided.
 
     termin_match = re.search(
-        r'(?:T(?:ermin)?\s*:?\s*)(?P<date>(\d{1,2}[./-]\d{1,2}[./-]\d{2,4}))',
+        r'(?:T(?:ermin)?\s*:?)\s*(?:d\.*|den)?\s*(?P<date>\d{1,2}[./-]{1}\d{1,2}(?:[\s./-](?:\d{4}|\d{2}))?)',
         journal_string
     )
     termin_str = termin_match.group('date') if termin_match else None
     due_date: date | None = None
+
     if termin_str:
-        normalized = re.sub(r'[/-]', '.', termin_str)  # Normalize separators to dots
-        parts = normalized.split('.')  # Handle year: 2 or 4 digits
-        if len(parts) == 3:
-            day, month, year = parts
-            if len(year) == 2:
-                year = '20' + year
-            try:
-                due_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y').date()
-            except ValueError:
-                logger.warning(f"Invalid termin date format in journal: {termin_str}")
+        normalized = re.sub(r'[\s/-]+', '.', termin_str)  # Normalize separators to dots
+        parts = [part for part in normalized.split('.') if part]  # Handle missing or short year
+        if len(parts) in (2, 3):
+            day, month = parts[0], parts[1]
+            if len(parts) == 3:
+                year = parts[2]
+                if len(year) == 2:
+                    year = '20' + year
+            else:
+                today = date.today()
+                try:
+                    current_year_candidate = date(today.year, int(month), int(day))
+                except ValueError:
+                    logger.warning(f"Invalid termin date format in journal: {termin_str}")
+                    current_year_candidate = None
+
+                if current_year_candidate is not None:
+                    year = str(today.year if current_year_candidate > today else today.year + 1)
+                else:
+                    year = ""
+            if year:
+                try:
+                    due_date = datetime.strptime(f"{day}.{month}.{year}", '%d.%m.%Y').date()
+                except ValueError:
+                    logger.warning(f"Invalid termin date format in journal: {termin_str}")
 
     if journal_date and gest_week is not None and gest_day is not None:
         calculated_due_date = _calculate_due(gest_week, gest_day, date_obj=journal_date)
@@ -70,7 +87,7 @@ def parse_journal_data(journal_string: str) -> dict:
         calculated_due_date = None
 
     return {
-        'phone': phone,
+        'phone': normalized_phone,
         'due_date': due_date,
         'calculated_due_date': calculated_due_date
     }
@@ -88,9 +105,10 @@ def get_allowed_journal_times(journal_time: str) -> set[str]:
     return {base_dt.strftime("%H:%M"), next_dt.strftime("%H:%M")}
 
 
-def normalize_phone_number(phone_number: str) -> str:
+def normalize_phone_number(phone_number: str | None) -> str:
     if not phone_number:
         return ""
 
     # Keep only digits to avoid false mismatches from formatting/trailing spaces.
-    return "".join(ch for ch in str(phone_number).strip() if ch.isdigit())
+    normalized = "".join(ch for ch in str(phone_number).strip() if ch.isdigit())
+    return normalized
