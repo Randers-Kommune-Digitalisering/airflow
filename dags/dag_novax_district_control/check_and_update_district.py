@@ -274,7 +274,6 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     TS_UPDD=now_dt,
                     TS_UPDT=now_time,
                 )
-                # session.add(new_person_user)
                 entry.person_users.append(new_person_user)
                 has_changed_personusers = True
                 logger.info(

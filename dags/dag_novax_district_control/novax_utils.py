@@ -105,7 +105,7 @@ def get_allowed_journal_times(journal_time: str) -> set[str]:
     return {base_dt.strftime("%H:%M"), next_dt.strftime("%H:%M")}
 
 
-def normalize_phone_number(phone_number: str) -> str:
+def normalize_phone_number(phone_number: str | None) -> str:
     if not phone_number:
         return ""
 
