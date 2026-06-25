@@ -63,6 +63,26 @@ MOTORSTYRELSEN_PDF_COLUMNS = [
 INSUBIZ_ROOT_CUSTOMER_ID = 216146  # RK
 INSUBIZ_MAX_LEVELS = 6
 
+USAGE_TEXT_TO_CATEGORY_MAP = {
+    "22": "Personbil",
+    "34": "Varebil",
+    "25": "Påhængsvogn/trailer",
+    "0": "Ukendt",
+    "30": "Traktor",
+    "11": "Knallert",
+    "1": "Arbejdsmaskine",
+    "24": "Påhængsredskab",
+    "21": "Motorredskab",
+    "4": "Bus",
+    "36": "Campingvogn",
+    "7": "Græsklipper",
+    "31": "Traktorpåhængsvogn",
+    "15": "Lastbil",
+    "41": "Stor personbil",
+    "37": "Skurvogn/mandskabsvogn",
+    "3": "Brandbil med pakninger",
+}
+
 
 def _format_datetime_column(df: pd.DataFrame, col: str) -> None:
     """
@@ -741,3 +761,232 @@ def find_latest_attachment(
                 return uid, filename, content
 
     return None
+
+
+def create_insubiz_vehicle(
+    http_hook: HttpHook,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    logger.info("Creating Insubiz vehicle ...")
+
+    jwt = _insubiz_sign_in(http_hook=http_hook)
+
+    headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    response = http_hook.run(
+        endpoint="/api/v1.3/Vehicle/CreateVehicleAsync",
+        json=payload,
+        headers=headers,
+    )
+    response.raise_for_status()
+
+    logger.info(f"Payload: {payload}")
+
+    body: Any = response.json()
+    if not isinstance(body, dict):
+        raise ValueError(f"Unexpected create response type: {type(body)}")
+
+    return body
+
+
+def create_insubiz_vehicles_by_payloads(
+    http_hook: HttpHook,
+    payloads: list[dict[str, Any]],
+) -> int:
+    if not payloads:
+        logger.info("No vehicles to create.")
+        return 0
+
+    created = 0
+    for payload in payloads:
+        create_insubiz_vehicle(http_hook=http_hook, payload=payload)
+        created += 1
+
+    logger.debug(f"Created {created} vehicle(s) in Insubiz.")
+    return created
+
+
+def read_vehicles_to_add_from_excel_bytes(
+    excel_bytes: bytes,
+    sheet_name: str = "Skal tilføjes",
+    customer_id_column: str = "Customer_ID",
+    registration_column: str = "Nummer (DPRN)",
+    make_column: str = "Mærke beskrivelse (DKKØ)",
+    chassis_column: str = "Stelnummer (DKKØ)",
+    vehicle_art_column: str = "Køretøj art beskrivelse (DKRG)",
+    model_description_column: str = "Model beskrivelse (DKKØ)",
+    variant_description_column: str = "Variant beskrivelse (DKKØ)",
+    registration_date_column: str = "Dato - første registrering (DKKØ)",
+    driver_regular_column: str = "Bruger p-nr navn",
+    model_year_column: str = "Model år (DKKØ)",
+) -> list[dict[str, Any]]:
+    df = pd.read_excel(
+        io.BytesIO(excel_bytes),
+        engine="openpyxl",
+        sheet_name=sheet_name,
+    )
+
+    normalized_cols = {str(c).strip().lower(): c for c in df.columns}
+
+    logger.info("Columns raw: %s", [repr(c) for c in df.columns])
+
+    customer_col = normalized_cols.get(customer_id_column.strip().lower())
+    registration_col = normalized_cols.get(registration_column.strip().lower())
+    make_col = normalized_cols.get(make_column.strip().lower())
+    chassis_col = normalized_cols.get(chassis_column.strip().lower())
+    vehicle_type_col = normalized_cols.get(vehicle_art_column.strip().lower())
+    model_description_col = normalized_cols.get(model_description_column.strip().lower())
+    variant_description_col = normalized_cols.get(variant_description_column.strip().lower())
+    registration_date_col = normalized_cols.get(registration_date_column.strip().lower())
+    driver_regular_col = normalized_cols.get(driver_regular_column.strip().lower())
+    model_year_col = normalized_cols.get(model_year_column.strip().lower())
+
+    missing = []
+    if not customer_col:
+        missing.append(customer_id_column)
+    if not registration_col:
+        missing.append(registration_column)
+    if not make_col:
+        missing.append(make_column)
+    if not chassis_col:
+        missing.append(chassis_column)
+    if not vehicle_type_col:
+        missing.append(vehicle_art_column)
+    if not model_description_col:
+        missing.append(model_description_column)
+    if not variant_description_col:
+        missing.append(variant_description_column)
+    if not registration_date_col:
+        missing.append(registration_date_column)
+    if not driver_regular_col:
+        missing.append(driver_regular_column)
+    if not model_year_col:
+        missing.append(model_year_column)
+
+    if missing:
+        raise ValueError(
+            f"Missing required column(s) in sheet '{sheet_name}': {', '.join(missing)}"
+        )
+
+    usage_text_to_id_map = {
+        text.strip().lower(): int(code)
+        for code, text in USAGE_TEXT_TO_CATEGORY_MAP.items()
+    }
+
+    start_date_utc = datetime.now(timezone.utc).isoformat(
+        timespec="milliseconds"
+    ).replace("+00:00", "Z")
+
+    payloads: list[dict[str, Any]] = []
+
+    for idx, row in df.iterrows():
+        excel_row = idx + 2
+
+        customer_raw = row.get(customer_col)
+        customer_id_num = pd.to_numeric(customer_raw, errors="coerce")
+
+        if pd.isna(customer_id_num):
+            raise ValueError(
+                f"Invalid or missing Customer_ID in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        customer_id = int(customer_id_num)
+        if customer_id <= 0:
+            raise ValueError(
+                f"Customer_ID must be > 0 in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        registration = str(row.get(registration_col) or "").strip()
+        make = str(row.get(make_col) or "").strip()
+        chassis = str(row.get(chassis_col) or "").strip()
+        usage_raw = str(row.get(vehicle_type_col) or "").strip()
+        driver_regular = str(row.get(driver_regular_col) or "").strip()
+
+        model_description = str(row.get(model_description_col) or "").strip()
+        variant_description = str(row.get(variant_description_col) or "").strip()
+
+        if not model_description:
+            raise ValueError(
+                f"Missing '{model_description_column}' in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        if not variant_description:
+            raise ValueError(
+                f"Missing '{variant_description_column}' in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        model = f"{model_description} - {variant_description}"
+
+        registration_date_raw = row.get(registration_date_col)
+        registration_date_dt = pd.to_datetime(
+            registration_date_raw,
+            format="%d-%m-%Y",
+            errors="coerce",
+        )
+
+        if pd.isna(registration_date_dt):
+            raise ValueError(
+                f"Invalid or missing '{registration_date_column}' in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        if registration_date_dt.tzinfo is None:
+            registration_date_dt = registration_date_dt.tz_localize("UTC")
+        else:
+            registration_date_dt = registration_date_dt.tz_convert("UTC")
+
+        registration_date_utc = registration_date_dt.isoformat(
+            timespec="milliseconds"
+        ).replace("+00:00", "Z")
+
+        model_year_raw = row.get(model_year_col)
+        model_year_text = str(model_year_raw or "").strip()
+
+        # Handle edge case when model year is represented as "-"
+        if model_year_text == "-":
+            model_year = 0
+        else:
+            model_year_num = pd.to_numeric(model_year_raw, errors="coerce")
+            if pd.isna(model_year_num):
+                raise ValueError(
+                    f"Invalid or missing '{model_year_column}' in sheet '{sheet_name}' at row {excel_row}"
+                )
+            model_year = int(model_year_num)
+
+        if not usage_raw:
+            raise ValueError(
+                f"Missing '{vehicle_art_column}' in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        usage_key = usage_raw.strip().lower()
+        usage_id = usage_text_to_id_map.get(usage_key)
+
+        if usage_id is None:
+            raise ValueError(
+                f"Unknown usage text '{usage_raw}' in sheet '{sheet_name}' at row {excel_row}"
+            )
+
+        usage_text = USAGE_TEXT_TO_CATEGORY_MAP[str(usage_id)]
+
+        payload: dict[str, Any] = {
+            "customer": {"id": customer_id},
+            "driverRegular": driver_regular,
+            "registration": registration,
+            "registrationDate": registration_date_utc,
+            "startDate": start_date_utc,
+            "make": make,
+            "model": model,
+            "modelYear": model_year,
+            "chassisNumber": chassis,
+            "usage": {
+                "text": usage_text,
+                "id": usage_id,
+            },
+        }
+
+        payloads.append(payload)
+
+    return payloads
