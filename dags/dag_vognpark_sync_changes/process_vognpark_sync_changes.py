@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def process_vognpark_sync_changes() -> None:
     """
-    Placeholder function for processing the vognpark_sync_changes data.
+    Create and delete vehicles in Insubiz based on the latest Excel data.
     """
     insubiz_hook = HttpHook(http_conn_id="insubiz_cloud_api")
 
@@ -61,4 +61,3 @@ def process_vognpark_sync_changes() -> None:
     )
 
     logger.info(f"Vognpark sync completed. Deleted={deleted_count}, Created={created_count}")
-    logger.info(f"Vognpark sync completed. Created={created_count}")
