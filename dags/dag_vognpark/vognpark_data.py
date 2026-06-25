@@ -4,9 +4,12 @@ import fitz
 import pandas as pd
 import logging
 from openpyxl.utils import get_column_letter
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 from airflow.providers.http.hooks.http import HttpHook
 from rkdigi.email_handling import EmailReader
+from datetime import datetime, timezone
+import time
+from airflow.exceptions import AirflowException
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +19,7 @@ INSUBIZ_EXCEL_FIELDS = [
     "make",
     "model",
     "modelYear",
+    "id",
     "chassisNumber",
     "cart",
     "endDate",
@@ -46,12 +50,14 @@ INSUBIZ_COLUMN_RENAME_MAP = {
 
 MOTORSTYRELSEN_PDF_COLUMNS = [
     "Nummer (DPRN)",
-    "Stelnummer (DKKO)",
+    "Stelnummer (DKKØ)",
     "Køretøj art beskrivelse (DKRG)",
     "Mærke beskrivelse (DKKØ)",
-    "Variant beskrivelse (DKKO)",
+    "Variant beskrivelse (DKKØ)",
     "Dato - første registrering (DKKØ)",
     "Model år (DKKØ)",
+    "Bruger p-nr navn",
+    "Model beskrivelse (DKKØ)"
 ]
 
 INSUBIZ_ROOT_CUSTOMER_ID = 216146  # RK
@@ -283,6 +289,128 @@ def fetch_insubiz_customers(
 
     logger.info(f"Successfully retrieved Insubiz customers. Total records: {len(all_rows)}")
     return all_rows
+
+
+def update_insubiz_vehicle_fields(
+    http_hook: HttpHook,
+    record_id: int,
+    fields: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Update fields on a single Insubiz vehicle.
+    """
+    logger.info("Updating Insubiz vehicle fields ...")
+
+    jwt = _insubiz_sign_in(http_hook=http_hook)
+
+    headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    payload = {
+        "recordId": record_id,
+        "fields": fields,
+    }
+
+    logger.info(f"Payload: {payload}")
+
+    max_attempts = 2  # Bug with Insubiz API that always returns 500 on first attempt, retry once then it works...
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = http_hook.run(
+                endpoint="/api/v1.3/Vehicle/UpdateVehicleFieldsAsync",
+                json=payload,
+                headers=headers,
+            )
+
+            response.raise_for_status()
+
+            body: Any = response.json()
+            if not isinstance(body, dict):
+                raise ValueError(
+                    f"Unexpected update response type: {type(body)}"
+                )
+
+            return body
+
+        except Exception:
+            logger.exception(f"UpdateVehicleFieldsAsync failed on attempt {attempt}/{max_attempts}")
+
+            if attempt == max_attempts:
+                raise
+
+            time.sleep(1)
+
+    raise AirflowException("Failed to update Insubiz vehicle fields after multiple attempts.")
+
+
+def close_insubiz_vehicles_by_ids(
+    http_hook: HttpHook,
+    vehicle_ids: list[int],
+    end_date_utc: str | None = None,
+) -> int:
+    """
+    Set endDate for all given vehicle IDs (soft delete).
+    """
+    if not vehicle_ids:
+        logger.info("No vehicle IDs to close.")
+        return 0
+
+    if not end_date_utc:
+        end_date_utc = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+    updated = 0
+    for vehicle_id in vehicle_ids:
+        update_insubiz_vehicle_fields(
+            http_hook=http_hook,
+            record_id=vehicle_id,
+            fields=[
+                {
+                    "name": "endDate",
+                    "value": end_date_utc,
+                }
+            ],
+        )
+        updated += 1
+
+    logger.info(f"Updated endDate on {updated} vehicle(s).")
+    return updated
+
+
+def read_vehicle_ids_to_delete_from_excel_bytes(
+    excel_bytes: bytes,
+    sheet_name: str = "Skal slettes",
+    id_column: str = "id",
+) -> list[int]:
+    """
+    Read vehicle IDs from the delete sheet in the Excel file.
+    """
+    df = pd.read_excel(
+        io.BytesIO(excel_bytes),
+        engine="openpyxl",
+        sheet_name=sheet_name,
+    )
+
+    normalized_cols = {str(c).strip().lower(): c for c in df.columns}
+    source_col = normalized_cols.get(id_column.lower())
+
+    if not source_col:
+        raise ValueError(f"Missing required column '{id_column}' in sheet '{sheet_name}'")
+
+    id_series = pd.to_numeric(df[source_col], errors="coerce").dropna().astype(int)
+
+    # Preserve order, remove duplicates
+    seen: set[int] = set()
+    ids: list[int] = []
+    for value in id_series.tolist():
+        if value not in seen:
+            seen.add(value)
+            ids.append(value)
+
+    return ids
 
 
 def dfs_to_excel_bytes(sheets: dict[str, pd.DataFrame]) -> bytes:
@@ -564,22 +692,16 @@ def enrich_vehicles_with_customer_levels(
     return df
 
 
-def find_latest_motorstyrelsen_pdf_attachment(
+def find_latest_attachment(
     email_reader: EmailReader,
     mailbox: str = "INBOX",
     criteria: str = "UNSEEN",
-    filename_prefixes: Iterable[str] = ("maindoc",),
+    extensions: Sequence[str] = (".pdf",),
+    filename_prefixes: Iterable[str] | None = None,
     max_emails: int = 50,
 ) -> tuple[bytes, str, bytes] | None:
     """
-    Find the newest Motorstyrelsen PDF attachment in a mailbox.
-
-    :param email_reader: EmailReader used to fetch emails.
-    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
-    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
-    :param filename_prefixes: Allowed attachment filename prefixes.
-    :param max_emails: Maximum number of emails to fetch
-    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
+    Find newest attachment matching extension and filename prefixes.
     """
     emails, failed = email_reader.get_emails(
         mailbox=mailbox,
@@ -591,14 +713,27 @@ def find_latest_motorstyrelsen_pdf_attachment(
 
     logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
 
+    extensions = tuple(ext.lower() for ext in extensions)
+    prefixes = (
+        tuple(p.lower() for p in filename_prefixes)
+        if filename_prefixes
+        else None
+    )
+
     for msg in emails:
         uid: bytes = getattr(msg, "uid", None)
 
         for part in msg.iter_attachments():
             filename = part.get_filename() or ""
-            if not filename.lower().endswith(".pdf"):
+            filename_lc = filename.lower()
+
+            if not filename_lc.endswith(extensions):
                 continue
-            if filename_prefixes and not any(filename.startswith(p) for p in filename_prefixes):
+
+            if prefixes and not any(
+                filename_lc.startswith(prefix)
+                for prefix in prefixes
+            ):
                 continue
 
             content = part.get_payload(decode=True)
