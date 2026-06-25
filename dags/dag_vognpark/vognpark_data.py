@@ -832,7 +832,7 @@ def read_vehicles_to_add_from_excel_bytes(
 
     normalized_cols = {str(c).strip().lower(): c for c in df.columns}
 
-    logger.info("Columns raw: %s", [repr(c) for c in df.columns])
+    logger.debug("Columns raw: %s", [repr(c) for c in df.columns])
 
     customer_col = normalized_cols.get(customer_id_column.strip().lower())
     registration_col = normalized_cols.get(registration_column.strip().lower())
