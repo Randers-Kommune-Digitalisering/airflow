@@ -318,6 +318,11 @@ def update_insubiz_vehicle_fields(
 ) -> dict[str, Any]:
     """
     Update fields on a single Insubiz vehicle.
+
+    :param http_hook: Airflow HttpHook configured for the Insubiz Cloud API connection.
+    :param record_id: Insubiz vehicle record ID to update.
+    :param fields: List of field update objects expected by Insubiz API.
+    :return: Response payload from Insubiz as a dictionary.
     """
     logger.info("Updating Insubiz vehicle fields ...")
 
@@ -374,6 +379,11 @@ def close_insubiz_vehicles_by_ids(
 ) -> int:
     """
     Set endDate for all given vehicle IDs (soft delete).
+
+    :param http_hook: Airflow HttpHook configured for the Insubiz Cloud API connection.
+    :param vehicle_ids: List of Insubiz vehicle record IDs to close.
+    :param end_date_utc: Optional UTC timestamp string to set as ``endDate``.
+    :return: Number of vehicles updated.
     """
     if not vehicle_ids:
         logger.info("No vehicle IDs to close.")
@@ -407,6 +417,11 @@ def read_vehicle_ids_to_delete_from_excel_bytes(
 ) -> list[int]:
     """
     Read vehicle IDs from the delete sheet in the Excel file.
+
+    :param excel_bytes: Excel file content as bytes (.xlsx).
+    :param sheet_name: Sheet name containing vehicles to close.
+    :param id_column: Column name containing Insubiz vehicle IDs.
+    :return: Ordered list of unique vehicle IDs.
     """
     df = pd.read_excel(
         io.BytesIO(excel_bytes),
@@ -635,6 +650,15 @@ def build_customer_levels(
     root_id: int = INSUBIZ_ROOT_CUSTOMER_ID,
     max_levels: int = INSUBIZ_MAX_LEVELS,
 ) -> dict[str, str]:
+    """
+    Build Level1..LevelN labels for a customer based on parent hierarchy.
+
+    :param customer_id: Customer ID for which levels should be generated.
+    :param customer_by_id: Mapping of customer id -> customer payload.
+    :param root_id: Root customer ID where the level path should start.
+    :param max_levels: Maximum number of level columns to populate.
+    :return: Dictionary with keys ``Level1``..``Level{max_levels}``.
+    """
     levels = {f"Level{i}": "" for i in range(1, max_levels + 1)}
 
     current_id = _to_valid_id_or_none(value=customer_id)
@@ -684,6 +708,13 @@ def enrich_vehicles_with_customer_levels(
     vehicles_df: pd.DataFrame,
     customers: list[dict[str, Any]],
 ) -> pd.DataFrame:
+    """
+    Enrich vehicle rows with organizational levels derived from customers.
+
+    :param vehicles_df: Vehicle DataFrame to enrich.
+    :param customers: List of customer payloads from Insubiz.
+    :return: Vehicle DataFrame with Level1..Level6 columns.
+    """
     df = vehicles_df.copy()
 
     customer_by_id = {
@@ -722,6 +753,14 @@ def find_latest_attachment(
 ) -> tuple[bytes, str, bytes] | None:
     """
     Find newest attachment matching extension and filename prefixes.
+
+    :param email_reader: EmailReader instance used to fetch emails.
+    :param mailbox: Mailbox/folder name to search in.
+    :param criteria: IMAP search criteria (for example ``UNSEEN`` or ``ALL``).
+    :param extensions: Allowed file extensions (case-insensitive).
+    :param filename_prefixes: Optional allowed filename prefixes.
+    :param max_emails: Maximum number of emails to inspect.
+    :return: Tuple ``(uid, filename, content_bytes)`` or ``None`` if no match.
     """
     emails, failed = email_reader.get_emails(
         mailbox=mailbox,
@@ -767,6 +806,14 @@ def create_insubiz_vehicle(
     http_hook: HttpHook,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    """
+    Create a single vehicle in Insubiz.
+
+    :param http_hook: Airflow HttpHook configured for the Insubiz Cloud API connection.
+    :param payload: Request payload for ``CreateVehicleAsync``.
+    :return: Response payload from Insubiz as a dictionary.
+    :raises ValueError: If API response payload is not a dictionary.
+    """
     logger.info("Creating Insubiz vehicle ...")
 
     jwt = _insubiz_sign_in(http_hook=http_hook)
@@ -797,6 +844,13 @@ def create_insubiz_vehicles_by_payloads(
     http_hook: HttpHook,
     payloads: list[dict[str, Any]],
 ) -> int:
+    """
+    Create multiple Insubiz vehicles from a list of payloads.
+
+    :param http_hook: Airflow HttpHook configured for the Insubiz Cloud API connection.
+    :param payloads: List of payloads for vehicle creation.
+    :return: Number of vehicles created.
+    """
     if not payloads:
         logger.info("No vehicles to create.")
         return 0
@@ -824,6 +878,25 @@ def read_vehicles_to_add_from_excel_bytes(
     driver_regular_column: str = "Bruger p-nr navn",
     model_year_column: str = "Model år (DKKØ)",
 ) -> list[dict[str, Any]]:
+    """
+    Read vehicle rows from Excel and convert them to Insubiz create payloads.
+
+    :param excel_bytes: Excel file content as bytes (.xlsx).
+    :param sheet_name: Sheet containing vehicles to create.
+    :param customer_id_column: Column name for customer ID.
+    :param registration_column: Column name for registration number.
+    :param make_column: Column name for vehicle make.
+    :param chassis_column: Column name for chassis number.
+    :param vehicle_art_column: Column name for usage/category text.
+    :param model_description_column: Column name for model description.
+    :param variant_description_column: Column name for variant description.
+    :param registration_date_column: Column name for first registration date.
+    :param driver_regular_column: Column name for regular driver value.
+    :param model_year_column: Column name for model year.
+    :return: List of payload dictionaries for Insubiz vehicle creation.
+    :raises ValueError: If required columns are missing or row values are
+        invalid.
+    """
     df = pd.read_excel(
         io.BytesIO(excel_bytes),
         engine="openpyxl",
