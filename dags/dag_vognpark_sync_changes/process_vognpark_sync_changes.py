@@ -26,9 +26,9 @@ def process_vognpark_sync_changes() -> None:
         password=vognpark_imap_conn.password,
     )
 
+    # Find the latest Vognpark Excel attachment in the email inbox(UNSEEN)
     found = find_latest_attachment(
         email_reader=email_reader,
-        criteria="ALL",
         extensions=(".xlsx",),
         filename_prefixes=("uoverensstemmelser",),
     )

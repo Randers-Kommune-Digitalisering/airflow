@@ -44,9 +44,9 @@ def process_vognpark_compare_and_report() -> None:
         password=vognpark_imap_conn.password,
     )
 
+    # Find the latest Motorstyrelsen PDF attachment in the email inbox(UNSEEN)
     found = find_latest_attachment(
         email_reader=email_reader,
-        criteria="ALL",
         extensions=(".pdf",),
         filename_prefixes=("maindoc",),
     )
