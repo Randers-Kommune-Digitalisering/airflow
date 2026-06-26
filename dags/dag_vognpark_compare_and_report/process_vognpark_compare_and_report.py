@@ -29,13 +29,13 @@ def process_vognpark_compare_and_report() -> None:
     insubiz_hook = HttpHook(http_conn_id="insubiz_cloud_api")
 
     vehicles = fetch_insubiz_vehicles(http_hook=insubiz_hook)
-    df = pd.json_normalize(vehicles, sep="_")
+    insubiz_df = pd.json_normalize(vehicles, sep="_")
 
     customers = fetch_insubiz_customers(http_hook=insubiz_hook)
-    df = enrich_vehicles_with_customer_levels(vehicles_df=df, customers=customers)
+    insubiz_df = enrich_vehicles_with_customer_levels(vehicles_df=insubiz_df, customers=customers)
 
-    df = df.reindex(columns=INSUBIZ_EXCEL_FIELDS)
-    df = normalize_insubiz_df(df=df)
+    insubiz_df = insubiz_df.reindex(columns=INSUBIZ_EXCEL_FIELDS)
+    insubiz_df = normalize_insubiz_df(df=insubiz_df)
 
     vognpark_imap_conn = BaseHook.get_connection("vognpark_imap")
 
@@ -58,10 +58,10 @@ def process_vognpark_compare_and_report() -> None:
 
     logger.info(f"Found PDF attachment in email UID {uid.decode()}: {attachment_name} ({len(pdf_bytes)} bytes)")
 
-    afg_dato = pd.to_datetime(df["Afg.dato"], errors="coerce")
+    afg_dato = pd.to_datetime(insubiz_df["Afg.dato"], errors="coerce")
     inactive_mask = (afg_dato == pd.Timestamp("1900-01-01 00:00:00"))
 
-    insubiz_inactive_df = df.loc[inactive_mask].copy()
+    insubiz_inactive_df = insubiz_df.loc[inactive_mask].copy()
 
     motor_df = read_motorstyrelsen_pdf_bytes(pdf_bytes=pdf_bytes)
     motor_set = set(motor_df["registreringsnummer"].astype(str).str.strip().str.upper())
@@ -81,6 +81,7 @@ def process_vognpark_compare_and_report() -> None:
 
     need_to_add = need_to_add.copy()
 
+    # For the vehicles to add, ensure that the "Customer_ID" column exists
     if "Customer_ID" not in need_to_add.columns:
         need_to_add["Customer_ID"] = None
 
@@ -111,4 +112,4 @@ def process_vognpark_compare_and_report() -> None:
         attachments=[(filename, report_bytes)],
     )
 
-    logger.info("Vognpark data processed successfully")
+    logger.info("Vognpark compare Motorstyrelsen vs Insubiz completed and report sent via email.")
