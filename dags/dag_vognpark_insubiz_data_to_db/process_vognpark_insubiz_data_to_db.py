@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def process_vognpark_insubiz_data_to_db() -> None:
     """
-    Placeholder function for processing the vognpark_insubiz_data_to_db data.
+    Fetch newest Insubiz data and store it in the database.
     """
     insubiz_hook = HttpHook(http_conn_id="insubiz_cloud_api")
     vognpark_hook = PostgresHook(postgres_conn_id="vognpark_db")
@@ -45,4 +45,4 @@ def process_vognpark_insubiz_data_to_db() -> None:
         audit_df = pd.DataFrame({"report_date": [report_date]})
         audit_df.to_sql("vognpark_run_audit", con=conn, if_exists="replace", index=False)
 
-    logger.info("Vognpark data processed successfully")
+    logger.info("Fetched newest Insubiz data and stored it in the database successfully.")
