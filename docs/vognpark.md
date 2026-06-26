@@ -3,18 +3,44 @@
 
 ## Formål
 
-Formålet med jobbet er at hente vognpark data fra en SFTP og gemme det i en PostgreSQL-database.
+Formålet med jobbet er at sammenholde køretøjsdata fra Insubiz med den nyeste Motorstyrelsen PDF-vedhæftning fra en postkasse, sende en afvigelsesrapport på email, samt gemme et komplet Insubiz-udtræk i PostgreSQL til videre brug(Vognpark-Dashboard)
 
 ## Beskrivelse
 
 Kode består af et DAG-job, der udfører følgende trin:
 
-- Henter den seneste fil fra SFTP'en
-(`get_latest_vognpark_excel_path`) og læser Excel filen (`read_vognpark_excel_from_sftp`)
-- Dataen gemmes i en Postgres Database
+- Henter alle køretøjer fra Insubiz API.
+
+- Henter alle kunder fra Insubiz API og beriger køretøjer med Level1 til Level6 baseret på kundehierarki.
+
+- Finder nyeste ulæste Motorstyrelsen PDF-vedhæftning i Vognpark IMAP postkassen.
+
+- Læser og parser Motorstyrelsen PDF og sammenligner mod Insubiz køretøjer med Afg.dato lig 1900-01-01 ---> Det vil sige aktive køretøjer
+
+- Danner to afvigelseslister:
+  - `Skal slettes`: Køretøj findes i Insubiz men ikke i Motorstyrelsen.
+  - `Skal tilføjes`: Køretøj findes i Motorstyrelsen men ikke i Insubiz.
+  - Filtrerer registreringsnumre i `Skal slettes` til gyldigt format på 1 til 7 tegn.
+  - Genererer en Excel-rapport med fanerne `Skal slettes` og `Skal tilføjes`.
+  - Sender rapporten via SMTP til konfigurerede modtagere.
+
+- Gemmer Insubiz datasæt i tabellen `vognpark_data`(Til Vognpark Dashboard)
+
+- Gemmer report_date i vognpark_run_audit(Til Vognpark Dashboard)
 
 **Dataflow:**
-- Data fra SFTP → Data gemmes i Postgres DB
+- Motorstyrelsen + Insubiz sammenligning Flow:
+  - Insubiz API → Motorstyrelsen email vedhæftning (IMAP/PDF) → PDF parsing → sammenligning → Excel rapport → Email
+
+- Insubiz Data flow:
+  - Insubiz APi → PostgreSQL tabel vognpark_data
+
+
+**Bemærk:**
+
+- Jobbet bruger criteria UNSEEN ved søgning efter input mail, så der forventes en ulæst matchende email med PDF-vedhæftning for at kunne gennemføre.
+
+- Hvis der ikke findes en relevant PDF-vedhæftning, fejler jobbet med AirflowFailException.
 
 ## Afhængigheder
 
@@ -30,15 +56,48 @@ Kode består af et DAG-job, der udfører følgende trin:
  *Required felter*:
   - Connection id, Host, Database, Login, Password and Port(5432)
 
-**SFTP:**
-- **`shared_sftp`**
+**IMAP (Postkasse til Vognpark):**
+- **`vognpark_imap`**
+- **Bitwarden navn: `Postkasse - Vognpark`**
 
-**Conn Type**: SFTP
+Bruges til at hente login/password til Vognpark postkassen, som DAG’en læser input fra.
 
- Bruges som `Connection id` i Airflow til at hente host, schema, user, pass og port til SFTP'en
+*Required felter*:
+  - Connection id, Username(Login) og Password
 
- *Required felter*:
-  - Connection id, Host, Username, Password og Port(22)
+
+**Insubiz API :**
+- **`insubiz_cloud_api`**
+- **Bitwarden navn: `Insubiz Cloud API`**
+
+**Conn Type**: HTTP
+
+Bruges som Connection id i Airflow til at hente host og Extras(api_key + secret_key) til MP API'et
+
+*Required felter*:
+  - Connection id, Host, og Extras
+  - f.eks under Extras: { "api_key": x, "secret_key": "y" }
+
+
+### Airflow Variables 
+:key: | **Airflow Variables**
+
+**Vognpark Runtime Konfiguration (email + SMTP ):**
+- **Key**: `vognpark_runtime_config`
+
+*Required felter*:
+  - `sender_email`
+  - `recipient_emails`
+  - `smtp_server`
+
+Eksempel:
+```json
+{
+  "sender_email": "no-reply@randers.dk",
+  "recipient_emails": ["modtager1@randers.dk", "modtager2@randers.dk"],
+  "smtp_server": "smtp.example.localhost"
+}
+```
 
 ## Schedule
 
