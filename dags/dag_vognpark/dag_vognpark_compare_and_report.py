@@ -3,7 +3,8 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_vognpark_compare_and_report.process_vognpark_compare_and_report import process_vognpark_compare_and_report
+from dag_vognpark.process_vognpark_compare_and_report import process_vognpark_compare_and_report
+
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
@@ -17,7 +18,7 @@ with DAG(
     max_active_runs=1,
     default_args=dag_args,
     description="Compare Motorstyrelsen PDF with Insubiz API data, generate a report, and send it via email",
-    tags=["Motorstyrelsen PDF", "Insubiz API", "Email report"],
+    tags=["Flow 1", "Motorstyrelsen PDF", "Insubiz API", "Email report"],
 ) as dag:
 
     run_vognpark_compare_and_report = PythonOperator(
