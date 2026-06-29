@@ -64,6 +64,4 @@ Flowet opdaterer data direkte i Insubiz:
 
 ## Schedule
 
-Schedule er sat op til at køre automatisk på følgende tidspunkter:
-
-- `@monthly` Hver måned
+Forsikringskontoret har adgang til UI'en i Airflow med rollen: `Vognpark` hvor de kun kan se de 3 DAGS som tilhører Vognpark. Her kan de selv trigger DAG'et

@@ -53,6 +53,5 @@ Flowet opdaterer data i PostgreSQL:
 
 ## Schedule
 
-Schedule er sat op til at køre automatisk på følgende tidspunkter:
+Forsikringskontoret har adgang til UI'en i Airflow med rollen: `Vognpark` hvor de kun kan se de 3 DAGS som tilhører Vognpark. Her kan de selv trigger DAG'et
 
-- `@monthly` Hver måned
