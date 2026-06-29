@@ -8,8 +8,6 @@ from typing import Any, Iterable, Sequence
 from airflow.providers.http.hooks.http import HttpHook
 from rkdigi.email_handling import EmailReader
 from datetime import datetime, timezone
-import time
-from airflow.exceptions import AirflowException
 
 logger = logging.getLogger(__name__)
 
@@ -341,35 +339,20 @@ def update_insubiz_vehicle_fields(
 
     logger.info(f"Payload: {payload}")
 
-    max_attempts = 2  # Bug with Insubiz API that always returns 500 on first attempt, retry once then it works...
+    response = http_hook.run(
+        endpoint="/api/v1.3/Vehicle/UpdateVehicleFieldsAsync",
+        json=payload,
+        headers=headers,
+    )
 
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = http_hook.run(
-                endpoint="/api/v1.3/Vehicle/UpdateVehicleFieldsAsync",
-                json=payload,
-                headers=headers,
-            )
+    response.raise_for_status()
 
-            response.raise_for_status()
+    body: Any = response.json()
+    if not isinstance(body, dict):
+        raise ValueError(
+            f"Unexpected update response type: {type(body)}")
 
-            body: Any = response.json()
-            if not isinstance(body, dict):
-                raise ValueError(
-                    f"Unexpected update response type: {type(body)}"
-                )
-
-            return body
-
-        except Exception:
-            logger.exception(f"UpdateVehicleFieldsAsync failed on attempt {attempt}/{max_attempts}")
-
-            if attempt == max_attempts:
-                raise
-
-            time.sleep(1)
-
-    raise AirflowException("Failed to update Insubiz vehicle fields after multiple attempts.")
+    return body
 
 
 def close_insubiz_vehicles_by_ids(
