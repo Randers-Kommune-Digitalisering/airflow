@@ -40,13 +40,31 @@ def process_affald() -> None:
 
     logger.info(f"MP data will be fetched for period: {mp_from_date} to {mp_to_date}")
 
-    rows = mp_waste_amount_data(
-        http_hook=mp_http_hook,
-        customer_numbers=[80067523, 80070490, 80070170],
-        from_date=mp_from_date,
-        to_date=mp_to_date,
-        installation_address_id=[],
-    )
+    customer_numbers = [80067523, 80070490, 80070170]
+    rows = []
+    failed_customers = []
+
+    # Fetch each customer separately so one failing customer does not drop all MP data.
+    for customer_number in customer_numbers:
+        try:
+            customer_rows = mp_waste_amount_data(
+                http_hook=mp_http_hook,
+                customer_numbers=[customer_number],
+                from_date=mp_from_date,
+                to_date=mp_to_date,
+                installation_address_id=[],
+            )
+            rows.extend(customer_rows)
+            logger.info(f"MP fetch succeeded for customer {customer_number} with {len(customer_rows)} rows")
+        except Exception:
+            failed_customers.append(customer_number)
+            logger.exception(f"MP fetch failed for customer {customer_number}; continuing with remaining customers")
+
+    if not rows:
+        raise ValueError(f"No MP data returned for any customer in the selected period. Failed customers: {failed_customers}")
+
+    if failed_customers:
+        logger.warning(f"MP data is partial. Failed customers: {failed_customers}. Rows retrieved from successful customers: {len(rows)}")
 
     monthly_data = aggregate_taxes_quantity_by_month(rows=rows)
     logger.info(f"Aggregated MP data by month: {monthly_data}")

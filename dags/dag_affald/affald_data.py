@@ -1,6 +1,7 @@
 import logging
 import json
 import pandas as pd
+import math
 from io import BytesIO
 from typing import Any, Sequence
 from sqlalchemy import bindparam, text
@@ -47,6 +48,17 @@ def _normalize_name(value: Any) -> str:
     if value is None:
         return ""
     return " ".join(str(value).split()).strip()
+
+
+def _to_float(value: Any, default: float = 1.0) -> float:
+    """Parse numeric value allowing both comma and dot decimal separators."""
+    if value is None:
+        return default
+    try:
+        parsed = float(str(value).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return default
+    return parsed if math.isfinite(parsed) else default
 
 
 def sheet_specs_requires_carrier() -> bool:
@@ -248,6 +260,7 @@ def _apply_customer_and_material_view(
     out = df.copy()
     out["CustomerName"] = out["CustomerName"].map(_normalize_name)
     out["ArticleNumber"] = out["ArticleNumber"].astype(str).str.strip()
+    out["weightnet_sum"] = pd.to_numeric(out["weightnet_sum"], errors="coerce").fillna(0.0)
 
     if "CarrierName" not in out.columns:
         out["CarrierName"] = "Ukendt"
@@ -316,6 +329,23 @@ def _apply_customer_and_material_view(
                 if gc:
                     mask = mask & out["CarrierName"].isin(gc)
 
+            # Optional per-article weighting inside this material group.
+            article_weights_raw = g.get("article_weights") or {}
+            if isinstance(article_weights_raw, dict) and article_weights_raw:
+                article_weights: dict[str, float] = {
+                    str(k).strip(): _to_float(v, default=1.0)
+                    for k, v in article_weights_raw.items()
+                }
+
+                weighted_articles = set(article_weights.keys())
+                weight_mask = mask & out["ArticleNumber"].isin(weighted_articles)
+
+                if weight_mask.any():
+                    factors = out.loc[weight_mask, "ArticleNumber"].map(article_weights).fillna(1.0)
+                    out.loc[weight_mask, "weightnet_sum"] = (
+                        out.loc[weight_mask, "weightnet_sum"].astype(float) * factors.astype(float)
+                    )
+
             out.loc[mask, "MaterialKey"] = label
 
     # Remove “rest” rows that would otherwise appear as “Randers YYYY - xx.
@@ -324,7 +354,7 @@ def _apply_customer_and_material_view(
         not_mapped = out["MaterialKey"].eq(out["ArticleNumber"])
         out = out[~(in_grouped_article & not_mapped)]
 
-    logger.debug("After applying customer/material view: %s records (grouped articles: %s)", len(out), sorted(grouped_articles))
+    logger.debug(f"After applying customer/material view: {len(out)} records (grouped articles: {sorted(grouped_articles)})")
     return out
 
 
@@ -1034,6 +1064,9 @@ def mp_waste_amount_data(
 
     all_rows: list[dict[str, Any]] = []
 
+    total_count: int | None = None
+    max_pages: int | None = None
+
     while True:
         logger.info(f"Fetching MP data page={page} page_size={page_size} ...")
 
@@ -1055,12 +1088,45 @@ def mp_waste_amount_data(
         body = res.json()
         data = body.get("data", [])
 
-        all_rows.extend(data)
+        # find totalcount on first page and compute expected max pages
+        if total_count is None:
+            total_count = int(body.get("totalCount", 0))
+            max_pages = math.ceil(total_count / page_size) if total_count else 0
 
-        logger.debug(f"Fetched {len(data)} records from page {page}. Total so far: {len(all_rows)}")
+            logger.info(f"MP totalCount={total_count}, expected_pages={max_pages}")
 
-        if len(data) == 0:
-            break
+        years = [
+            row.get("activityYear")
+            for row in data
+            if row.get("activityYear") is not None
+        ]
+
+        months = [
+            int(row.get("activityMonth"))
+            for row in data
+            if row.get("activityMonth") is not None
+        ]
+
+        total_so_far_after = len(all_rows) + len(data)
+        logger.info(
+            f"MP page={page} status={res.status_code} rows={len(data)} years={sorted(set(years)) if years else []} "
+            f"months={sorted(set(months)) if months else []} total_so_far={total_so_far_after}"
+        )
+
+        # save data if the page is not empty
+        if data:
+            all_rows.extend(data)
+        elif (total_count or 0) > 0:
+            logger.warning(f"MP page={page} returned 0 rows although totalCount={total_count}")
+
+        # stop when reaching the last expected page
+        if max_pages is not None:
+            if max_pages == 0:
+                logger.info("MP totalCount=0; no pages to fetch.")
+                break
+            if page >= max_pages:
+                logger.info(f"Reached last expected page {page}/{max_pages}")
+                break
 
         page += 1
 
