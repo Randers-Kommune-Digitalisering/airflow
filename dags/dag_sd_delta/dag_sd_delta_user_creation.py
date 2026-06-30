@@ -49,6 +49,7 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
 
     logging.getLogger("airflow.hooks.base").setLevel(logging.WARNING)
 
+    # TODO: Bedre navn til dataframe: signflow_df
     df = signflow_client.get_authorizations()
 
     emp_dfs: list[pd.DataFrame] = []
@@ -64,12 +65,12 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
         log_template = f"Sagsnummer: {row['Sagsnummer']} - Fra dato: {date} LOS: {los_text}- Navn: {navn_text} - Kommentar: "
         res = delta_client.get_engagement_by_los_and_cpr(los=los, cpr=cpr, valid_date=date)
         if not res:
-            logger.warning(f"{log_template}Ikke fundet i Delta")
+            logger.warning(f"{log_template}Ikke fundet i Delta") # TODO: Prioritér engelsk i kode
         elif len(res) > 1:
-            logger.warning(f"{log_template}Flere ansættelser fundet i Delta")
+            logger.warning(f"{log_template}Flere ansættelser fundet i Delta") # TODO: Prioritér engelsk i kode
         else:
             if res[0]['user']:
-                logger.info(f"{log_template}Har allerede en bruger {res[0]['user']}")
+                logger.info(f"{log_template}Har allerede en bruger {res[0]['user']}") # TODO: Prioritér engelsk i kode
             else:
                 if res[0]['institution_id'] in inst_id_list:
                     try:
@@ -92,7 +93,7 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
                         logger.info(f"{log_template}BRUGER OPRETTES")
                     except requests.exceptions.HTTPError as e:
                         if "EmploymentIdentifier does not exist" in str(e):
-                            logger.warning(f"{log_template}Ikke fundet i SD")
+                            logger.warning(f"{log_template}Ikke fundet i SD") # TODO: Prioritér engelsk i kode
                 else:
                     logger.warning(f"{log_template}Ugyldig institution {res[0]['institution_id']}")
 
