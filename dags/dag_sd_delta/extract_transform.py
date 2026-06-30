@@ -49,6 +49,7 @@ OUT_COLUMNS = [
 
 
 def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) -> tuple[str | None, str | None, str | None, str | None]:
+    # TODO: Update doc string with input and output types
     """Resolve profession and level-2 profession metadata for a job position id.
 
     Falls back to level 3 when level 2 does not exist in the hierarchy.
@@ -100,6 +101,7 @@ def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) 
 
 
 def _parse_iso_date_or_none(value: object) -> date | None:
+    # TODO: Update doc string with input and output types
     """Parse supported date-like values to python date, returning None for missing values."""
     if pd.isna(value):
         return None
@@ -113,18 +115,21 @@ def _parse_iso_date_or_none(value: object) -> date | None:
 
 
 def _max_non_null_date(row: pd.Series, columns: list[str]) -> date | None:
+    # TODO: Update doc string with input and output types
     """Return max non-null date among the provided columns for a row."""
     values = [row[column_name] for column_name in columns if pd.notna(row[column_name])]
     return max(values) if values else None
 
 
 def _min_non_null_date(row: pd.Series, columns: list[str]) -> date | None:
+    # TODO: Update doc string with input and output types
     """Return min non-null date among the provided columns for a row."""
     values = [row[column_name] for column_name in columns if pd.notna(row[column_name])]
     return min(values) if values else None
 
 
 def _format_name_with_code(name_value: object, code_value: object) -> str:
+    # TODO: Update doc string with input and output types
     """Format a human-readable label with code; fail on missing required values."""
     if pd.notna(name_value) and pd.notna(code_value):
         return f"{name_value} ({code_value})"
@@ -135,6 +140,7 @@ def _format_name_with_code(name_value: object, code_value: object) -> str:
 
 
 def _format_date_series(date_series: pd.Series) -> pd.Series:
+    # TODO: Update doc string with input and output types
     """Format date-like values to dd.mm.yyyy for final output."""
 
     def _format_date_value(value: object) -> str:
@@ -148,6 +154,7 @@ def _format_date_series(date_series: pd.Series) -> pd.Series:
 
 
 def _collect_source_date_columns(employment_changes_df: pd.DataFrame) -> tuple[list[str], list[str]]:
+    # TODO: Update doc string with input and output types
     """Return available activation and deactivation source date columns."""
     activation_source_columns = [
         column_name
@@ -171,6 +178,7 @@ def _collect_source_date_columns(employment_changes_df: pd.DataFrame) -> tuple[l
 
 
 def _normalize_and_filter_status_periods(employment_changes_df: pd.DataFrame) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Normalize status groups and keep rows relevant for period shaping."""
     employment_changes_df = employment_changes_df.copy()
 
@@ -199,6 +207,7 @@ def _normalize_and_filter_status_periods(employment_changes_df: pd.DataFrame) ->
 
 
 def _compute_period_columns(employment_changes_df: pd.DataFrame) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Build ActivationDate/DeactivationDate columns from source components and filter invalid periods."""
     employment_changes_df = employment_changes_df.copy()
 
@@ -228,6 +237,7 @@ def _compute_period_columns(employment_changes_df: pd.DataFrame) -> pd.DataFrame
 
 
 def _merge_contiguous_periods(employment_changes_df: pd.DataFrame) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Merge adjacent periods that belong to the same employment identity and metadata."""
     employment_changes_df = employment_changes_df.copy()
 
@@ -312,6 +322,7 @@ def _merge_contiguous_periods(employment_changes_df: pd.DataFrame) -> pd.DataFra
 
 
 def _prepare_for_enrichment(employment_changes_df: pd.DataFrame, persons_df: pd.DataFrame) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Rename flattened columns and enrich with person name columns from persons snapshot."""
     employment_changes_df = employment_changes_df.rename(
         columns=lambda column_name: column_name.split("_", 1)[1]
@@ -341,6 +352,7 @@ def _enrich_row_with_snapshot(
     row_index: int,
     inst_id: str,
 ) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Enrich one row with point-in-time employment/person snapshots for missing fields."""
     row = employment_changes_df.loc[row_index]
     cpr = row.get("PersonCivilRegistrationIdentifier")
@@ -414,6 +426,7 @@ def _enrich_with_snapshots(
     employment_changes_df: pd.DataFrame,
     inst_id: str,
 ) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Enrich rows with missing values using point-in-time snapshots."""
     rows_with_missing_values = set(
         employment_changes_df.index[employment_changes_df.isna().any(axis=1)].tolist()
@@ -437,6 +450,7 @@ def build_output_df(
     start_time: datetime,
     prof_name_mapping_xml: ET.Element,
 ) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Build final output dataframe for one institution."""
     status_code_series = employment_changes_df["EmploymentStatusCode"]
 
@@ -537,6 +551,7 @@ def _prepare_institution_changes(
     start_time: datetime,
     end_time: datetime,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    # TODO: Update doc string with input and output types
     """
     Fetch and normalize changed employment rows for one institution.
     """
@@ -575,6 +590,7 @@ def _process_one_institution(
     start_time: datetime,
     end_time: datetime,
 ) -> tuple[pd.DataFrame, list[dict]]:
+    # TODO: Update doc string with input and output types
     """Run the full transformation pipeline for one institution and return output rows."""
     inst_id = inst["inst_id"]
     excluded_dept_ids = inst["excluded_dept_ids"]
@@ -641,6 +657,7 @@ def get_and_transform_changes(
     start_time: datetime,
     end_time: datetime,
 ) -> dict[str, str | bool]:
+    # TODO: Update doc string with input and output types
     """
     Main DAG business flow.
 
