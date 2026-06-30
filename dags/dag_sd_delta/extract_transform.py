@@ -212,11 +212,11 @@ def _compute_period_columns(employment_changes_df: pd.DataFrame) -> pd.DataFrame
         )
 
     employment_changes_df["ActivationDate"] = employment_changes_df.apply(
-        lambda row: _max_non_null_date(row, activation_source_columns),
+        lambda row: _max_non_null_date(row=row, columns=activation_source_columns),
         axis=1,
     )
     employment_changes_df["DeactivationDate"] = employment_changes_df.apply(
-        lambda row: _min_non_null_date(row, deactivation_source_columns),
+        lambda row: _min_non_null_date(row=row, columns=deactivation_source_columns),
         axis=1,
     )
 
@@ -474,8 +474,8 @@ def build_output_df(
         position_id = str(position_id_value).strip()
         if position_id not in profession_name_cache:
             profession_name_cache[position_id] = _get_profession_with_level_2(
-                prof_name_mapping_xml,
-                position_id,
+                professions_xml=prof_name_mapping_xml,
+                position_id=position_id,
             )
         return profession_name_cache[position_id]
 
@@ -490,9 +490,9 @@ def build_output_df(
     )
 
     out_df = pd.DataFrame(index=employment_changes_df.index)
-    out_df["Institutions-niveau"] = _format_name_with_code(institution_name, inst_id)
+    out_df["Institutions-niveau"] = _format_name_with_code(name_value=institution_name, code_value=inst_id)
     out_df["Stamafdeling"] = [
-        _format_name_with_code(name_value, code_value)
+        _format_name_with_code(name_value=name_value, code_value=code_value)
         for name_value, code_value in zip(dept_names, dept_codes)
     ]
     out_df["CPR-nummer"] = employment_changes_df["PersonCivilRegistrationIdentifier"]
@@ -506,11 +506,11 @@ def build_output_df(
         raise ValueError("Missing person name")
 
     out_df["Stillingskode nuværende"] = [
-        _format_name_with_code(name_value, code_value)
+        _format_name_with_code(name_value=name_value, code_value=code_value)
         for name_value, code_value in zip(profession_names, profession_codes)
     ]
     out_df["Stillingskode niveau 2"] = [
-        _format_name_with_code(name_value, code_value)
+        _format_name_with_code(name_value=name_value, code_value=code_value)
         for name_value, code_value in zip(level_2_profession_names, level_2_profession_codes)
     ]
     out_df["Startdato"] = _format_date_series(employment_changes_df["ActivationDate"])
@@ -612,12 +612,12 @@ def _process_one_institution(
         )
 
         # Normalize statuses and build consolidated date periods.
-        employment_changes_df = _normalize_and_filter_status_periods(employment_changes_df)
-        employment_changes_df = _compute_period_columns(employment_changes_df)
-        employment_changes_df = _merge_contiguous_periods(employment_changes_df)
+        employment_changes_df = _normalize_and_filter_status_periods(employment_changes_df=employment_changes_df)
+        employment_changes_df = _compute_period_columns(employment_changes_df=employment_changes_df)
+        employment_changes_df = _merge_contiguous_periods(employment_changes_df=employment_changes_df)
 
         # Rename flattened columns and enrich rows with snapshot-based fallbacks.
-        employment_changes_df = _prepare_for_enrichment(employment_changes_df, persons_df)
+        employment_changes_df = _prepare_for_enrichment(employment_changes_df=employment_changes_df, persons_df=persons_df)
         employment_changes_df = _enrich_with_snapshots(
             employment_changes_df=employment_changes_df,
             inst_id=inst_id,
