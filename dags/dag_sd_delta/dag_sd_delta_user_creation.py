@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def extract_transform(**context: dict) -> dict[str, str | bool]:
+    # TODO: Add doc string
     insts_to_import_raw = Variable.get("delta_sd_insts_to_import", default_var="{}")
     insts_to_import = json.loads(insts_to_import_raw)
     validate_insts_to_import(insts_to_import)
@@ -205,7 +206,7 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
         "<h3>Task log summary</h3>",
         "<pre style='white-space: pre-wrap; font-family: monospace;'>",
     ])
-    styled_log_lines = get_styled_log_html(log_collector)
+    styled_log_lines = get_styled_log_html(log_collector=log_collector)
 
     result["log_html"] = html_prefix + styled_log_lines + "</pre>"
     return result
