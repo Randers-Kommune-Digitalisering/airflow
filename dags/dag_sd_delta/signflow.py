@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class SignflowClient:
+    # TODO: add doc string
     def __init__(self, hook: BaseHook):
         self.url = hook.host.rstrip('/')
         self.session = Session()

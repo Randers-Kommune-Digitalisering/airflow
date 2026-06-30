@@ -89,6 +89,7 @@ def _xml_to_df_with_exploded_elements(
 
 
 def _check_for_fault(response: Response) -> None:
+    # TODO: Update doc string with input and output types
     """Raise response status, checks if the response contains a SOAP Fault and raises an HTTPError if it does."""
     response.raise_for_status()
     if "<Fault>" in response.text:
@@ -105,6 +106,7 @@ def _check_for_fault(response: Response) -> None:
 
 
 def get_institutions_df() -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Fetches all institutions from Silkeborg Data and returns them as a DataFrame."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetInstitution20080201",
@@ -115,6 +117,7 @@ def get_institutions_df() -> pd.DataFrame:
 
 
 def get_professions_xml(inst_id: str) -> ET.Element:
+    # TODO: Update doc string with input and output types
     """Fetch all professions XML for a given institution and return the XML root element."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetProfession20080201",
@@ -129,6 +132,7 @@ def get_professions_xml(inst_id: str) -> ET.Element:
 
 
 def get_departments_df(inst_id: str, activation_date: datetime, deactivation_date: datetime) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Fetches all departments for a given institution from SD and returns them as a DataFrame."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetDepartment20111201",
@@ -144,6 +148,7 @@ def get_departments_df(inst_id: str, activation_date: datetime, deactivation_dat
 
 
 def get_persons_df(inst_id: str, effective_date: datetime) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Fetches all persons for a given institution from SD and returns them as a DataFrame."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetPerson",
@@ -159,6 +164,7 @@ def get_persons_df(inst_id: str, effective_date: datetime) -> pd.DataFrame:
 
 
 def get_employments_with_changes_df(inst_id: str, activation_datetime: datetime, deactivation_datetime: datetime) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Return one row per Employment with Person fields copied onto each employment row."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetEmploymentChangedAtDate20070401",
@@ -220,6 +226,7 @@ def get_employments_with_changes_df(inst_id: str, activation_datetime: datetime,
 
 
 def get_employment_on_date_df(inst_id: str, cpr: str, employment_id: str, effective_date: datetime) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Return dataframe with one ow for the Employment for the given cpr and employment_id."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetEmployment20070401",
@@ -248,6 +255,7 @@ def get_employment_on_date_df(inst_id: str, cpr: str, employment_id: str, effect
 
 
 def get_person_on_date_df(inst_id: str, cpr: str, employment_id: str, effective_date: datetime) -> pd.DataFrame:
+    # TODO: Update doc string with input and output types
     """Return dataframe with one row for the Person for the given cpr and employment_id."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetPerson",
@@ -262,7 +270,7 @@ def get_person_on_date_df(inst_id: str, cpr: str, employment_id: str, effective_
             'PostalAddressIndicator': False
         }
     )
-    _check_for_fault(res)
+    _check_for_fault(reponse=res)
     root = ET.fromstring(res.content)
     person_nodes = root.findall('.//{*}Person')
 
@@ -299,6 +307,7 @@ def get_person_on_date_df(inst_id: str, cpr: str, employment_id: str, effective_
 
 
 def employment_exists_on_date(inst_id: str, cpr: str, employment_id: str, effective_date: datetime) -> bool:
+    # TODO: Update doc string with input and output types
     """Check if an employment exists for the given cpr and employment_id on the effective_date."""
     res = SD_HTTP_HOOK.run(
         endpoint="/GetEmployment20070401",
