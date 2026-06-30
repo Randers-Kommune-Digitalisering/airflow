@@ -18,6 +18,7 @@ class SignflowClient:
         self.password = hook.password
         self._login()
 
+    # TODO: add doc string
     def _login(self):
         endpoint = f"{self.url}/usr/auth/basic"
         res = self.session.get(endpoint)
@@ -27,6 +28,7 @@ class SignflowClient:
         res = self.session.post(endpoint, data={'j_username': self.username, 'j_password': self.password})
         res.raise_for_status()
 
+    # TODO: add doc string
     def get_authorizations(self) -> pd.DataFrame:
         endpoint = f'{self.url}/usr/ShowDocument'
         params = {'mode': 0, 'FolderStatus_FolderStatusOid': 373, 'sortOrder': 'd', 'sortcolumn': -1, 'pageBeginning': 0, 'csv': 'true'}
@@ -61,6 +63,7 @@ class SignflowClient:
 
         df = df[df['Handling'].isin(['Genopret', 'Nyansat'])].copy()
 
+        # TODO: add doc string
         def parse_fra_dato(value: str) -> date | None:
             if pd.isna(value):
                 return None
