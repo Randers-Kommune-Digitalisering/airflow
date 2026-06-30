@@ -16,6 +16,7 @@ class DeltaClient:
         self,
         hook: BaseHook
     ):
+        # TODO: Update doc string with input type
         """
         Client for Delta API (singleton)
         """
@@ -39,6 +40,7 @@ class DeltaClient:
         return cls._instance
 
     def get_active_engagement_id(self, engagement_key: str, valid_date: date) -> str | None:
+        # TODO: Update doc string with input and output types
         """Fetches active engagement uuid from Delta by key. Returns None if no active engagement found."""
         query = {
             "queries": [
@@ -87,6 +89,7 @@ class DeltaClient:
         return None
 
     def deactivate_engagement(self, uuid: str, from_date: date) -> bool:
+        # TODO: add doc strings
         query = {
             "transaction": "ALL",
             "objectUpdateList": [
@@ -123,6 +126,7 @@ class DeltaClient:
             return False
 
     def upload_sd_excel_file(self, file_path: str) -> str:
+        # TODO: Update doc string with input and output types
         """Uploads an Excel file from a local path to Delta and returns the process instance id."""
         path = Path(file_path)
         file_content = path.read_bytes()
@@ -147,6 +151,7 @@ class DeltaClient:
         return str(process_instance_id)
 
     def get_engagement_by_los_and_cpr(self, los: str, cpr: str, valid_date: date) -> list[dict]:
+        # TODO: Update doc string with input and output types
         """Fetches engagement from Delta by LOS and CPR. Returns None if no active engagement found."""
         query = {
             "graphQueries": [
