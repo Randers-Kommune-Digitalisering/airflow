@@ -13,6 +13,7 @@ def handle_deleted_employments(
     delta_client: DeltaClient,
     deleted_employments: list[dict] | None,
 ) -> dict[str, str]:
+    # TODO: Update doc string with input and output types
     """Handle employments marked as deleted in SD by checking point-in-time snapshots and marking engagements as inactive in Delta."""
     log_collector = get_log_collector()
     root_logger = logging.getLogger()
@@ -58,11 +59,12 @@ def handle_deleted_employments(
         "<h3>Handle deleted employments log summary</h3>",
         "<pre style='white-space: pre-wrap; font-family: monospace;'>",
     ])
-    styled_log_lines = get_styled_log_html(log_collector)
+    styled_log_lines = get_styled_log_html(log_collector=log_collector)
     return {"log_html": html_prefix + styled_log_lines + "</pre>"}
 
 
 def upload_excel_file_to_delta(delta_client: DeltaClient, file_path: str | None) -> dict[str | None, str]:
+    # TODO: Update doc string with input and output types
     """Upload the generated excel file to Delta and return upload status HTML and process id."""
 
     if file_path is None:
