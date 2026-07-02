@@ -31,7 +31,7 @@ dag_args["retry_delay"] = timedelta(minutes=5)
 
 logger = logging.getLogger(__name__)
 
-
+# context bliver ikke brugt til noget?
 def extract_transform(**context: dict) -> dict[str, str | bool]:
     # TODO: Add doc string
     insts_to_import_raw = Variable.get("delta_sd_insts_to_import", default_var="{}")
