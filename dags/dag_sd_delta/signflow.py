@@ -9,7 +9,7 @@ from airflow.hooks.base import BaseHook
 
 logger = logging.getLogger(__name__)
 
-
+# TODO: name suggestion: SignflowClient -> LogivaSignflowClient
 class SignflowClient:
     # TODO: add doc string
     def __init__(self, hook: BaseHook):
@@ -47,7 +47,7 @@ class SignflowClient:
         res = self.session.get(endpoint, params=params)
         res.raise_for_status()
 
-        # Hvad bruger du de resterende kolonner til?
+        # Hvad bruger du de resterende kolonner til? Kun 6 kolonner bliver brugt i koden
         column_names = [
             'Navn', 'CPR', 'Tildelt Login', 'Loginnavn', 'Fra dato', 'LOS', 'Handling',
             'Oprettelsestidspunkt', 'Sagsnummer', 'los1', 'los2', 'los3', 'los4', 'los5',
