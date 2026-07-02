@@ -2,7 +2,7 @@
 [**Formål**](#formål) | [**Beskrivelse**](#beskrivelse) | [**Afhængigheder**](#afh%C3%A6ngigheder) | [**Schedule**](#schedule)
 
 ## Formål
-
+# TODO: Formål afsnittet er misvisende. Du mangler at nævne at du henter ansættelses og personoplysninger fra SD
 Formålet med jobbet er at hente autorisationer fra Signflow, tjekke om der skal oprettes en bruger og indlæse i Delta.
 
 ## Beskrivelse
