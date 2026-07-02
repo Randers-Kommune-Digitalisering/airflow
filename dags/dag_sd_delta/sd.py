@@ -270,7 +270,7 @@ def get_person_on_date_df(inst_id: str, cpr: str, employment_id: str, effective_
             'PostalAddressIndicator': False
         }
     )
-    _check_for_fault(reponse=res)
+    _check_for_fault(response=res)
     root = ET.fromstring(res.content)
     person_nodes = root.findall('.//{*}Person')
 
