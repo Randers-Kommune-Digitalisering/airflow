@@ -5,7 +5,7 @@ from airflow.exceptions import AirflowFailException
 from rkdigi.email_handling import EmailReader
 from dag_vognpark.vognpark_data import (
     create_insubiz_vehicles_by_payloads,
-    read_vehicle_ids_to_delete_from_excel_bytes,
+    read_vehicle_ids_to_update_from_excel_bytes,
     close_insubiz_vehicles_by_ids,
     find_latest_attachment,
     read_vehicles_to_add_from_excel_bytes,
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def process_vognpark_sync_changes() -> None:
     """
-    Create and delete vehicles in Insubiz based on the latest Excel data.
+    Create and update vehicles in Insubiz based on the latest Excel data.
     """
     insubiz_hook = HttpHook(http_conn_id="insubiz_cloud_api")
 
@@ -42,7 +42,7 @@ def process_vognpark_sync_changes() -> None:
         f"{attachment_name} ({len(excel_bytes)} bytes)"
     )
 
-    vehicle_ids_to_delete = read_vehicle_ids_to_delete_from_excel_bytes(
+    vehicle_ids_to_update = read_vehicle_ids_to_update_from_excel_bytes(
         excel_bytes=excel_bytes,
     )
 
@@ -50,9 +50,9 @@ def process_vognpark_sync_changes() -> None:
         excel_bytes=excel_bytes
     )
 
-    deleted_count = close_insubiz_vehicles_by_ids(
+    updated_count = close_insubiz_vehicles_by_ids(
         http_hook=insubiz_hook,
-        vehicle_ids=vehicle_ids_to_delete,
+        vehicle_ids=vehicle_ids_to_update,
     )
 
     created_count = create_insubiz_vehicles_by_payloads(
@@ -60,4 +60,4 @@ def process_vognpark_sync_changes() -> None:
         payloads=vehicles_to_create_payloads,
     )
 
-    logger.info(f"Vognpark sync completed. Deleted={deleted_count}, Created={created_count}")
+    logger.info(f"Vognpark sync completed. Updated={updated_count}, Created={created_count}")

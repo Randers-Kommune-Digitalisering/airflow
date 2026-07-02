@@ -393,7 +393,7 @@ def close_insubiz_vehicles_by_ids(
     return updated
 
 
-def read_vehicle_ids_to_delete_from_excel_bytes(
+def read_vehicle_ids_to_update_from_excel_bytes(
     excel_bytes: bytes,
     sheet_name: str = "Skal slettes",
     id_column: str = "id",
