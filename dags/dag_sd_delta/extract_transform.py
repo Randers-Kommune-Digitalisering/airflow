@@ -20,6 +20,7 @@ from dag_sd_delta.sd import (
 logger = logging.getLogger(__name__)
 
 # Import and transform changes section
+# TODO: mere passende navn: EMPLOYMENT_STATUS_META?
 STATUS_META = {
     "0": {"label": "Ansat ikke i løn", "group": "ACTIVE"},
     "1": {"label": "Aktiv", "group": "ACTIVE"},
@@ -55,6 +56,7 @@ def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) 
     Falls back to level 3 when level 2 does not exist in the hierarchy.
     """
 
+    # TODO: add doc string
     def _node_text(node: ET.Element | None) -> str | None:
         return node.text.strip() if node is not None and node.text else None
 
@@ -143,6 +145,7 @@ def _format_date_series(date_series: pd.Series) -> pd.Series:
     # TODO: Update doc string with input and output types
     """Format date-like values to dd.mm.yyyy for final output."""
 
+    # TODO: add doc string
     def _format_date_value(value: object) -> str:
         date_text = str(value).strip()
         if date_text == "9999-12-31":
@@ -478,6 +481,7 @@ def build_output_df(
     job_position_ids = employment_changes_df["JobPositionIdentifier"]
     profession_name_cache: dict[str, tuple[str | None, str | None, str | None, str | None]] = {}
 
+    # add doc string
     def _resolve_profession_names(position_id_value: object) -> tuple[str | None, str | None, str | None, str | None]:
         if pd.isna(position_id_value):
             raise ValueError(
