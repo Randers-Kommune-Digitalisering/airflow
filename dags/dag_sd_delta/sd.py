@@ -65,7 +65,7 @@ def _xml_to_df_with_exploded_elements(
                 rows.append(row)
 
     df = pd.DataFrame(rows)
-
+    # TODO: add doc string + type hint
     def parse_date_value(value):
         if pd.isna(value):
             return None
