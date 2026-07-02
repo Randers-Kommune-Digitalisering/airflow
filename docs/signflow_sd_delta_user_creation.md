@@ -6,7 +6,6 @@
 Formålet med jobbet er at hente autorisationer fra Signflow, tjekke om der skal oprettes en bruger og indlæse i Delta.
 
 ## Beskrivelse
-# TODO: Mere teknisk beskrivende i flowet
 Henter autorisationer fra Signflow og tjekker, om der er en ansættelse i Delta. Hvis der er, og den ikke har en bruger, trækkes data fra SD for ansættelsen, og det tilføjes til en excelfil. Der sættes et 'x' i kolonnen "Handling", og filen indlæses i Delta, som derefter opretter en bruger.
 
 # TODO: Et punkt til Inputkrav:
