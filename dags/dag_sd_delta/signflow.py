@@ -32,6 +32,7 @@ class SignflowClient:
     # TODO: add doc string
     def get_authorizations(self) -> pd.DataFrame:
         endpoint = f'{self.url}/usr/ShowDocument'
+        # Er der dokumentation til API'et? 
         params = {'mode': 0, 'FolderStatus_FolderStatusOid': 373, 'sortOrder': 'd', 'sortcolumn': -1, 'pageBeginning': 0, 'csv': 'true'}
 
         # returns html on first request - ignore response
@@ -46,6 +47,7 @@ class SignflowClient:
         res = self.session.get(endpoint, params=params)
         res.raise_for_status()
 
+        # Hvad bruger du de resterende kolonner til?
         column_names = [
             'Navn', 'CPR', 'Tildelt Login', 'Loginnavn', 'Fra dato', 'LOS', 'Handling',
             'Oprettelsestidspunkt', 'Sagsnummer', 'los1', 'los2', 'los3', 'los4', 'los5',
