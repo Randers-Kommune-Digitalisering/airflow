@@ -29,6 +29,7 @@ AUTH_ROLES_MAPPING = {
     "Nexus": ["Nexus"],
     "Affaldsterminal": ["Affaldsterminal"],
     "Vognpark": ["Vognpark"],
+    "Modregning": ["Modregning"],
 }
 
 PROVIDER_NAME = "keycloak"
