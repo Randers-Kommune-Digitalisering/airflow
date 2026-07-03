@@ -96,19 +96,6 @@ Eksempel:
 }
 ```
 
-## Schedule og dato interval
+## Schedule
 
-
-DAG’en er planlagt til at køre kl. 09:00 den 15. i hver måned. For hver kørsel beregnes dato-intervallet ud fra Airflows `logical_date `(konverteret til DAG’ens timezone og trunkeret til dato):
-
-- `slut_dato` = datoen for `logical_date`
-- `start_dato` = 1. dag i måneden før `logical_date`
-
-
-Det betyder, at en planlagt kørsel den 15. i måneden typisk dækker perioden fra 1. i forrige måned til 15. i indeværende måned (inkl.).
-
-**Eksempel:**
-
-Kørsel: 2026-05-15 kl. 09:00 --->  `logical_date` = 2026-05-15
-- `start_dato` = 2026-04-01
-- `slut_dato` = 2026-05-15
+Betalingskontoret har adgang til UI'en i Airflow med rollen: `Modregning` hvor de kun kan se det DAG som tilhører Modregning. Her kan de selv trigger DAG'et efter eget behov.
