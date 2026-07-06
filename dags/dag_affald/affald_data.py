@@ -1064,9 +1064,6 @@ def mp_waste_amount_data(
 
     all_rows: list[dict[str, Any]] = []
 
-    total_count: int | None = None
-    max_pages: int | None = None
-
     while True:
         logger.info(f"Fetching MP data page={page} page_size={page_size} ...")
 
@@ -1088,45 +1085,12 @@ def mp_waste_amount_data(
         body = res.json()
         data = body.get("data", [])
 
-        # find totalcount on first page and compute expected max pages
-        if total_count is None:
-            total_count = int(body.get("totalCount", 0))
-            max_pages = math.ceil(total_count / page_size) if total_count else 0
+        all_rows.extend(data)
 
-            logger.info(f"MP totalCount={total_count}, expected_pages={max_pages}")
+        logger.info(f"Fetched {len(data)} records from page {page}. Total so far: {len(all_rows)}")
 
-        years = [
-            row.get("activityYear")
-            for row in data
-            if row.get("activityYear") is not None
-        ]
-
-        months = [
-            int(row.get("activityMonth"))
-            for row in data
-            if row.get("activityMonth") is not None
-        ]
-
-        total_so_far_after = len(all_rows) + len(data)
-        logger.info(
-            f"MP page={page} status={res.status_code} rows={len(data)} years={sorted(set(years)) if years else []} "
-            f"months={sorted(set(months)) if months else []} total_so_far={total_so_far_after}"
-        )
-
-        # save data if the page is not empty
-        if data:
-            all_rows.extend(data)
-        elif (total_count or 0) > 0:
-            logger.warning(f"MP page={page} returned 0 rows although totalCount={total_count}")
-
-        # stop when reaching the last expected page
-        if max_pages is not None:
-            if max_pages == 0:
-                logger.info("MP totalCount=0; no pages to fetch.")
-                break
-            if page >= max_pages:
-                logger.info(f"Reached last expected page {page}/{max_pages}")
-                break
+        if len(data) == 0:
+            break
 
         page += 1
 
