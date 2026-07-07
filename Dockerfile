@@ -36,6 +36,6 @@ ENV CERT_BASE_PATH=/opt/airflow/dags/repo/dags/certs
 
 COPY requirements.txt /requirements.txt
 
-RUN cp /tmp/base_constraints.txt /tmp/custom_constraints.txt && while read -r line; do [[ "$line" =~ ^[[:space:]]*# ]] && continue; [[ -z "$line" ]] && continue; pkg=$(echo "$line" | sed -E 's/(==|>=|<=|<|>).*//' | xargs); sed -i -E "/^${pkg}==/d" /tmp/custom_constraints.txt; done < /requirements.txt
+RUN pip install --no-cache-dir -r /requirements.txt
 
-RUN pip install --no-cache-dir -r /requirements.txt --constraint /tmp/custom_constraints.txt
+RUN pip install --no-cache-dir -r /requirements.txt --upgrade --upgrade-strategy eager --constraint /tmp/base_constraints.txt
