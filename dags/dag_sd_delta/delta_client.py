@@ -16,14 +16,16 @@ class DeltaClient:
         self,
         hook: BaseHook
     ):
-        # TODO: Update doc string with input type
         """
         Client for Delta API (singleton)
+
+        Args:
+            hook (BaseHook): Airflow hook with Delta connection details
         """
         if getattr(self, "_initialized", False):
             return
 
-        self.session = ManagedOAuth2Session(
+        self._session = ManagedOAuth2Session(
             token_url=hook.extra_dejson["token_url"],
             client_id=hook.login,
             client_secret=hook.password
@@ -40,8 +42,16 @@ class DeltaClient:
         return cls._instance
 
     def get_active_engagement_id(self, engagement_key: str, valid_date: date) -> str | None:
-        # TODO: Update doc string with input and output types
-        """Fetches active engagement uuid from Delta by key. Returns None if no active engagement found."""
+        """
+        Fetches active engagement uuid from Delta by key. Returns None if no active engagement found.
+
+        Args:
+            engagement_key (str): The key of the engagement to fetch.
+            valid_date (date): The date to check for active engagements.
+
+        Returns:
+            str | None: The UUID of the active engagement, or None if no active engagement is found.
+        """
         query = {
             "queries": [
                 {
@@ -66,7 +76,7 @@ class DeltaClient:
             ]
         }
 
-        res = self.session.post(self._query_url, json=query)
+        res = self._session.post(self._query_url, json=query)
         res.raise_for_status()
         if "queryResults" not in res.json():
             raise ValueError(f"Unexpected response format: {res.text}")
@@ -89,7 +99,16 @@ class DeltaClient:
         return None
 
     def deactivate_engagement(self, uuid: str, from_date: date) -> bool:
-        # TODO: add doc strings
+        """
+        Deactivates an engagement in Delta by setting its state to STATE_INACTIVE.
+
+        Args:
+            uuid (str): The UUID of the engagement to deactivate.
+            from_date (date): The date from which the engagement should be deactivated.
+
+        Returns:
+            bool: True if the engagement was successfully deactivated, False otherwise.
+        """
         query = {
             "transaction": "ALL",
             "objectUpdateList": [
@@ -115,7 +134,7 @@ class DeltaClient:
             ]
         }
 
-        res = self.session.post(self._update_url, json=query)
+        res = self._session.post(self._update_url, json=query)
         res.raise_for_status()
         res_json = res.json()
 
@@ -126,15 +145,22 @@ class DeltaClient:
             return False
 
     def upload_sd_excel_file(self, file_path: str) -> str:
-        # TODO: Update doc string with input and output types
-        """Uploads an Excel file from a local path to Delta and returns the process instance id."""
+        """
+        Uploads an Excel file from a local path to Delta and returns the process instance id.
+
+        Args:
+            file_path (str): The path to the Excel file to upload.
+
+        Returns:
+            str: The process instance id of the uploaded file.
+        """
         path = Path(file_path)
         file_content = path.read_bytes()
         multipart_form_data = {
             'file': (path.name, file_content, 'application/vnd.ms-excel')
         }
 
-        res = self.session.post(
+        res = self._session.post(
             self._sd_integration_url,
             files=multipart_form_data
         )
@@ -151,8 +177,17 @@ class DeltaClient:
         return str(process_instance_id)
 
     def get_engagement_by_los_and_cpr(self, los: str, cpr: str, valid_date: date) -> list[dict]:
-        # TODO: Update doc string with input and output types
-        """Fetches engagement from Delta by LOS and CPR. Returns None if no active engagement found."""
+        """
+        Fetches engagement from Delta by LOS and CPR. Returns None if no active engagement found.
+
+        Args:
+            los (str): The LOS to filter engagements.
+            cpr (str): The CPR to filter engagements.
+            valid_date (date): The date to check for active engagements.
+
+        Returns:
+            list[dict]: A list of engagements matching the criteria, or an empty list if none found.
+        """
         query = {
             "graphQueries": [
                 {
@@ -260,7 +295,7 @@ class DeltaClient:
             ]
         }
 
-        res = self.session.post(self._graph_query_url, json=query)
+        res = self._session.post(self._graph_query_url, json=query)
         res.raise_for_status()
         if "graphQueryResult" not in res.json():
             raise ValueError(f"Unexpected response format: {res.text}")

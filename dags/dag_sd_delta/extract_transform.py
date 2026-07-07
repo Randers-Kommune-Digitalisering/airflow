@@ -20,8 +20,7 @@ from dag_sd_delta.sd import (
 logger = logging.getLogger(__name__)
 
 # Import and transform changes section
-# TODO: mere passende navn: EMPLOYMENT_STATUS_META?
-STATUS_META = {
+EMPLOYMENT_STATUS_META = {
     "0": {"label": "Ansat ikke i løn", "group": "ACTIVE"},
     "1": {"label": "Aktiv", "group": "ACTIVE"},
     "3": {"label": "Midlertidig ude af løn", "group": "ACTIVE"},
@@ -50,10 +49,16 @@ OUT_COLUMNS = [
 
 
 def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) -> tuple[str | None, str | None, str | None, str | None]:
-    # TODO: Update doc string with input and output types
-    """Resolve profession and level-2 profession metadata for a job position id.
-
+    """
+    Resolve profession and level-2 profession metadata for a job position id.
     Falls back to level 3 when level 2 does not exist in the hierarchy.
+
+    Args:
+        professions_xml (ET.Element): The root element of the professions XML.
+        position_id (str): The job position identifier to look for.
+
+    Returns:
+        tuple[str | None, str | None, str | None, str | None]: A tuple containing the matched profession name, matched profession ID, level 2 profession name, and level 2 profession ID.
     """
 
     # TODO: add doc string
@@ -103,8 +108,15 @@ def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) 
 
 
 def _parse_iso_date_or_none(value: object) -> date | None:
-    # TODO: Update doc string with input and output types
-    """Parse supported date-like values to python date, returning None for missing values."""
+    """
+    Parse supported date-like values to python date, returning None for missing values.
+    
+    Args:
+        value (object): The input value to parse, which can be a string, datetime, date, or None.
+
+    Returns:
+        date | None: The parsed date, or None if the input value is missing or invalid.
+    """
     if pd.isna(value):
         return None
     if isinstance(value, datetime):
@@ -117,22 +129,46 @@ def _parse_iso_date_or_none(value: object) -> date | None:
 
 
 def _max_non_null_date(row: pd.Series, columns: list[str]) -> date | None:
-    # TODO: Update doc string with input and output types
-    """Return max non-null date among the provided columns for a row."""
+    """
+    Return max non-null date among the provided columns for a row.
+    
+    Args:
+        row (pd.Series): The row of data to evaluate.
+        columns (list[str]): The list of column names to consider for finding the maximum date.
+
+    Returns:
+        date | None: The maximum date found among the specified columns, or None if all values are null.
+    """
     values = [row[column_name] for column_name in columns if pd.notna(row[column_name])]
     return max(values) if values else None
 
 
 def _min_non_null_date(row: pd.Series, columns: list[str]) -> date | None:
-    # TODO: Update doc string with input and output types
-    """Return min non-null date among the provided columns for a row."""
+    """
+    Return min non-null date among the provided columns for a row.
+
+    Args:
+        row (pd.Series): The row of data to evaluate.
+        columns (list[str]): The list of column names to consider for finding the minimum date.
+
+    Returns:
+        date | None: The minimum date found among the specified columns, or None if all values are null.
+    """
     values = [row[column_name] for column_name in columns if pd.notna(row[column_name])]
     return min(values) if values else None
 
 
 def _format_name_with_code(name_value: object, code_value: object) -> str:
-    # TODO: Update doc string with input and output types
-    """Format a human-readable label with code; fail on missing required values."""
+    """
+    Format a human-readable label with code; fail on missing required values.
+
+    Args:
+        name_value (object): The name value to include in the label.
+        code_value (object): The code value to include in the label.
+
+    Returns:
+        str: The formatted label.
+    """
     if pd.notna(name_value) and pd.notna(code_value):
         return f"{name_value} ({code_value})"
     raise ValueError(
@@ -142,11 +178,26 @@ def _format_name_with_code(name_value: object, code_value: object) -> str:
 
 
 def _format_date_series(date_series: pd.Series) -> pd.Series:
-    # TODO: Update doc string with input and output types
-    """Format date-like values to dd.mm.yyyy for final output."""
+    """
+    Format date-like values to dd.mm.yyyy for final output.
 
-    # TODO: add doc string
+    Args:
+        date_series (pd.Series): A pandas Series containing date-like values.
+
+    Returns:
+        pd.Series: A pandas Series with formatted date strings.
+    """
+
     def _format_date_value(value: object) -> str:
+        """
+        Format a single date-like value to dd.mm.yyyy, handling special cases.
+
+        Args:
+            value (object): A date-like value to format.
+
+        Returns:
+            str: The formatted date string.
+        """
         date_text = str(value).strip()
         if date_text == "9999-12-31":
             return "31.12.9999"
@@ -157,8 +208,15 @@ def _format_date_series(date_series: pd.Series) -> pd.Series:
 
 
 def _collect_source_date_columns(employment_changes_df: pd.DataFrame) -> tuple[list[str], list[str]]:
-    # TODO: Update doc string with input and output types
-    """Return available activation and deactivation source date columns."""
+    """
+    Return available activation and deactivation source date columns.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+
+    Returns:
+        tuple[list[str], list[str]]: Two lists containing the names of activation and deactivation source date columns, respectively.
+    """
     activation_source_columns = [
         column_name
         for column_name in [
@@ -181,13 +239,20 @@ def _collect_source_date_columns(employment_changes_df: pd.DataFrame) -> tuple[l
 
 
 def _normalize_and_filter_status_periods(employment_changes_df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Normalize status groups and keep rows relevant for period shaping."""
+    """
+    Normalize status groups and keep rows relevant for period shaping.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with normalized status groups and filtered rows.
+    """
     employment_changes_df = employment_changes_df.copy()
 
     employment_changes_df["EmploymentStatusGroup"] = employment_changes_df[
         "EmploymentStatus_EmploymentStatusCode"
-    ].map(lambda status_code: STATUS_META.get(status_code, {}).get("group") or "UNKNOWN")
+    ].map(lambda status_code: EMPLOYMENT_STATUS_META.get(status_code, {}).get("group") or "UNKNOWN")
 
     employment_group_columns = [
         column_name
@@ -210,8 +275,15 @@ def _normalize_and_filter_status_periods(employment_changes_df: pd.DataFrame) ->
 
 
 def _compute_period_columns(employment_changes_df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Build ActivationDate/DeactivationDate columns from source components and filter invalid periods."""
+    """
+    Build ActivationDate/DeactivationDate columns from source components and filter invalid periods.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with computed period columns and filtered rows.
+    """
     employment_changes_df = employment_changes_df.copy()
 
     activation_source_columns, deactivation_source_columns = _collect_source_date_columns(
@@ -240,8 +312,15 @@ def _compute_period_columns(employment_changes_df: pd.DataFrame) -> pd.DataFrame
 
 
 def _merge_contiguous_periods(employment_changes_df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Merge adjacent periods that belong to the same employment identity and metadata."""
+    """
+    Merge adjacent periods that belong to the same employment identity and metadata.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with merged contiguous periods.
+    """
     employment_changes_df = employment_changes_df.copy()
 
     employment_changes_df = employment_changes_df.drop(
@@ -325,8 +404,16 @@ def _merge_contiguous_periods(employment_changes_df: pd.DataFrame) -> pd.DataFra
 
 
 def _prepare_for_enrichment(employment_changes_df: pd.DataFrame, persons_df: pd.DataFrame) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Rename flattened columns and enrich with person name columns from persons snapshot."""
+    """
+    Rename flattened columns and enrich with person name columns from persons snapshot.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+        persons_df (pd.DataFrame): A pandas DataFrame containing person snapshot data.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with renamed columns and enriched person name columns.
+    """
     employment_changes_df = employment_changes_df.rename(
         columns=lambda column_name: column_name.split("_", 1)[1]
         if "_" in column_name
@@ -355,8 +442,17 @@ def _enrich_row_with_snapshot(
     row_index: int,
     inst_id: str,
 ) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Enrich one row with point-in-time employment/person snapshots for missing fields."""
+    """
+    Enrich one row with point-in-time employment/person snapshots for missing fields.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+        row_index (int): The index of the row to enrich.
+        inst_id (str): The institution ID.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with the enriched row.
+    """
     row = employment_changes_df.loc[row_index]
     cpr = row.get("PersonCivilRegistrationIdentifier")
     employment_id = row.get("EmploymentIdentifier")
@@ -429,8 +525,16 @@ def _enrich_with_snapshots(
     employment_changes_df: pd.DataFrame,
     inst_id: str,
 ) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Enrich rows with missing values using point-in-time snapshots."""
+    """
+    Enrich rows with missing values using point-in-time snapshots.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+        inst_id (str): The institution ID.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with enriched rows.
+    """
     rows_with_missing_values = set(
         employment_changes_df.index[employment_changes_df.isna().any(axis=1)].tolist()
     )
@@ -453,8 +557,19 @@ def build_output_df(
     start_time: datetime,
     prof_name_mapping_xml: ET.Element,
 ) -> pd.DataFrame:
-    # TODO: Update doc string with input and output types
-    """Build final output dataframe for one institution."""
+    """
+    Build final output dataframe for one institution.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing employment changes data.
+        inst_id (str): The institution ID.
+        inst_name_mapping_df (pd.DataFrame): A pandas DataFrame containing institution name mappings.
+        start_time (datetime): The start time for the data extraction.
+        prof_name_mapping_xml (ET.Element): An XML element containing profession name mappings.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with the final output for the institution.
+    """
     status_code_series = employment_changes_df["EmploymentStatusCode"]
 
     institution_name_match = inst_name_mapping_df.loc[
@@ -481,8 +596,16 @@ def build_output_df(
     job_position_ids = employment_changes_df["JobPositionIdentifier"]
     profession_name_cache: dict[str, tuple[str | None, str | None, str | None, str | None]] = {}
 
-    # add doc string
     def _resolve_profession_names(position_id_value: object) -> tuple[str | None, str | None, str | None, str | None]:
+        """
+        Resolve profession names for a given position ID.
+
+        Args:
+            position_id_value (object): The position ID value.
+
+        Returns:
+            tuple[str | None, str | None, str | None, str | None]: A tuple containing profession names and IDs.
+        """
         if pd.isna(position_id_value):
             raise ValueError(
                 "Missing required value(s) for profession: "
@@ -534,7 +657,7 @@ def build_output_df(
     out_df["Startdato"] = _format_date_series(employment_changes_df["ActivationDate"])
     out_df["Slutdato"] = _format_date_series(employment_changes_df["DeactivationDate"])
     out_df["Ansættelsesstatus"] = status_code_series.map(
-        lambda status_code: STATUS_META.get(status_code, {}).get("label", status_code)
+        lambda status_code: EMPLOYMENT_STATUS_META.get(status_code, {}).get("label", status_code)
     )
     out_df["Tjenestenummer"] = employment_changes_df["EmploymentIdentifier"]
     out_df["Afdeling"] = employment_changes_df["DepartmentIdentifier"]
@@ -555,9 +678,17 @@ def _prepare_institution_changes(
     start_time: datetime,
     end_time: datetime,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    # TODO: Update doc string with input and output types
     """
     Fetch and normalize changed employment rows for one institution.
+
+    Args:
+        inst_id (str): The institution ID.
+        excluded_dept_ids (list[str]): A list of department IDs to exclude.
+        start_time (datetime): The start time for the data extraction.
+        end_time (datetime): The end time for the data extraction.
+
+    Returns:
+        tuple[pd.DataFrame, pd.DataFrame]: A tuple containing two pandas DataFrames: one for non-deleted employment changes and one for deleted employment changes.
     """
     # Fetch all changes in the period for institution from SD
     employment_changes_df = get_employments_with_changes_df(
@@ -594,8 +725,19 @@ def _process_one_institution(
     start_time: datetime,
     end_time: datetime,
 ) -> tuple[pd.DataFrame, list[dict]]:
-    # TODO: Update doc string with input and output types
-    """Run the full transformation pipeline for one institution and return output rows."""
+    """
+    Run the full transformation pipeline for one institution and return output rows.
+
+    Args:
+        inst_name_mapping_df (pd.DataFrame): A pandas DataFrame containing institution name mappings.
+        prof_name_mapping_xml (ET.Element): An XML element containing profession name mappings.
+        inst (dict): A dictionary containing institution details.
+        start_time (datetime): The start time for the data extraction.
+        end_time (datetime): The end time for the data extraction.
+
+    Returns:
+        tuple[pd.DataFrame, list[dict]]: A tuple containing a pandas DataFrame with the final output for the institution and a list of deleted employment records.
+    """
     inst_id = inst["inst_id"]
     excluded_dept_ids = inst["excluded_dept_ids"]
 
@@ -661,11 +803,18 @@ def get_and_transform_changes(
     start_time: datetime,
     end_time: datetime,
 ) -> dict[str, str | bool]:
-    # TODO: Update doc string with input and output types
     """
     Main DAG business flow.
-
     Fetch institutions, process each institution and write a combined excel file when there are changes.
+
+    Args:
+        insts_to_import (list[dict]): A list of dictionaries containing institution details to import.
+        start_time (datetime): The start time for the data extraction.
+        end_time (datetime): The end time for the data extraction.
+
+
+    Returns:
+        dict[str, str | bool]: A dictionary containing the start time, end time, report path, and deleted employments.
     """
     # Read institution and profession mapping once and reuse for all institutions.
     inst_name_mapping_df = get_institutions_df()

@@ -2,18 +2,19 @@
 [**Formål**](#formål) | [**Beskrivelse**](#beskrivelse) | [**Afhængigheder**](#afh%C3%A6ngigheder) | [**Schedule**](#schedule)
 
 ## Formål
-# TODO: Formål afsnittet er misvisende. Du mangler at nævne at du henter ansættelses og personoplysninger fra SD
-Formålet med jobbet er at hente autorisationer fra Signflow, tjekke om der skal oprettes en bruger og indlæse i Delta.
+Formålet med jobbet er at hente autorisationer fra Logiva Signflow, tjekke i Delta om der skal oprettes en bruger, hent data fra SD og indlæs i Delta.
 
 ## Beskrivelse
-Henter autorisationer fra Signflow og tjekker, om der er en ansættelse i Delta. Hvis der er, og den ikke har en bruger, trækkes data fra SD for ansættelsen, og det tilføjes til en excelfil. Der sættes et 'x' i kolonnen "Handling", og filen indlæses i Delta, som derefter opretter en bruger.
+Henter autorisationer fra Logiva Signflow og tjekker, om der er en ansættelse i Delta. Hvis der er, og den ikke har en bruger, trækkes data fra SD for ansættelsen, og det tilføjes til en excelfil. Der sættes et 'x' i kolonnen "Handling" (hvilket trigger at Delta opretter en relation imellem en bruger og ansættelse), og filen indlæses i Delta, som derefter opretter en bruger.
 
-# TODO: Et punkt til Inputkrav:
-Forklar om den præcise forventning til Signflow data(kolonner, encoding)
+Der genereres og uploades kun en fil ti lDelta hvis der er nogle ansættelser der mangler brugere.
 
-# TODO: Et punkt til Output
-Forklar om Excel filen der bliver generet til Delta import...
-Forklar output med filnavn, kolonner og cases hvor der ikke uploades noget
+### Logiva Signflow data
+CSV-fil hentet fra Logiva Signflow er cp1252 encoded med tabs som seperator.
+Filen indeholder kolonnerne: 'Navn', 'CPR', 'Tildelt Login', 'Loginnavn', 'Fra dato', 'LOS', 'Handling', 'Oprettelsestidspunkt', 'Sagsnummer', 'los1', 'los2', 'los3', 'los4', 'los5', 'los6', 'los7', 'los8', 'los9', 'lederemail'
+
+### Delta excelfil 
+Delta forventer en excelfil med ét ark der har kolonnerne: "Institutions-niveau", "Stamafdeling", "CPR-nummer", "Navn (for-/efternavn)", "Stillingskode nuværende", "Stillingskode niveau 2", "Startdato", "Slutdato", "Ansættelsesstatus", "Tjenestenummer", "Afdeling", "Handling"
 
 **Dataflow:**
 - Data fra Signflow → tjek Delta → hent data fra SD → lav excelfil → upload filen til Delta

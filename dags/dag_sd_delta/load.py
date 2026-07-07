@@ -13,8 +13,16 @@ def handle_deleted_employments(
     delta_client: DeltaClient,
     deleted_employments: list[dict] | None,
 ) -> dict[str, str]:
-    # TODO: Update doc string with input and output types
-    """Handle employments marked as deleted in SD by checking point-in-time snapshots and marking engagements as inactive in Delta."""
+    """
+    Handle employments marked as deleted in SD by checking point-in-time snapshots and marking engagements as inactive in Delta.
+
+    Args:
+        delta_client (DeltaClient): An instance of the DeltaClient.
+        deleted_employments (list[dict] | None): A list of dictionaries containing deleted employment details.
+
+    Returns:
+        dict[str, str]: A dictionary containing the log HTML.
+    """
     log_collector = get_log_collector()
     root_logger = logging.getLogger()
     root_logger.addHandler(log_collector)
@@ -64,8 +72,16 @@ def handle_deleted_employments(
 
 
 def upload_excel_file_to_delta(delta_client: DeltaClient, file_path: str | None) -> dict[str | None, str]:
-    # TODO: Update doc string with input and output types
-    """Upload the generated excel file to Delta and return upload status HTML and process id."""
+    """
+    Upload the generated excel file to Delta and return upload status HTML and process id.
+
+    Args:
+        delta_client (DeltaClient): An instance of the DeltaClient.
+        file_path (str | None): The path to the excel file to be uploaded. If None, no upload will be performed.
+
+    Returns:
+        dict[str | None, str]: A dictionary containing the process instance ID and upload status HTML.   
+    """
 
     if file_path is None:
         return {
