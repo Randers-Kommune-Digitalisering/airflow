@@ -15,7 +15,7 @@ IGNORE_CPRS = Variable.get("NOVAX_IGNORE_CPRS", default_var="").split(",")
 
 with DAG(
     dag_id="dag_novax_district_control_followup",
-    start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=6, day=15, tz=timezone("Europe/Copenhagen")),
     schedule="15 1 * * 1",
     default_args=dag_args,
     catchup=False,

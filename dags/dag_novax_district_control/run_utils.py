@@ -6,7 +6,6 @@ from airflow.operators.python import get_current_context
 from airflow.utils import timezone
 from airflow.utils.session import create_session
 from airflow.utils.state import DagRunState
-from airflow.utils.types import DagRunType
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +31,7 @@ def determine_date_range() -> tuple[datetime.date, datetime.date]:
             session.query(DagRun)
             .filter(
                 DagRun.dag_id == dag_id,
-                DagRun.state == DagRunState.SUCCESS,
-                DagRun.run_type == DagRunType.SCHEDULED,
+                DagRun.state == DagRunState.SUCCESS
             )
             .order_by(DagRun.data_interval_end.desc(), DagRun.execution_date.desc())
             .first()

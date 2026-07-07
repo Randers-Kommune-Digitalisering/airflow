@@ -1,5 +1,5 @@
+apache-airflow-providers-microsoft-azure==13.5.0
 apache-airflow-providers-microsoft-mssql==4.4.0
-apache-airflow-providers-postgres==6.2.0
 lxml==6.1.0
 msgraph-sdk==1.49.0
 openpyxl==3.1.5
@@ -12,3 +12,4 @@ geoalchemy2==0.18.1
 shapely==2.1.0
 rk-digi==2.2.0
 kombit-client==1.1.1
+PyMuPDF==1.24.14
