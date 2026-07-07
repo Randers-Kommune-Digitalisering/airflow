@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 # the excluded_ydelse_name list will from now on be maintained in Airflow Variables, so it can be updated without code changes
 excluded_cfg = Variable.get(
     "modregning_excluded_ydelse_list",
-    default_var='{"excluded_ydelse_name": []}',
+    default_var={"excluded_ydelse_name": []},  # Default var skal være et dict og ikke en streng ellers fejler excluded_cfg.get("excluded_ydelse_name", [])
     deserialize_json=True,
 )
 
