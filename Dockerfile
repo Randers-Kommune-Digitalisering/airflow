@@ -34,12 +34,6 @@ ENV CERT_BASE_PATH=/opt/airflow/dags/repo/dags/certs
 
 COPY requirements.txt /requirements.txt
 
-RUN python -c ' \
-import re; \
-reqs = [re.split(r"==|>=|<=|<|>", line)[0].strip() for line in open("/requirements.txt") if line.strip() and not line.startswith("#")]; \
-lines = open("/constraints-3.12.txt").readlines(); \
-filtered = [l for l in lines if not any(re.search(r"\b" + re.escape(r) + r"\b", l, re.IGNORECASE) for r in reqs)]; \
-open("/tmp/custom_constraints.txt", "w").writelines(filtered); \
-'
+RUN python -c 'import re; reqs = [re.split(r"==|>=|<=|<|>", l)[0].strip() for l in open("/requirements.txt") if l.strip() and not l.startswith("#")]; lines = open("/constraints-3.12.txt").readlines(); filtered = [l for l in lines if not any(re.search(r"\b" + re.escape(r) + r"\b", l, re.IGNORECASE) for r in reqs)]; open("/tmp/custom_constraints.txt", "w").writelines(filtered)'
 
 RUN pip install --no-cache-dir -r /requirements.txt --constraint /tmp/custom_constraints.txt
