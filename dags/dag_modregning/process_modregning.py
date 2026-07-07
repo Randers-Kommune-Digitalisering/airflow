@@ -127,7 +127,7 @@ def process_modregning() -> None:
             sender=sender,
             recipients=recipients,
             subject=f"Modregninger for {report_date}",
-            body=f"Liste af Modregning er vedhæftet: {report_date}",
+            body=f"Liste af Modregning er vedhæftet: fra {report_date} med Startdato {start_dato} og Slutdato {slut_dato}",
             attachments=[(filename, excel_bytes)],
         )
 
