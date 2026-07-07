@@ -21,7 +21,7 @@ class FakeEmailReader:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
 
-    def get_emails(self, mailbox, criteria, set_flags, del_flags):
+    def get_emails(self, mailbox, criteria, set_flags=None, del_flags=None):
         return list(self.emails), list(self.failed_ids)
 
     def delete_email_by_uid(self, uid, mailbox, expunge):
@@ -94,6 +94,41 @@ def test_process_aub_post_success_deletes_email(monkeypatch) -> None:
     assert FakeEmailSender.sent_messages[0]["subject"] == "AUB"
     assert FakeEmailSender.sent_messages[0]["body"].strip() == "Mail body"
     assert FakeEmailReader.deleted == [(b"1", "INBOX", True)]
+
+
+def test_process_aub_post_missing_attachment_is_warning_and_skipped(monkeypatch) -> None:
+    _set_defaults()
+    FakeEmailReader.emails = [_make_email(uid=b"missing-attachment", filename="other.pdf")]
+
+    monkeypatch.setattr(process_module.Variable, "get", lambda *args, **kwargs: _runtime_config())
+    monkeypatch.setattr(process_module.BaseHook, "get_connection", lambda _id: FakeConnection())
+    monkeypatch.setattr(process_module, "EmailReader", FakeEmailReader)
+    monkeypatch.setattr(process_module, "EmailSender", FakeEmailSender)
+
+    process_module.process_aub_post()
+
+    assert FakeEmailSender.sent_messages == []
+    assert FakeEmailReader.deleted == []
+
+
+def test_process_aub_post_missing_education_is_warning_and_skipped(monkeypatch) -> None:
+    _set_defaults()
+    FakeEmailReader.emails = [_make_email(uid=b"missing-education")]
+
+    monkeypatch.setattr(process_module.Variable, "get", lambda *args, **kwargs: _runtime_config())
+    monkeypatch.setattr(process_module.BaseHook, "get_connection", lambda _id: FakeConnection())
+    monkeypatch.setattr(process_module, "EmailReader", FakeEmailReader)
+    monkeypatch.setattr(process_module, "EmailSender", FakeEmailSender)
+    monkeypatch.setattr(
+        process_module,
+        "extract_education_from_pdf",
+        lambda _bytes: (_ for _ in ()).throw(ValueError("Could not find education in PDF text using the expected regex")),
+    )
+
+    process_module.process_aub_post()
+
+    assert FakeEmailSender.sent_messages == []
+    assert FakeEmailReader.deleted == []
 
 
 def test_process_aub_post_send_failure_raises_and_does_not_delete(monkeypatch) -> None:

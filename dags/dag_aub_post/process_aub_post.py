@@ -101,21 +101,33 @@ def process_aub_post() -> None:
         else:
             uid_text = str(uid)
 
+        attachment_bytes = b""
         education = None
+
+        # Find the target attachment in the email
         try:
             _, attachment_bytes = find_attachment_by_name(
                 message=message,
                 target_filename=_TARGET_ATTACHMENT_NAME,
             )
-            education = extract_education_from_pdf(attachment_bytes)
-
         except Exception as exc:
-            logger.warning("Failed to find or process attachment in email uid=%s: %s", uid_text, exc)
+            logger.warning("Skipped email uid=%s due to missing/unreadable attachment '%s': %s", uid_text, _TARGET_ATTACHMENT_NAME, exc)
             warnings.append(f"uid={uid_text}: {exc}")
-            # Do not raise exception here; some emails may not have the attachment, or it may be irrelevant.
+            # Do not raise exception here; some emails may not have the attachment.
             # Continue processing other emails.
             continue
 
+        # Extract the education from the PDF attachment
+        try:
+            education = extract_education_from_pdf(attachment_bytes)
+        except Exception as exc:
+            logger.warning("Skipped email uid=%s due to missing education in '%s': %s", uid_text, _TARGET_ATTACHMENT_NAME, exc)
+            warnings.append(f"uid={uid_text}: {exc}")
+            # Do not raise exception here; some emails with maindoc.pdf attachments may be irrelevant.
+            # Continue processing other emails.
+            continue
+
+        # Resolve the contact email based on the extracted education and send the email
         try:
             contact_email = resolve_contact_email(
                 education=education,
@@ -154,6 +166,7 @@ def process_aub_post() -> None:
             logger.error("Failed to process email uid=%s: %s", uid_text, exc)
             failures.append(f"uid={uid_text}: {exc}")
 
+    # Finalize processing: raise exception if there were failures
     if failures:
         _except = f"AUB post processing failed for {len(failures)} email(s)."
         if warnings:

@@ -18,7 +18,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 6. Sender email med vedhæftet `maindoc.pdf` til kontaktpersonen via rk-digi `EmailSender`.
 7. Sletter original email med `delete_email_by_uid(..., expunge=True)` efter succesfuld afsendelse.
 
-Hvis et eller flere trin fejler for en email, bliver den ikke slettet, og tasken fejler til sidst for at trigge Airflow retry.
+Hvis en email mangler `maindoc.pdf`, PDF-filen ikke kan læses, eller uddannelse ikke kan udtrækkes fra `maindoc.pdf`, logges det som warning og emailen springes over. Hvis kontaktperson ikke kan findes i `contacts_map`, eller afsendelse/sletning fejler (fx SMTP-fejl), bliver emailen ikke slettet, og tasken fejler til sidst for at trigge Airflow retry.
 
 **Dataflow:**
 - Email fra postkasse -> PDF udtræk -> uddannelsesmatch -> email routing -> sletning af original email.
