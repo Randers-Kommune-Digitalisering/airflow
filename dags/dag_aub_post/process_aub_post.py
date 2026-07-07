@@ -79,12 +79,10 @@ def process_aub_post() -> None:
 
     failures: list[str] = []
     warnings: list[str] = []
-    raise_exception = False
 
     if failed_ids:
         logger.error("Failed to fetch %d email(s) from mailbox: %s", len(failed_ids), ", ".join(failed_ids))
         failures.append(f"Could not fetch {len(failed_ids)} email(s) from mailbox")
-        raise_exception = True
 
     if not emails and not failed_ids:
         logger.info("No emails found in mailbox for AUB processing.")
@@ -96,7 +94,6 @@ def process_aub_post() -> None:
         if uid is None:
             logger.error("Email message is missing UID; skipping processing for this email.")
             failures.append("Skipped one email without UID")
-            raise_exception = True
             continue
 
         if isinstance(uid, bytes):
@@ -156,9 +153,8 @@ def process_aub_post() -> None:
         except Exception as exc:
             logger.error("Failed to process email uid=%s: %s", uid_text, exc)
             failures.append(f"uid={uid_text}: {exc}")
-            raise_exception = True
 
-    if raise_exception:
+    if failures:
         _except = f"AUB post processing failed for {len(failures)} email(s)."
         if warnings:
             _except += f" Additionally, {len(warnings)} email(s) had warnings."
