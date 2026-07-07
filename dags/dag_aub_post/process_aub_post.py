@@ -78,9 +78,13 @@ def process_aub_post() -> None:
     )
 
     failures: list[str] = []
+    warnings: list[str] = []
+    raise_exception = False
 
     if failed_ids:
+        logger.error("Failed to fetch %d email(s) from mailbox: %s", len(failed_ids), ", ".join(failed_ids))
         failures.append(f"Could not fetch {len(failed_ids)} email(s) from mailbox")
+        raise_exception = True
 
     if not emails and not failed_ids:
         logger.info("No emails found in mailbox for AUB processing.")
@@ -90,7 +94,9 @@ def process_aub_post() -> None:
     for message in emails:
         uid = getattr(message, "uid", None)
         if uid is None:
+            logger.error("Email message is missing UID; skipping processing for this email.")
             failures.append("Skipped one email without UID")
+            raise_exception = True
             continue
 
         if isinstance(uid, bytes):
@@ -98,19 +104,29 @@ def process_aub_post() -> None:
         else:
             uid_text = str(uid)
 
+        education = None
         try:
             _, attachment_bytes = find_attachment_by_name(
                 message=message,
                 target_filename=_TARGET_ATTACHMENT_NAME,
             )
             education = extract_education_from_pdf(attachment_bytes)
+
+        except Exception as exc:
+            logger.warning("Failed to find or process attachment in email uid=%s: %s", uid_text, exc)
+            warnings.append(f"uid={uid_text}: {exc}")
+            # Do not raise exception here; some emails may not have the attachment, or it may be irrelevant.
+            # Continue processing other emails.
+            continue
+
+        try:
             contact_email = resolve_contact_email(
                 education=education,
                 education_contact_map=education_contact_map,
             )
-
             subject = (message.get("Subject") or "").strip()
             body = ""
+
             if message.is_multipart():
                 body_part = message.get_body(preferencelist=("plain", "html"))
                 if body_part is not None:
@@ -138,11 +154,17 @@ def process_aub_post() -> None:
             logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
         except Exception as exc:
+            logger.error("Failed to process email uid=%s: %s", uid_text, exc)
             failures.append(f"uid={uid_text}: {exc}")
-            logger.exception("AUB processing failed for filename %s uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
+            raise_exception = True
 
-    if failures:
-        raise AirflowFailException(
-            f"AUB post processing failed for {len(failures)} email(s). "
-            "See task logs for details."
-        )
+    if raise_exception:
+        _except = f"AUB post processing failed for {len(failures)} email(s)."
+        if warnings:
+            _except += f" Additionally, {len(warnings)} email(s) had warnings."
+        _except += " See logs above for details."
+        raise AirflowFailException(_except)
+    else:
+        logger.info("AUB post processing completed.")
+        if warnings:
+            logger.warning("Some emails had warnings during processing. See logs above for details.")

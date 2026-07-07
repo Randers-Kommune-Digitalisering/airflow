@@ -123,7 +123,7 @@ def find_attachment_by_name(message: Message, target_filename: str = "maindoc.pd
 
         return filename, payload
 
-    raise ValueError(f"Attachment '{target_filename}' was not found")
+    raise ValueError(f"Attachment '{target_filename}' was not found. Found attachments: {[part.get_filename() for part in message.walk() if part.get_content_disposition() == 'attachment']}")
 
 
 def resolve_contact_email(education: str, education_contact_map: dict[str, str]) -> str:
@@ -136,5 +136,5 @@ def resolve_contact_email(education: str, education_contact_map: dict[str, str])
     """
     resolved_email = education_contact_map.get(_normalize_education(education))
     if not resolved_email:
-        raise ValueError("No contact email configured for extracted education")
+        raise ValueError(f"No contact email configured for extracted education: {education}")
     return resolved_email
