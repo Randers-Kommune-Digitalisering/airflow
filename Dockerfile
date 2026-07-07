@@ -33,4 +33,13 @@ ENV CVR_NUMBER="29189668"
 ENV CERT_BASE_PATH=/opt/airflow/dags/repo/dags/certs
 
 COPY requirements.txt /requirements.txt
-RUN pip install --no-cache-dir -r /requirements.txt --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.11.0/constraints-3.12.txt"
+
+RUN python -c ' \
+import re; \
+reqs = [re.split(r"==|>=|<=|<|>", line)[0].strip() for line in open("/requirements.txt") if line.strip() and not line.startswith("#")]; \
+lines = open("/constraints-3.12.txt").readlines(); \
+filtered = [l for l in lines if not any(re.search(r"\b" + re.escape(r) + r"\b", l, re.IGNORECASE) for r in reqs)]; \
+open("/tmp/custom_constraints.txt", "w").writelines(filtered); \
+'
+
+RUN pip install --no-cache-dir -r /requirements.txt --constraint /tmp/custom_constraints.txt
