@@ -26,8 +26,6 @@ COPY ["dags/certs/CA-Den Danske Stat OCES rod-CA.cer", "/usr/local/share/ca-cert
 COPY ["dags/certs/CA-Den Danske Stat OCES udstedende-CA 1.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-udstedende-CA-1.crt"]
 RUN update-ca-certificates
 
-RUN curl -fsSL "https://raw.githubusercontent.com/apache/airflow/constraints-2.11.0/constraints-3.12.txt" -o /tmp/base_constraints.txt && chmod 644 /tmp/base_constraints.txt
-
 USER airflow
 
 ENV CLIENT_CERT=
@@ -37,5 +35,3 @@ ENV CERT_BASE_PATH=/opt/airflow/dags/repo/dags/certs
 COPY requirements.txt /requirements.txt
 
 RUN pip install --no-cache-dir -r /requirements.txt
-
-RUN pip install --no-cache-dir -r /requirements.txt --upgrade --upgrade-strategy eager --constraint /tmp/base_constraints.txt
