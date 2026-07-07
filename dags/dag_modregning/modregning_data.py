@@ -8,18 +8,19 @@ from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
-# the excluded_ydelse_name list will from now on be maintained in Airflow Variables, so it can be updated without code changes
-excluded_cfg = Variable.get(
-    "modregning_excluded_ydelse_list",
-    default_var={"excluded_ydelse_name": []},  # Default var skal være et dict og ikke en streng ellers fejler excluded_cfg.get("excluded_ydelse_name", [])
-    deserialize_json=True,
-)
 
-excluded_ydelse_name = {
-    x.strip()
-    for x in excluded_cfg.get("excluded_ydelse_name", [])
-    if x and isinstance(x, str)
-}
+def get_excluded_ydelse_names() -> set[str]:
+    excluded_cfg = Variable.get(
+        "modregning_excluded_ydelse_list",
+        default_var={"excluded_ydelse_name": []},
+        deserialize_json=True,
+    )
+
+    return {
+        x.strip()
+        for x in excluded_cfg.get("excluded_ydelse_name", [])
+        if isinstance(x, str) and x
+    }
 
 
 def _normalize_cpr(value: str | None) -> str | None:
@@ -94,7 +95,7 @@ def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tu
             if not navn:
                 continue
 
-            if navn in excluded_ydelse_name:
+            if navn in get_excluded_ydelse_names():
                 continue
 
             ydelser.add(navn)
