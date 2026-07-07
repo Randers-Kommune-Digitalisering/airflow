@@ -17,9 +17,11 @@ class FakeEmailReader:
     emails = []
     failed_ids = []
     deleted = []
+    init_kwargs = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
+        self.init_kwargs.append(kwargs)
 
     def get_emails(self, mailbox, criteria, set_flags=None, del_flags=None):
         return list(self.emails), list(self.failed_ids)
@@ -74,6 +76,7 @@ def _set_defaults() -> None:
     FakeEmailReader.emails = []
     FakeEmailReader.failed_ids = []
     FakeEmailReader.deleted = []
+    FakeEmailReader.init_kwargs = []
     FakeEmailSender.sent_messages = []
     FakeEmailSender.should_fail = False
 
@@ -94,6 +97,38 @@ def test_process_aub_post_success_deletes_email(monkeypatch) -> None:
     assert FakeEmailSender.sent_messages[0]["subject"] == "AUB"
     assert FakeEmailSender.sent_messages[0]["body"].strip() == "Mail body"
     assert FakeEmailReader.deleted == [(b"1", "INBOX", True)]
+    assert FakeEmailReader.init_kwargs == [
+        {
+            "email": "mailbox@randers.dk",
+            "password": "secret",
+            "imap_server": "imap.example.com",
+            "imap_port": 143,
+        }
+    ]
+
+
+def test_process_aub_post_omits_imap_host_and_port_when_not_set(monkeypatch) -> None:
+    _set_defaults()
+    FakeEmailReader.emails = [_make_email(uid=b"5")]
+
+    class ConnectionWithoutHostPort(FakeConnection):
+        host = None
+        port = None
+
+    monkeypatch.setattr(process_module.Variable, "get", lambda *args, **kwargs: _runtime_config())
+    monkeypatch.setattr(process_module.BaseHook, "get_connection", lambda _id: ConnectionWithoutHostPort())
+    monkeypatch.setattr(process_module, "EmailReader", FakeEmailReader)
+    monkeypatch.setattr(process_module, "EmailSender", FakeEmailSender)
+    monkeypatch.setattr(process_module, "extract_education_from_pdf", lambda _bytes: "Pædagog")
+
+    process_module.process_aub_post()
+
+    assert FakeEmailReader.init_kwargs == [
+        {
+            "email": "mailbox@randers.dk",
+            "password": "secret",
+        }
+    ]
 
 
 def test_process_aub_post_missing_attachment_is_warning_and_skipped(monkeypatch) -> None:

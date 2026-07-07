@@ -64,10 +64,16 @@ def process_aub_post() -> None:
             "Connection 'aub_post_imap' must include login and password"
         )
 
-    email_reader = EmailReader(
-        email=aub_post_conn.login,
-        password=aub_post_conn.password,
-    )
+    email_reader_kwargs = {
+        "email": aub_post_conn.login,
+        "password": aub_post_conn.password,
+    }
+    if isinstance(aub_post_conn.host, str) and aub_post_conn.host.strip():
+        email_reader_kwargs["imap_server"] = aub_post_conn.host.strip()
+    if aub_post_conn.port is not None:
+        email_reader_kwargs["imap_port"] = int(aub_post_conn.port)
+
+    email_reader = EmailReader(**email_reader_kwargs)
 
     email_sender = EmailSender(smtp_server=smtp_server.strip())
 
