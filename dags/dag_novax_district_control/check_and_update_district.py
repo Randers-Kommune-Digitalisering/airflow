@@ -13,7 +13,6 @@ from dag_novax_district_control.run_utils import determine_date_range
 from dag_novax_district_control.model import Name, Godkommu, Note, PersonUsers, Phone
 from dag_novax_district_control.district_update_helpers import (
     clear_district_due_to_missing_address,
-    ensure_active,
     is_valid_cpr,
     update_address_from_dataforsyning,
     update_district_from_coordinates,
@@ -229,10 +228,6 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 # Kommune update in name and name details
                 is_new_kommunekode, is_new_kommunekode_details = update_kommunekode(entry=entry)
 
-            # Always-updates
-            # Ensure that the record is active
-            has_changed_active = ensure_active(entry=entry)
-
             # Set AnsvarsShpl to 'FIKTIV' if not already set
             has_changed_ansvarshpl = False
             if entry.AnsvarsShpl != 'FIKTIV':
@@ -286,7 +281,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     entry.ID,
                 )
 
-            if any([is_new_district, is_new_address_set, has_changed_active, has_changed_ansvarshpl, has_changed_personusers, is_new_kommunekode]):
+            if any([is_new_district, is_new_address_set, has_changed_ansvarshpl, has_changed_personusers, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 

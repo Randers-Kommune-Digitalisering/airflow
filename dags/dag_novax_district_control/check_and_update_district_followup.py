@@ -8,7 +8,6 @@ from dag_novax_district_control.clients.district_map_client import DistrictMapDB
 from dag_novax_district_control.clients.cpr_client import CPRClient
 from dag_novax_district_control.model import Name, NameDetails, Remind
 from dag_novax_district_control.district_update_helpers import (
-    ensure_active,
     is_valid_cpr,
     update_address_from_dataforsyning,
     update_district_from_coordinates,
@@ -146,10 +145,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
                 # Kommune update in name and name details
                 is_new_kommunekode, is_new_kommunekode_details = update_kommunekode(entry=entry)
 
-            # Always update active status
-            has_changed_active = ensure_active(entry=entry)
-
-            if any([is_new_district, is_new_address_set, has_changed_active, is_new_kommunekode]):
+            if any([is_new_district, is_new_address_set, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 
