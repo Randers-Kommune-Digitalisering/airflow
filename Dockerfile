@@ -26,6 +26,8 @@ COPY ["dags/certs/CA-Den Danske Stat OCES rod-CA.cer", "/usr/local/share/ca-cert
 COPY ["dags/certs/CA-Den Danske Stat OCES udstedende-CA 1.cer", "/usr/local/share/ca-certificates/CA-Den-Danske-Stat-OCES-udstedende-CA-1.crt"]
 RUN update-ca-certificates
 
+RUN curl -fsSL "https://githubusercontent.com" -o /tmp/base_constraints.txt && chmod 644 /tmp/base_constraints.txt
+
 USER airflow
 
 ENV CLIENT_CERT=
@@ -34,6 +36,6 @@ ENV CERT_BASE_PATH=/opt/airflow/dags/repo/dags/certs
 
 COPY requirements.txt /requirements.txt
 
-RUN cp /home/airflow/.local/share/airflow/constraints-3.12.txt /tmp/custom_constraints.txt && while read -r line; do [[ "$line" =~ ^[[:space:]]*# ]] && continue; [[ -z "$line" ]] && continue; pkg=$(echo "$line" | sed -E 's/(==|>=|<=|<|>).*//' | xargs); sed -i -E "/^${pkg}==/d" /tmp/custom_constraints.txt; done < /requirements.txt
+RUN cp /tmp/base_constraints.txt /tmp/custom_constraints.txt && while read -r line; do [[ "$line" =~ ^[[:space:]]*# ]] && continue; [[ -z "$line" ]] && continue; pkg=$(echo "$line" | sed -E 's/(==|>=|<=|<|>).*//' | xargs); sed -i -E "/^${pkg}==/d" /tmp/custom_constraints.txt; done < /requirements.txt
 
 RUN pip install --no-cache-dir -r /requirements.txt --constraint /tmp/custom_constraints.txt
