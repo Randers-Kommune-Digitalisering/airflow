@@ -1,5 +1,4 @@
 apache-airflow-providers-microsoft-azure==13.5.0
-apache-airflow-providers-microsoft-mssql==4.4.0
 lxml==6.1.0
 msgraph-sdk==1.49.0
 openpyxl==3.1.5
