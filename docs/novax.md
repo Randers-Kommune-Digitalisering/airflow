@@ -49,10 +49,9 @@ Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfø
 
 **Vigtigt: “Always updates” pr. patient**
 
-Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsøger jobkørslen altid at sikre disse værdier pr. patient (dvs. felterne skrives hvis de ikke allerede har den ønskede værdi):
+Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsøger jobkørslen altid at sikre denne værdi pr. patient (dvs. feltet skrives hvis det ikke allerede har den ønskede værdi):
 
 - Patienten tildeles altid til **“Gravid til fordeling”** ved at sætte `AnsvarsShpl = 'FIKTIV'` i Novax
-- Patienten sættes altid til aktiv (`AKTIV = 1`) i Novax
 
 **OBS:** Perioden for dataudtræk bestemmes automatisk ud fra sidste succesfulde scheduled run og det aktuelle runs data-interval (DAG'ens timezone). Intervaller behandles som hele datoer, hvor start og slut anvendes direkte i databasefilteret (start `>=`, slut `<=`).
 

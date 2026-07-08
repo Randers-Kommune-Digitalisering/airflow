@@ -290,18 +290,3 @@ def update_kommunekode(
         is_new_kommunekode_details = True
 
     return is_new_kommunekode, is_new_kommunekode_details
-
-
-def ensure_active(*, entry: Name) -> bool:
-    """
-    Ensure `entry.AKTIV` is set to "1".
-
-    :param entry: Novax `Name` ORM object.
-    :return: True if `AKTIV` was changed from ""/"0" to "1", else False.
-    """
-    if entry.AKTIV not in ("", "0"):
-        return False
-
-    entry.AKTIV = "1"
-    logger.info("Updated active status for Name ID %s", entry.ID)
-    return True

@@ -25,6 +25,7 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
     - Hvis Dataforsyningen returnerer uventet/ingen data for adressen, logges det, og patientens distrikt ryddes (se nedenfor).
   - Hvis Dataforsyningen giver en gyldig adresse:
     - Opdaterer `Name.ADRESSE` hvis den fulde adresse er ændret.
+    - Når adressen ændres, oprettes en reminder i `REMIND` med kode `FLYTTET` og bemærkning om ny adresse; reminderen tildeles den aktuelle `AnsvarsShpl`.
     - Sikrer at adressens historik-tabeller holdes konsistente:
       - Eksisterende “åben” adresse-linje lukkes (slutdato sættes til nu), og der oprettes en ny adresse-linje med “åben” slutdato (Novax bruger typisk `1753-01-01` som sentinel for “open end”).
     - Slår distrikt op ud fra koordinater (x/y) via District Map.
@@ -37,12 +38,6 @@ Hvis adressen ikke kan valideres/returneres fra Dataforsyningen, ryddes distrikt
 - Åben række i `PERSONDISTRIKT` lukkes (slutdato sættes til runtime)
 - `Name.DISTRIKT` sættes til tom streng
 - `NameDetails.TS_KOMID` sættes til tom streng
-
-**Vigtigt: “Always updates” pr. patient**
-
-Uanset om der er detekteret ændringer i adresse/distrikt, udfører jobbet altid følgende opdatering pr. patient:
-
-- Patienten sættes altid til aktiv (`AKTIV = 1`) hvis den er tom/0.
 
 **Drift / sikkerhed**
 
