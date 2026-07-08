@@ -20,7 +20,7 @@ from dag_sd_delta.sd import get_employment_on_date_df, get_person_on_date_df, ge
 from dag_sd_delta.extract_transform import build_output_df
 from dag_sd_delta.load import upload_excel_file_to_delta
 from dag_sd_delta.delta_client import DeltaClient
-from dag_sd_delta.signflow import SignflowClient
+from dag_sd_delta.signflow import LogivaSignflowClient
 from dag_sd_delta.utils import validate_insts_to_import
 
 dag_args = DEFAULT_DAG_ARGS.copy()
@@ -32,14 +32,15 @@ dag_args["retry_delay"] = timedelta(minutes=5)
 logger = logging.getLogger(__name__)
 
 
-def extract_transform(**context: dict) -> dict[str, str | bool]:
+def extract_transform() -> dict[str, str | bool]:
+    """Extracts authorizations from Signflow, checks them against Delta, and prepares a DataFrame with data from SD for user creation."""
     insts_to_import_raw = Variable.get("delta_sd_insts_to_import", default_var="{}")
     insts_to_import = json.loads(insts_to_import_raw)
     validate_insts_to_import(insts_to_import)
     inst_id_list = [inst["inst_id"] for inst in insts_to_import]
     unique_inst_ids = list(dict.fromkeys(inst_id_list))
 
-    signflow_client = SignflowClient(BaseHook.get_connection("logiva_signflow"))
+    signflow_client = LogivaSignflowClient(BaseHook.get_connection("logiva_signflow"))
     delta_client = DeltaClient(BaseHook.get_connection("delta_prod"))
 
     # set up internal log collector to capture logs for email report
@@ -49,12 +50,12 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
 
     logging.getLogger("airflow.hooks.base").setLevel(logging.WARNING)
 
-    df = signflow_client.get_authorizations()
+    signflow_authorizations_df = signflow_client.get_authorizations()
 
     emp_dfs: list[pd.DataFrame] = []
     per_dfs: list[pd.DataFrame] = []
 
-    for _, row in df.iterrows():
+    for _, row in signflow_authorizations_df.iterrows():
         cpr = row['CPR']
         los = row['LOS']
         date = row['Fra dato']
@@ -64,12 +65,12 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
         log_template = f"Sagsnummer: {row['Sagsnummer']} - Fra dato: {date} LOS: {los_text}- Navn: {navn_text} - Kommentar: "
         res = delta_client.get_engagement_by_los_and_cpr(los=los, cpr=cpr, valid_date=date)
         if not res:
-            logger.warning(f"{log_template}Ikke fundet i Delta")
+            logger.warning(f"{log_template}Ikke fundet i Delta")  # Using Danish as the logs will be sent to IT support and Delta team
         elif len(res) > 1:
-            logger.warning(f"{log_template}Flere ansættelser fundet i Delta")
+            logger.warning(f"{log_template}Flere ansættelser fundet i Delta")  # Using Danish as the logs will be sent to IT support and Delta team
         else:
             if res[0]['user']:
-                logger.info(f"{log_template}Har allerede en bruger {res[0]['user']}")
+                logger.info(f"{log_template}Har allerede en bruger {res[0]['user']}")  # Using Danish as the logs will be sent to IT support and Delta team
             else:
                 if res[0]['institution_id'] in inst_id_list:
                     try:
@@ -92,7 +93,7 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
                         logger.info(f"{log_template}BRUGER OPRETTES")
                     except requests.exceptions.HTTPError as e:
                         if "EmploymentIdentifier does not exist" in str(e):
-                            logger.warning(f"{log_template}Ikke fundet i SD")
+                            logger.warning(f"{log_template}Ikke fundet i SD")  # Using Danish as the logs will be sent to IT support and Delta team
                 else:
                     logger.warning(f"{log_template}Ugyldig institution {res[0]['institution_id']}")
 
@@ -191,20 +192,19 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
                     index=False,
                     header=True,
                 )
-            # out_df.to_excel(output_file, index=False)
             out_file = str(output_file)
             logger.info(f"Saved user creation data with {len(out_df)} rows to file {output_file}")
 
     result = {"file_path": out_file}
 
-    root_logger.removeHandler(log_collector)
+    root_logger.removeHandler(log_collector=log_collector)
 
     # Build log html for email report.
     html_prefix = "".join([
         "<h3>Task log summary</h3>",
         "<pre style='white-space: pre-wrap; font-family: monospace;'>",
     ])
-    styled_log_lines = get_styled_log_html(log_collector)
+    styled_log_lines = get_styled_log_html(log_collector=log_collector)
 
     result["log_html"] = html_prefix + styled_log_lines + "</pre>"
     return result

@@ -3,6 +3,12 @@ def validate_insts_to_import(insts_to_import: list) -> None:
     """
     Validates the structure of the insts_to_import variable.
     Expected format: List of dicts with 'inst_id' (2-char string) and 'excluded_dept_ids' (list of 4-char strings).
+
+    Args:
+        insts_to_import (list): The list of institutions to validate.
+
+    Raises:
+        ValueError: If the structure of insts_to_import is invalid.
     """
     if not (
         isinstance(insts_to_import, list)

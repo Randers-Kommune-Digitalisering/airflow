@@ -10,29 +10,47 @@ from airflow.hooks.base import BaseHook
 logger = logging.getLogger(__name__)
 
 
-class SignflowClient:
+class LogivaSignflowClient:
+    """
+    Client for interacting with the Logiva Signflow API.
+
+    Args:
+        hook (BaseHook): Airflow hook for retrieving connection details.
+    """
     def __init__(self, hook: BaseHook):
-        self.url = hook.host.rstrip('/')
-        self.session = Session()
-        self.username = hook.login
-        self.password = hook.password
+        self._url = hook.host.rstrip('/')
+        self._session = Session()
+        self._username = hook.login
+        self._password = hook.password
         self._login()
 
-    def _login(self):
-        endpoint = f"{self.url}/usr/auth/basic"
-        res = self.session.get(endpoint)
+    def _login(self) -> None:
+        """
+        Perform login to the Signflow API using the provided credentials.
+        """
+        endpoint = f"{self._url}/usr/auth/basic"
+        res = self._session.get(endpoint)
         res.raise_for_status()
 
-        endpoint = f'{self.url}/usr/auth/j_security_check'
-        res = self.session.post(endpoint, data={'j_username': self.username, 'j_password': self.password})
+        endpoint = f'{self._url}/usr/auth/j_security_check'
+        res = self._session.post(endpoint, data={'j_username': self._username, 'j_password': self._password})
         res.raise_for_status()
 
     def get_authorizations(self) -> pd.DataFrame:
-        endpoint = f'{self.url}/usr/ShowDocument'
+        """
+        Fetch authorizations from Signflow and return them as a DataFrame.
+
+        NB: There is no documentation for the Signflow API - this is based on reverse engineering the web interface.
+
+        Returns:
+            pd.DataFrame: A DataFrame containing authorizations with columns ['Navn', 'CPR', 'LOS', 'Handling', 'Fra dato', 'Sagsnummer'].
+        """
+        endpoint = f'{self._url}/usr/ShowDocument'
+
         params = {'mode': 0, 'FolderStatus_FolderStatusOid': 373, 'sortOrder': 'd', 'sortcolumn': -1, 'pageBeginning': 0, 'csv': 'true'}
 
         # returns html on first request - ignore response
-        res = self.session.get(endpoint, params=params)
+        res = self._session.get(endpoint, params=params)
         res.raise_for_status()
 
         # Check if IP is whitelisted
@@ -40,7 +58,7 @@ class SignflowClient:
             raise ValueError("IP is not whitelisted in Signflow")
 
         # returns csv on second request
-        res = self.session.get(endpoint, params=params)
+        res = self._session.get(endpoint, params=params)
         res.raise_for_status()
 
         column_names = [
@@ -62,6 +80,15 @@ class SignflowClient:
         df = df[df['Handling'].isin(['Genopret', 'Nyansat'])].copy()
 
         def parse_fra_dato(value: str) -> date | None:
+            """
+            Parse the 'Fra dato' value into a date object. If the value is NaN or cannot be parsed, return None.
+
+            Args:
+                value (str): The 'Fra dato' value to parse.
+
+            Returns:
+                date | None: The parsed date object or None if parsing fails.
+            """
             if pd.isna(value):
                 return None
 
