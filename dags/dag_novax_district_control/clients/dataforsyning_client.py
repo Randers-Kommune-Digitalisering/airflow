@@ -1,5 +1,7 @@
 import logging
+import random
 import requests
+import time
 
 from airflow.hooks.base import BaseHook
 
@@ -41,8 +43,9 @@ class DataforsyningClient:
             'kommunekode': 730
         }
 
-        url = f"{self.base_url}{endpoint}"
+        url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
         max_retries = 4
+        base_backoff_seconds = 0.5
         for attempt in range(max_retries + 1):
             try:
                 results = self.session.get(url, params=params, timeout=10)
@@ -57,6 +60,19 @@ class DataforsyningClient:
                         str(e),
                     )
                     return None
+
+                delay = base_backoff_seconds * (2 ** attempt)
+                jitter = random.uniform(0, 0.25)
+                sleep_seconds = delay + jitter
+                logger.warning(
+                    "Dataforsyning lookup for adresse_id=%s failed on attempt %d/%d: %s. Retrying in %.2fs.",
+                    adresse_id,
+                    attempt + 1,
+                    max_retries + 1,
+                    str(e),
+                    sleep_seconds,
+                )
+                time.sleep(sleep_seconds)
                 continue
         if len(data) != 1:
             logger.error(
@@ -66,11 +82,12 @@ class DataforsyningClient:
             )
             return None
 
+        address_data = data[0].get('adresse', {})
         full_address = data[0].get('tekst', '')
 
-        number = data[0].get('adresse', {}).get('husnr')
-        floor = data[0].get('adresse', {}).get('etage')
-        door = data[0].get('adresse', {}).get('dør')
+        number = address_data.get('husnr')
+        floor = address_data.get('etage')
+        door = address_data.get('dør')
 
         number_floor = f"{number}"
         if floor:
@@ -78,11 +95,11 @@ class DataforsyningClient:
         if door:
             number_floor += f" {door}"
 
-        street_code = int(data[0].get('adresse', {}).get('vejkode'))
-        town_name = data[0].get('adresse', {}).get('supplerendebynavn')  # optional field that may be empty
-        postal_code = int(data[0].get('adresse', {}).get('postnr'))
-        municipality_code = int(data[0].get('adresse', {}).get('kommunekode'))
-        coordinates = (float(data[0].get('adresse', {}).get('x', 0)), float(data[0].get('adresse', {}).get('y', 0)))
+        street_code = int(address_data.get('vejkode'))
+        town_name = address_data.get('supplerendebynavn')  # optional field that may be empty
+        postal_code = int(address_data.get('postnr'))
+        municipality_code = int(address_data.get('kommunekode'))
+        coordinates = (float(address_data.get('x', 0)), float(address_data.get('y', 0)))
 
         if not all([full_address, number_floor, street_code, postal_code, municipality_code,
                     coordinates and coordinates[0] and coordinates[1]]):
