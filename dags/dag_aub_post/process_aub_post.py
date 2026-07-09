@@ -70,9 +70,11 @@ def process_aub_post() -> None:
     }
     if isinstance(aub_post_conn.host, str) and aub_post_conn.host.strip():
         email_reader_kwargs["imap_server"] = aub_post_conn.host.strip()
-    if aub_post_conn.port is not None:
-        email_reader_kwargs["imap_port"] = int(aub_post_conn.port)
-
+    if aub_post_conn.port:
+        try:
+            email_reader_kwargs["imap_port"] = int(aub_post_conn.port)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Connection 'aub_post_imap' port must be an integer") from exc
     email_reader = EmailReader(**email_reader_kwargs)
 
     email_sender = EmailSender(smtp_server=smtp_server.strip())

@@ -1,4 +1,4 @@
-# AUB Post Airflow DAG `README.md`
+# AUB Post Airflow DAG
 [**Formål**](#formål) | [**Beskrivelse**](#beskrivelse) | [**Afhængigheder**](#afhængigheder) | [**Schedule**](#schedule)
 
 ## Formål
@@ -35,7 +35,10 @@ Hvis en email mangler `maindoc.pdf`, PDF-filen ikke kan læses, eller uddannelse
 Bruges i rk-digi `EmailReader` til at hente host, login, password og port.
 
 *Required felter*:
-- Connection id, Host, Login, Password og Port
+- Connection id, Login og Password
+
+*Valgfrie felter*:
+- Host og Port
 
 ### Airflow Variables
 
