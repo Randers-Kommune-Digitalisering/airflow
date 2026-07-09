@@ -139,6 +139,8 @@ def find_latest_attachment(
     logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
 
     extensions = tuple(ext.lower() for ext in extensions)
+    if isinstance(filename_prefixes, str):
+        filename_prefixes = (filename_prefixes,)
     prefixes = (
         tuple(p.lower() for p in filename_prefixes)
         if filename_prefixes
