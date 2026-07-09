@@ -1,7 +1,7 @@
 import logging
 import io
 import pandas as pd
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Iterator, Sequence
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font
 from rkdigi.email_handling import EmailReader
@@ -11,30 +11,66 @@ logger = logging.getLogger(__name__)
 
 
 def get_arbejdsfortjeneste_report_config() -> dict[str, Any]:
+    """
+    Load Arbejdsfortjeneste report configuration from Airflow Variables.
+
+    :return: Parsed JSON configuration used for extraction and change reporting.
+    """
     return Variable.get("arbejdsfortjeneste_report_config",deserialize_json=True)
 
 
 def get_change_report_numeric_fields() -> list[str]:
+    """
+    Get numeric fields used for month-to-month change calculations.
+
+    :return: List of numeric field names for change aggregation.
+    """
     return get_arbejdsfortjeneste_report_config().get("change_report_numeric_fields", [])
 
 
 def get_required_fields_from_blanket_16001() -> list[str]:
+    """
+    Get required fields from blanket 16001 used to validate extracted rows.
+
+    :return: List of required field names from blanket 16001.
+    """
     return get_arbejdsfortjeneste_report_config().get("required_fields_from_blanket_16001", [])
 
 
 def get_report_field_to_blanket_field_id() -> dict[str, str]:
+    """
+    Get mapping from report field names to blanket field identifiers.
+
+    :return: Dictionary mapping report column name to blanket field id.
+    """
     return get_arbejdsfortjeneste_report_config().get("report_field_to_blanket_field_id", {})
 
 
 def get_income_type_code_to_label() -> dict[str, str]:
+    """
+    Get mapping from income type code to readable label.
+
+    :return: Dictionary mapping income type code to label.
+    """
     return get_arbejdsfortjeneste_report_config().get("income_type_code_to_label", {})
 
 
 def get_change_report_key_columns() -> list[str]:
+    """
+    Get key columns used to group and compare monthly aggregates.
+
+    :return: List of key columns. Defaults to ["cpr"] if not configured.
+    """
     return get_arbejdsfortjeneste_report_config().get("change_report_key_columns", ["cpr"])
 
 
-def map_indkomsttype(value):
+def map_indkomsttype(value: str | int | None) -> str | None:
+    """
+    Map an IndkomstType code to a configured label.
+
+    :param value: Raw income type code from Seviceplatform SKAT payload.
+    :return: Mapped label if configured
+    """
     if value is None:
         return None
     key = str(value).strip()
@@ -132,25 +168,48 @@ def find_latest_attachment(
     return None
 
 
-def _coerce_to_list(value):
+def _coerce_to_list(value: Any) -> list[Any]:
+    """
+    Coerce an optional scalar/list value into a list.
+
+    :param value: A single value, list of values, or None.
+    :return: Empty list when None, original list when already a list, otherwise a single-item list.
+    """
     if value is None:
         return []
     return value if isinstance(value, list) else [value]
 
 
-def _normalize_iso_date(value):
+def _normalize_iso_date(value: Any) -> str | None:
+    """
+    Normalize an ISO date string to YYYY-MM-DD format.
+
+    :param value: ISO date string or None.
+    :return: Normalized date string or None if input is invalid.
+    """
     if not value:
         return None
     return str(value).split("T")[0]
 
 
-def iter_blanket_tree_dfs(blanket_node: dict):
+def iter_blanket_tree_dfs(blanket_node: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """
+    Depth-first traversal of blanket nodes via UnderAngivelseSamling children.
+
+    :param blanket_node: Root blanket node.
+    """
     yield blanket_node
     for child in _coerce_to_list(blanket_node.get("UnderAngivelseSamling")):
         yield from iter_blanket_tree_dfs(child)
 
 
-def _extract_felt_values_by_id(blanket: dict) -> dict:
+def _extract_felt_values_by_id(blanket: dict[str, Any]) -> dict[str, Any]:
+    """
+    Extract field values keyed by BlanketFeltNummerIdentifikator.
+
+    :param blanket: Blanket node containing AngivelseFeltSamling.
+    :return: Mapping {field_id -> field_value}.
+    """
     values_by_id = {}
     for felt in _coerce_to_list(blanket.get("AngivelseFeltSamling")):
         felt_id = (
@@ -162,7 +221,17 @@ def _extract_felt_values_by_id(blanket: dict) -> dict:
     return values_by_id
 
 
-def extract_rows(response: dict) -> list[dict]:
+def extract_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Extract rows from SKAT Serviceplatform payload.
+
+    The function traverses person -> income entries -> periods -> blanket tree,
+    merges relevant blanket field values, and returns only rows that contain
+    required income fields.
+
+    :param response: Raw response payload from IndkomstOplysningPersonHent_O.
+    :return: List of normalized report rows.
+    """
     if not isinstance(response, dict):
         return []
 
@@ -276,7 +345,13 @@ def extract_rows(response: dict) -> list[dict]:
 
 def extract_rows_from_serviceplatform_response(
     payload: dict[str, Any],
-) -> tuple[list[dict], bool]:
+) -> tuple[list[dict[str, Any]], bool]:
+    """
+    Extract rows from payload and indicate whether any rows were found.
+
+    :param payload: Raw Serviceplatform payload.
+    :return: Tuple of rows and a boolean indicating if any rows were found.
+    """
     rows: list[dict] = []
 
     if not isinstance(payload, dict):
@@ -287,6 +362,12 @@ def extract_rows_from_serviceplatform_response(
 
 
 def parse_formatted_numbers_to_numeric_series(series: pd.Series) -> pd.Series:
+    """
+    Parse locale-formatted number strings into numeric values.
+
+    :param series: Input series with numeric-like values.
+    :return: Numeric pandas Series with NaN for unparseable values.
+    """
     text = series.fillna("").astype(str).str.strip()
     has_comma = text.str.contains(",", na=False)
     text = text.where(~has_comma, text.str.replace(".", "", regex=False))
@@ -295,6 +376,14 @@ def parse_formatted_numbers_to_numeric_series(series: pd.Series) -> pd.Series:
 
 
 def build_month_aggregate(df: pd.DataFrame, key_cols: list[str], value_cols: list[str]) -> pd.DataFrame:
+    """
+    Build a monthly aggregate per key columns for configured numeric fields.
+
+    :param df: Source dataframe with key and numeric columns.
+    :param key_cols: Columns used for grouping (for example cpr).
+    :param value_cols: Numeric columns to parse and aggregate.
+    :return: Aggregated dataframe grouped by key columns.
+    """
     out = df.copy()
 
     for key_col in key_cols:
@@ -314,7 +403,22 @@ def build_month_aggregate(df: pd.DataFrame, key_cols: list[str], value_cols: lis
 
 
 def build_diff_table(df_prev: pd.DataFrame, df_curr: pd.DataFrame, prev_month: str, curr_month: str) -> pd.DataFrame:
+    """
+    Build month-to-month diff table for configured numeric fields.
+
+    :param df_prev: Dataframe for previous month.
+    :param df_curr: Dataframe for current month.
+    :param prev_month: Previous month in YYYYMM.
+    :param curr_month: Current month in YYYYMM.
+    :return: Diff dataframe with indicators and absolute change.
+    """
     def indicator(x: float) -> str:
+        """
+        Return an indicator symbol based on the numeric change.
+
+        :param x: Numeric change value.
+        :return: Indicator symbol ("▲" for positive, "▼" for negative, "-" for no change).
+        """
         if x > 0:
             return "▲"
         if x < 0:
@@ -367,6 +471,13 @@ def build_diff_table(df_prev: pd.DataFrame, df_curr: pd.DataFrame, prev_month: s
 
 
 def _autosize_columns(ws, df: pd.DataFrame) -> None:
+    """
+    Auto-size worksheet columns based on content length.
+
+    :param ws: OpenPyXL worksheet object.
+    :param df: Dataframe written to the worksheet.
+    :return: None.
+    """
     padding = 2
     max_width = 60
 
@@ -379,6 +490,13 @@ def _autosize_columns(ws, df: pd.DataFrame) -> None:
 
 
 def iter_months(start_yyyymm: str, end_yyyymm: str) -> list[str]:
+    """
+    Generate inclusive month range from start to end.
+
+    :param start_yyyymm: Start month in YYYYMM.
+    :param end_yyyymm: End month in YYYYMM.
+    :return: List of months in YYYYMM format.
+    """
     y, m = int(start_yyyymm[:4]), int(start_yyyymm[4:])
     y2, m2 = int(end_yyyymm[:4]), int(end_yyyymm[4:])
 
@@ -394,6 +512,16 @@ def iter_months(start_yyyymm: str, end_yyyymm: str) -> list[str]:
 
 
 def write_arbejdsfortjeneste_report_excel_bytes(indkomst_df: pd.DataFrame, diff_df: pd.DataFrame) -> bytes:
+    """
+    Write Arbejdsfortjeneste report to Excel bytes with two sheets.
+
+    Sheet 1: Indkomstoplysninger.
+    Sheet 2: Ændring (filtered to non-zero changes when available).
+
+    :param indkomst_df: Detailed income dataframe.
+    :param diff_df: Month-to-month diff dataframe.
+    :return: Excel file as bytes.
+    """
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         indkomst_df.to_excel(writer, index=False, sheet_name="Indkomstoplysninger")
