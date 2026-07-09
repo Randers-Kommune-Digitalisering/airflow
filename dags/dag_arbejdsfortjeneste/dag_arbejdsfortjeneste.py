@@ -18,7 +18,7 @@ with DAG(
     max_active_runs=1,
     default_args=dag_args,
     description="Placeholder description for arbejdsfortjeneste",
-    tags=["arbejdsfortjeneste", "<tag1>", "<tag2>"],
+    tags=["arbejdsfortjeneste", "serviceplatform", "skat", "mailbox"],
     params={
         "start_month": Param(
             type=["string"],
