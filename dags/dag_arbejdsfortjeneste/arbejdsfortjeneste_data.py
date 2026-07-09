@@ -19,7 +19,7 @@ def get_arbejdsfortjeneste_report_config() -> dict[str, Any]:
     return Variable.get("arbejdsfortjeneste_report_config",deserialize_json=True)
 
 
-def get_change_report_numeric_fields() -> list[str]:
+def _get_change_report_numeric_fields() -> list[str]:
     """
     Get numeric fields used for month-to-month change calculations.
 
@@ -28,7 +28,7 @@ def get_change_report_numeric_fields() -> list[str]:
     return get_arbejdsfortjeneste_report_config().get("change_report_numeric_fields", [])
 
 
-def get_required_fields_from_blanket_16001() -> list[str]:
+def _get_required_fields_from_blanket_16001() -> list[str]:
     """
     Get required fields from blanket 16001 used to validate extracted rows.
 
@@ -46,7 +46,7 @@ def get_report_field_to_blanket_field_id() -> dict[str, str]:
     return get_arbejdsfortjeneste_report_config().get("report_field_to_blanket_field_id", {})
 
 
-def get_income_type_code_to_label() -> dict[str, str]:
+def _get_income_type_code_to_label() -> dict[str, str]:
     """
     Get mapping from income type code to readable label.
 
@@ -74,7 +74,7 @@ def map_indkomsttype(value: str | int | None) -> str | None:
     if value is None:
         return None
     key = str(value).strip()
-    return get_income_type_code_to_label().get(key, value)
+    return _get_income_type_code_to_label().get(key, value)
 
 
 def _normalize_cpr(value: object) -> str | None:
@@ -199,7 +199,7 @@ def iter_blanket_tree_dfs(blanket_node: dict[str, Any]) -> Iterator[dict[str, An
     :param blanket_node: Root blanket node.
     """
     yield blanket_node
-    for child in _coerce_to_list(blanket_node.get("UnderAngivelseSamling")):
+    for child in _coerce_to_list(value=blanket_node.get("UnderAngivelseSamling")):
         yield from iter_blanket_tree_dfs(child)
 
 
@@ -211,7 +211,7 @@ def _extract_felt_values_by_id(blanket: dict[str, Any]) -> dict[str, Any]:
     :return: Mapping {field_id -> field_value}.
     """
     values_by_id = {}
-    for felt in _coerce_to_list(blanket.get("AngivelseFeltSamling")):
+    for felt in _coerce_to_list(value=blanket.get("AngivelseFeltSamling")):
         felt_id = (
             (felt.get("BlanketFeltEnhedStruktur") or {})
             .get("BlanketFeltNummerIdentifikator")
@@ -221,7 +221,7 @@ def _extract_felt_values_by_id(blanket: dict[str, Any]) -> dict[str, Any]:
     return values_by_id
 
 
-def extract_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
     """
     Extract rows from SKAT Serviceplatform payload.
 
@@ -239,27 +239,27 @@ def extract_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
     indkomst_person_uddata = root.get("IndkomstPersonUddata") or {}
     item = (indkomst_person_uddata.get("Item") or {})
 
-    person_strukturer = _coerce_to_list(item.get("IndkomstOplysningPersonStruktur"))
+    person_strukturer = _coerce_to_list(value=item.get("IndkomstOplysningPersonStruktur"))
     rows = []
 
     for person in person_strukturer:
         cpr = person.get("PersonCivilRegistrationIdentifier")
 
-        for oplysning in _coerce_to_list(person.get("IndkomstOplysningSamling")):
+        for oplysning in _coerce_to_list(value=person.get("IndkomstOplysningSamling")):
             virksomhed_se = (
                 ((oplysning.get("IndberetningPligtigVirksomhedStruktur") or {})
                  .get("IndberetningPligtigVirksomhed") or {})
                 .get("VirksomhedSENummerIdentifikator")
             )
 
-            for periode in _coerce_to_list(oplysning.get("IndkomstLoenPeriodeSamling")):
-                disposition_dato = _normalize_iso_date(periode.get("IndkomstPersonGruppeDispositionDato"))
+            for periode in _coerce_to_list(value=oplysning.get("IndkomstLoenPeriodeSamling")):
+                disposition_dato = _normalize_iso_date(value=periode.get("IndkomstPersonGruppeDispositionDato"))
 
                 periode_items = (
                     ((periode.get("AngivelsePeriodeStruktur") or {}).get("AngivelsePeriode") or {})
                     .get("Items")
                 )
-                periode_items = _coerce_to_list(periode_items)
+                periode_items = _coerce_to_list(value=periode_items)
 
                 angivelse_periode_fra = (
                     str(periode_items[0]).split("T")[0]
@@ -278,23 +278,23 @@ def extract_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
                     angivelse_periode = angivelse_periode_fra or angivelse_periode_til
 
                 angivelse = (periode.get("AngivelseBlanketIndholdStruktur") or {})
-                for angivelse_oplysning in _coerce_to_list(angivelse.get("AngivelseOplysningSamling")):
+                for angivelse_oplysning in _coerce_to_list(value=angivelse.get("AngivelseOplysningSamling")):
                     values_11000_by_id = {}
                     values_16200_by_id = {}
                     values_16202_by_id = {}
                     values_16001_list = []
 
-                    for blanket in iter_blanket_tree_dfs(angivelse_oplysning):
+                    for blanket in iter_blanket_tree_dfs(blanket_node=angivelse_oplysning):
                         blanket_nr = str(blanket.get("BlanketNummerIdentifikator"))
 
                         if blanket_nr == "11000":
-                            values_11000_by_id.update(_extract_felt_values_by_id(blanket))
+                            values_11000_by_id.update(_extract_felt_values_by_id(blanket=blanket))
                         elif blanket_nr == "16200":
-                            values_16200_by_id.update(_extract_felt_values_by_id(blanket))
+                            values_16200_by_id.update(_extract_felt_values_by_id(blanket=blanket))
                         elif blanket_nr == "16202":
-                            values_16202_by_id.update(_extract_felt_values_by_id(blanket))
+                            values_16202_by_id.update(_extract_felt_values_by_id(blanket=blanket))
                         elif blanket_nr == "16001":
-                            values_16001_list.append(_extract_felt_values_by_id(blanket))
+                            values_16001_list.append(_extract_felt_values_by_id(blanket=blanket))
 
                     if values_16001_list:
                         row_sources = values_16001_list
@@ -320,11 +320,11 @@ def extract_rows(response: dict[str, Any]) -> list[dict[str, Any]]:
                         for col_name, felt_id in get_report_field_to_blanket_field_id().items():
                             row[col_name] = values_by_id.get(felt_id)
 
-                        row["IndkomstType"] = map_indkomsttype(row.get("IndkomstType"))
+                        row["IndkomstType"] = map_indkomsttype(value=row.get("IndkomstType"))
 
                         has_16001_values = any(
                             row.get(col) not in (None, "")
-                            for col in get_required_fields_from_blanket_16001()
+                            for col in _get_required_fields_from_blanket_16001()
                         )
                         has_16202_values = any(
                             row.get(col) not in (None, "")
@@ -357,11 +357,11 @@ def extract_rows_from_serviceplatform_response(
     if not isinstance(payload, dict):
         return rows, False
 
-    rows = extract_rows(payload)
+    rows = _extract_rows(response=payload)
     return rows, bool(rows)
 
 
-def parse_formatted_numbers_to_numeric_series(series: pd.Series) -> pd.Series:
+def _parse_formatted_numbers_to_numeric_series(series: pd.Series) -> pd.Series:
     """
     Parse locale-formatted number strings into numeric values.
 
@@ -375,7 +375,7 @@ def parse_formatted_numbers_to_numeric_series(series: pd.Series) -> pd.Series:
     return pd.to_numeric(text, errors="coerce")
 
 
-def build_month_aggregate(df: pd.DataFrame, key_cols: list[str], value_cols: list[str]) -> pd.DataFrame:
+def _build_month_aggregate(df: pd.DataFrame, key_cols: list[str], value_cols: list[str]) -> pd.DataFrame:
     """
     Build a monthly aggregate per key columns for configured numeric fields.
 
@@ -391,8 +391,8 @@ def build_month_aggregate(df: pd.DataFrame, key_cols: list[str], value_cols: lis
         out[key_col] = out[key_col].fillna("").astype(str).str.strip()
 
     for value_col in value_cols:
-        out[value_col] = parse_formatted_numbers_to_numeric_series(
-            out.get(value_col, pd.Series([None] * len(out), index=out.index))
+        out[value_col] = _parse_formatted_numbers_to_numeric_series(
+            series=out.get(value_col, pd.Series([None] * len(out), index=out.index))
         )
 
     return (
@@ -425,16 +425,16 @@ def build_diff_table(df_prev: pd.DataFrame, df_curr: pd.DataFrame, prev_month: s
             return "▼"
         return "-"
 
-    prev_agg = build_month_aggregate(df_prev, get_change_report_key_columns(), get_change_report_numeric_fields())
-    curr_agg = build_month_aggregate(df_curr, get_change_report_key_columns(), get_change_report_numeric_fields())
+    prev_agg = _build_month_aggregate(df=df_prev, key_cols=get_change_report_key_columns(), value_cols=_get_change_report_numeric_fields())
+    curr_agg = _build_month_aggregate(df=df_curr, key_cols=get_change_report_key_columns(), value_cols=_get_change_report_numeric_fields())
 
     total_name = "Indkomstoplysning Samlet"
 
     prev_total = prev_agg[get_change_report_key_columns()].copy()
-    prev_total[total_name] = prev_agg[get_change_report_numeric_fields()].sum(axis=1, min_count=1)
+    prev_total[total_name] = prev_agg[_get_change_report_numeric_fields()].sum(axis=1, min_count=1)
 
     curr_total = curr_agg[get_change_report_key_columns()].copy()
-    curr_total[total_name] = curr_agg[get_change_report_numeric_fields()].sum(axis=1, min_count=1)
+    curr_total[total_name] = curr_agg[_get_change_report_numeric_fields()].sum(axis=1, min_count=1)
 
     merged = prev_total.merge(
         curr_total,
@@ -528,14 +528,14 @@ def write_arbejdsfortjeneste_report_excel_bytes(indkomst_df: pd.DataFrame, diff_
         ws_indkomst = writer.sheets["Indkomstoplysninger"]
         ws_indkomst.freeze_panes = "A2"
         ws_indkomst.auto_filter.ref = ws_indkomst.dimensions
-        _autosize_columns(ws_indkomst, indkomst_df)
+        _autosize_columns(ws=ws_indkomst, df=indkomst_df)
 
         changes_df = diff_df.loc[diff_df["Ændring"] != 0].copy() if "Ændring" in diff_df.columns else diff_df.copy()
         changes_df.to_excel(writer, index=False, sheet_name="Ændring")
         ws_changes = writer.sheets["Ændring"]
         ws_changes.freeze_panes = "A2"
         ws_changes.auto_filter.ref = ws_changes.dimensions
-        _autosize_columns(ws_changes, changes_df)
+        _autosize_columns(ws=ws_changes, df=changes_df)
 
         if len(changes_df) > 0 and "Ændring" in changes_df.columns:
             col_idx = changes_df.columns.get_loc("Ændring") + 1
