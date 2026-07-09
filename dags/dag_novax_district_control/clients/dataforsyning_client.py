@@ -51,6 +51,7 @@ class DataforsyningClient:
                 results = self.session.get(url, params=params, timeout=10)
                 results.raise_for_status()
                 data = results.json()
+                break
             except Exception as e:
                 if attempt == max_retries:
                     logger.error(

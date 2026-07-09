@@ -231,13 +231,6 @@ def update_address_from_dataforsyning(
     if _addresses_are_equivalent(new_full_address, entry.ADRESSE):
         return False
 
-    logger.info(
-        "Updating address for Name ID %s from '%s' to '%s'",
-        entry.ID,
-        str(entry.ADRESSE).strip(),
-        new_full_address,
-    )
-
     entry.ADRESSE = new_full_address
     ref_dt = _coerce_to_datetime(reference_date)
 
