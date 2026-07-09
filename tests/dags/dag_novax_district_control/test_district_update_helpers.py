@@ -35,12 +35,12 @@ def test_addresses_are_equivalent_across_novax_variants() -> None:
     ("lhs", "rhs"),
     [
         (
-            "Alpha Road 72, Hamlet 8930 Test City",
+            "Alpha Road 72 Hamlet 8930 Test City",
             "Alpha Road 72, Hamlet, 8930 Test City",
         ),
         (
-            "Beta Street 4 8981 North Town",
-            "Beta Street 4, 8981 North Town",
+            "Beta Street 4B, 1. 10, 8990 North Town",
+            "Beta Street 4 B,1,-10, 8990 North Town",
         ),
         (
             "Gamma Lane 14, 3. tv 8900 Central City",
@@ -51,8 +51,8 @@ def test_addresses_are_equivalent_across_novax_variants() -> None:
             "Delta Avenue 1, st. tv, 8900 Central City",
         ),
         (
-            "Aage Beks Vej 2 C 8920 Randers NV",
-            "Aage Beks Vej 2C, 8920 Randers NV",
+            "Epsilon Drive 2 C 0020 West World",
+            "Epsilon Drive 2C, 0020 West World",
         ),
     ],
 )
