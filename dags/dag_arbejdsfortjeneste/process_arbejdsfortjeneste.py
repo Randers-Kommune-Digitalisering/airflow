@@ -70,8 +70,7 @@ def process_arbejdsfortjeneste() -> None:
     )
 
     found = find_latest_attachment(
-        email_reader=email_reader,
-        criteria="ALL",
+        email_reader=email_reader
     )
 
     if not found:
@@ -206,6 +205,9 @@ def process_arbejdsfortjeneste() -> None:
         )
 
         logger.info("Arbejdsfortjeneste processing completed successfully (email sent).")
+
+        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+        logger.info(f"Deleted Arbejdsfortjeneste input email {filename} with UID {uid!r} from INBOX")
 
     except Exception as e:
         raise AirflowFailException("Failed to process arbejdsfortjeneste report") from e
