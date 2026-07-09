@@ -10,7 +10,7 @@ from airflow.models import Variable
 logger = logging.getLogger(__name__)
 
 
-def get_arbejdsfortjeneste_report_config() -> dict[str, Any]:
+def _get_arbejdsfortjeneste_report_config() -> dict[str, Any]:
     """
     Load Arbejdsfortjeneste report configuration from Airflow Variables.
 
@@ -25,7 +25,7 @@ def _get_change_report_numeric_fields() -> list[str]:
 
     :return: List of numeric field names for change aggregation.
     """
-    return get_arbejdsfortjeneste_report_config().get("change_report_numeric_fields", [])
+    return _get_arbejdsfortjeneste_report_config().get("change_report_numeric_fields", [])
 
 
 def _get_required_fields_from_blanket_16001() -> list[str]:
@@ -34,7 +34,7 @@ def _get_required_fields_from_blanket_16001() -> list[str]:
 
     :return: List of required field names from blanket 16001.
     """
-    return get_arbejdsfortjeneste_report_config().get("required_fields_from_blanket_16001", [])
+    return _get_arbejdsfortjeneste_report_config().get("required_fields_from_blanket_16001", [])
 
 
 def get_report_field_to_blanket_field_id() -> dict[str, str]:
@@ -43,7 +43,7 @@ def get_report_field_to_blanket_field_id() -> dict[str, str]:
 
     :return: Dictionary mapping report column name to blanket field id.
     """
-    return get_arbejdsfortjeneste_report_config().get("report_field_to_blanket_field_id", {})
+    return _get_arbejdsfortjeneste_report_config().get("report_field_to_blanket_field_id", {})
 
 
 def _get_income_type_code_to_label() -> dict[str, str]:
@@ -52,7 +52,7 @@ def _get_income_type_code_to_label() -> dict[str, str]:
 
     :return: Dictionary mapping income type code to label.
     """
-    return get_arbejdsfortjeneste_report_config().get("income_type_code_to_label", {})
+    return _get_arbejdsfortjeneste_report_config().get("income_type_code_to_label", {})
 
 
 def get_change_report_key_columns() -> list[str]:
@@ -61,7 +61,7 @@ def get_change_report_key_columns() -> list[str]:
 
     :return: List of key columns. Defaults to ["cpr"] if not configured.
     """
-    return get_arbejdsfortjeneste_report_config().get("change_report_key_columns", ["cpr"])
+    return _get_arbejdsfortjeneste_report_config().get("change_report_key_columns", ["cpr"])
 
 
 def map_indkomsttype(value: str | int | None) -> str | None:
