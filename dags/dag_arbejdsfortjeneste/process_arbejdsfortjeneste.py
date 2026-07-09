@@ -4,9 +4,8 @@ import io
 from airflow.models import Variable
 from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowFailException
-from dateutil.relativedelta import relativedelta
-from rkdigi.email_handling import EmailSender, EmailReader
 from airflow.operators.python import get_current_context
+from rkdigi.email_handling import EmailSender, EmailReader
 from dag_arbejdsfortjeneste.arbejdsfortjeneste_data import (
     get_report_field_to_blanket_field_id,
     get_change_report_key_columns,
@@ -21,30 +20,32 @@ from dag_arbejdsfortjeneste.arbejdsfortjeneste_data import (
 logger = logging.getLogger(__name__)
 
 
-def _resolve_date_range() -> tuple[str, str]:
+def _resolve_month_interval() -> tuple[str, str]:
     """
-    Resolve start_dato/slut_dato as ISO dates (YYYY-MM-DD) based on Airflow `logical_date`.
+    Resolve and validate month interval from DAG runtime params.
 
-    - `logical_date` is converted to the DAG timezone and truncated to a date.
-    - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
-    - `slut_dato` is set to `logical_date`.
-
-    :return: (start_dato, slut_dato) as ISO date strings.
+    :return: Tuple containing (start_month, end_month).
+    :raises AirflowFailException: If required params are missing or the interval is invalid.
     """
     ctx = get_current_context()
-    logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
-    start = logical_date.replace(day=1) - relativedelta(months=1)
-    end = logical_date
-    return start.isoformat(), end.isoformat()
+    start_month = (ctx.get("params") or {}).get("start_month")
+    end_month = (ctx.get("params") or {}).get("end_month")
 
+    if not start_month or not end_month:
+        raise AirflowFailException("Need to specify both start_month and end_month (YYYYMM).")
 
-def _iso_to_yyyymm(value: str) -> str:
-    return value[:7].replace("-", "")
+    if start_month > end_month:
+        raise AirflowFailException("start_month must not be after end_month.")
+
+    return start_month, end_month
 
 
 def process_arbejdsfortjeneste() -> None:
     """
-    Placeholder function for processing the arbejdsfortjeneste data.
+     Process Arbejdsfortjeneste CPR input and deliver an income change report.
+
+    :return: None.
+    :raises AirflowFailException: If required input is missing or report processing fails.
     """
     logger.info("Starting to process arbejdsfortjeneste data...")
 
@@ -91,12 +92,10 @@ def process_arbejdsfortjeneste() -> None:
         if not cpr_list:
             raise AirflowFailException("No CPR values found in the Excel file")
 
-        start_dato, slut_dato = _resolve_date_range()
-        start_month = _iso_to_yyyymm(value=start_dato)
-        end_month = _iso_to_yyyymm(value=slut_dato)
+        start_month, end_month = _resolve_month_interval()
         months = iter_months(start_yyyymm=start_month, end_yyyymm=end_month)
 
-        logger.info(f"Arbejdsfortjeneste date range: {start_dato} -> {slut_dato} (months: {', '.join(months)})")
+        logger.info(f"Arbejdsfortjeneste date range: {start_month} -> {end_month} (months: {', '.join(months)})")
 
         base_cols = [
             "cpr",
