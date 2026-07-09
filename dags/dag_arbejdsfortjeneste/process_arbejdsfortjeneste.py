@@ -93,9 +93,9 @@ def process_arbejdsfortjeneste() -> None:
             raise AirflowFailException("No CPR values found in the Excel file")
 
         start_dato, slut_dato = _resolve_date_range()
-        start_month = _iso_to_yyyymm(start_dato)
-        end_month = _iso_to_yyyymm(slut_dato)
-        months = iter_months(start_month, end_month)
+        start_month = _iso_to_yyyymm(value=start_dato)
+        end_month = _iso_to_yyyymm(value=slut_dato)
+        months = iter_months(start_yyyymm=start_month, end_yyyymm=end_month)
 
         logger.info(f"Arbejdsfortjeneste date range: {start_dato} -> {slut_dato} (months: {', '.join(months)})")
 
@@ -107,7 +107,7 @@ def process_arbejdsfortjeneste() -> None:
             *get_report_field_to_blanket_field_id().keys(),
         ]
 
-        def placeholder_row(for_cpr: str) -> dict:
+        def _placeholder_row(for_cpr: str) -> dict:
             return {
                 "cpr": for_cpr,
                 "VirksomhedSENummerIdentifikator": None,
@@ -142,10 +142,10 @@ def process_arbejdsfortjeneste() -> None:
                         soege_aar_maaned_til_kode=end_month,
                     )
                     rows_range, _ = extract_rows_from_serviceplatform_response(payload=range_payload)
-                    rows_range = rows_range or [placeholder_row(cpr)]
+                    rows_range = rows_range or [_placeholder_row(for_cpr=cpr)]
                 except Exception as e:
                     logger.error(f"Failed range fetch for CPR {idx + 1}/{total_cprs}: {e}")
-                    rows_range = [placeholder_row(cpr)]
+                    rows_range = [_placeholder_row(for_cpr=cpr)]
 
                 all_indkomst_rows.extend(rows_range)
                 if idx != total_cprs - 1:
@@ -160,10 +160,10 @@ def process_arbejdsfortjeneste() -> None:
                             soege_aar_maaned_til_kode=month,
                         )
                         month_rows, _ = extract_rows_from_serviceplatform_response(payload=month_payload)
-                        rows_by_month[month] = month_rows or [placeholder_row(cpr)]
+                        rows_by_month[month] = month_rows or [_placeholder_row(for_cpr=cpr)]
                     except Exception as e:
                         logger.error(f"Failed month fetch for CPR {idx + 1}/{total_cprs} ({month}): {e}")
-                        rows_by_month[month] = [placeholder_row(cpr)]
+                        rows_by_month[month] = [_placeholder_row(for_cpr=cpr)]
 
                 for month_idx in range(1, len(months)):
                     prev_month = months[month_idx - 1]
@@ -171,7 +171,7 @@ def process_arbejdsfortjeneste() -> None:
 
                     df_prev = pd.DataFrame(rows_by_month[prev_month], columns=base_cols)
                     df_curr = pd.DataFrame(rows_by_month[curr_month], columns=base_cols)
-                    all_diff.append(build_diff_table(df_prev, df_curr, prev_month, curr_month))
+                    all_diff.append(build_diff_table(df_prev=df_prev, df_curr=df_curr, prev_month=prev_month, curr_month=curr_month))
 
         indkomst_df = pd.DataFrame(all_indkomst_rows, columns=base_cols)
 
