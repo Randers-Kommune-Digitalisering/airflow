@@ -16,7 +16,7 @@ def _get_arbejdsfortjeneste_report_config() -> dict[str, Any]:
 
     :return: Parsed JSON configuration used for extraction and change reporting.
     """
-    return Variable.get("arbejdsfortjeneste_report_config",deserialize_json=True)
+    return Variable.get("arbejdsfortjeneste_report_config", deserialize_json=True)
 
 
 def _get_change_report_numeric_fields() -> list[str]:
