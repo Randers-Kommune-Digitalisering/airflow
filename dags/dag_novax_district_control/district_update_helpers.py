@@ -89,7 +89,12 @@ def _normalize_address_text(address: Any) -> str:
 
 
 def _normalize_component(value: Any) -> str:
-    """Normalize parsed address component text for semantic comparisons."""
+    """
+    Normalize parsed address component text for semantic comparisons.
+
+    :param value: The address component to normalize.
+    :return: Normalized address component string with whitespace and punctuation standardized.
+    """
     return " ".join(str(value or "").replace(",", " ").replace(".", " ").split()).casefold()
 
 
