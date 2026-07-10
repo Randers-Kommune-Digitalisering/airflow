@@ -37,3 +37,8 @@ COPY requirements.txt /requirements.txt
 RUN PYTHON_VERSION=$(python -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))") && CONSTRAINTS_FILE="/home/airflow/.local/share/airflow/constraints-${PYTHON_VERSION}.txt" && AIRFLOW_VERSION=$(python -c "import airflow; print(airflow.__version__)") && ( [ -f "${CONSTRAINTS_FILE}" ] && cat "${CONSTRAINTS_FILE}" > /tmp/custom_constraints.txt || curl -fsSL "https://raw.githubusercontent.com/apache/airflow/constraints-${AIRFLOW_VERSION}/constraints-${PYTHON_VERSION}.txt" -o /tmp/custom_constraints.txt ) && while read -r line; do [[ "$line" =~ ^[[:space:]]*# ]] && continue; [[ -z "$line" ]] && continue; pkg=$(echo "$line" | sed -E 's/(==|>=|<=|<|>).*//' | xargs); sed -i -E "/^${pkg}==/d" /tmp/custom_constraints.txt; done < /requirements.txt
 
 RUN pip install --no-cache-dir -r /requirements.txt --constraint /tmp/custom_constraints.txt
+
+USER root
+RUN PYTHON_VERSION=$(python -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))") && PYTHONPATH="/home/airflow/.local/lib/python${PYTHON_VERSION}/site-packages" /home/airflow/.local/bin/playwright install-deps chromium
+USER airflow
+RUN python -m playwright install chromium
