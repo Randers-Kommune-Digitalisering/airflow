@@ -11,6 +11,7 @@ class Godkommu(Base):
     NAVNID = Column(CHAR(36), nullable=False, default='')
     JOURNALDATO = Column(DATETIME, nullable=False, default='1753-01-01')
     JOURNALTID = Column(CHAR(5), nullable=False, default='')
+    STATUS = Column(CHAR(10), nullable=False, default='')
     EMNEBREV = Column(CHAR(200), nullable=False, default='')
 
 
