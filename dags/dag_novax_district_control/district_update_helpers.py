@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime
 from typing import Any, Mapping
 
@@ -10,6 +11,26 @@ logger = logging.getLogger(__name__)
 
 SENTINEL_OPEN_END_DT = datetime(1753, 1, 1)
 SENTINEL_OPEN_END_DATE = SENTINEL_OPEN_END_DT.date()
+
+_ADDRESS_PART_CHARS = r"A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u00FF"
+NOVAX_ADDRESS_RE = re.compile(
+    rf"""
+    ^\s*
+    (?P<street_name>[{_ADDRESS_PART_CHARS}][{_ADDRESS_PART_CHARS}\-.' ]*?)
+    \s+
+    (?P<house_number>\d+\s*[A-Za-z]?)
+    \s*,?\s*
+    (?:(?P<floor>st|\d{{1,2}})\.?\s*(?:,?\s*-?\s*)?(?P<door>[A-Za-z0-9]{{0,6}})?)?
+    \s*,?\s*
+    (?:(?P<locality>[{_ADDRESS_PART_CHARS}][{_ADDRESS_PART_CHARS}\-.' ]*?)\s*,?\s*)?
+    \s*,?\s*
+    (?P<postal_code>\d{{4}})
+    \s+
+    (?P<city>[{_ADDRESS_PART_CHARS}][{_ADDRESS_PART_CHARS}\-.' ]*)
+    \s*$
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 def is_valid_cpr(cpr: str) -> bool:
@@ -51,12 +72,93 @@ def _is_open_end(value: Any) -> bool:
     return False
 
 
+def _normalize_address_text(address: Any) -> str:
+    """
+    Normalize free-form address text for stable comparisons.
+
+    :param address: Address text to normalize.
+    :return: Normalized address string with whitespace and punctuation standardized.
+    """
+    if address is None:
+        return ""
+
+    normalized = " ".join(str(address).strip().split())
+    normalized = re.sub(r"\s*,\s*", ", ", normalized)
+    normalized = re.sub(r"\s*\.\s*", ".", normalized)
+    return normalized
+
+
+def _normalize_component(value: Any) -> str:
+    """
+    Normalize parsed address component text for semantic comparisons.
+
+    :param value: The address component to normalize.
+    :return: Normalized address component string with whitespace and punctuation standardized.
+    """
+    return " ".join(str(value or "").replace(",", " ").replace(".", " ").split()).casefold()
+
+
+def _parse_novax_address(address: Any) -> Mapping[str, str] | None:
+    """
+    Parse Novax-style address strings into comparable components.
+
+    :param address: Address string to parse.
+    :return: A mapping of address components (street_name, house_number, floor, door, locality, postal_code, city) or None if parsing fails.
+    """
+    normalized = _normalize_address_text(address)
+    if not normalized:
+        return None
+
+    match = NOVAX_ADDRESS_RE.match(normalized)
+    if not match:
+        return None
+
+    parts = match.groupdict()
+    return {
+        "street_name": _normalize_component(parts["street_name"]),
+        "house_number": _normalize_component(parts["house_number"]).replace(" ", ""),
+        "floor": _normalize_component(parts.get("floor") or ""),
+        "door": _normalize_component(parts.get("door") or ""),
+        "locality": _normalize_component(parts.get("locality") or ""),
+        "postal_code": str(parts["postal_code"]),
+        "city": _normalize_component(parts["city"]),
+    }
+
+
+def _addresses_are_equivalent(lhs: Any, rhs: Any) -> bool:
+    """
+    Compare addresses semantically so minor Novax formatting differences are ignored.
+
+    :param lhs: Left-hand side address to compare.
+    :param rhs: Right-hand side address to compare.
+    :return: True if addresses are equivalent, else False.
+    """
+    lhs_normalized = _normalize_address_text(lhs)
+    rhs_normalized = _normalize_address_text(rhs)
+
+    if lhs_normalized.casefold() == rhs_normalized.casefold():
+        return True
+
+    lhs_punct_insensitive = _normalize_component(lhs_normalized)
+    rhs_punct_insensitive = _normalize_component(rhs_normalized)
+    if lhs_punct_insensitive == rhs_punct_insensitive:
+        return True
+
+    lhs_parts = _parse_novax_address(lhs_normalized)
+    rhs_parts = _parse_novax_address(rhs_normalized)
+    if lhs_parts and rhs_parts:
+        return lhs_parts == rhs_parts
+
+    return False
+
+
 def update_protected_address_status(
     *,
     entry: Name,
     is_protected_address: bool,
 ) -> bool:
     """
+    Update the protected address status for a given `Name` entry.
 
     :param entry: Novax `Name` ORM object with joined `details`.
     :param is_protected_address: True if CPR lookup indicates protected address.
@@ -131,7 +233,7 @@ def update_address_from_dataforsyning(
     :return: True if address history was updated, else False.
     """
     new_full_address = address_info.get("full_address")
-    if new_full_address == str(entry.ADRESSE).strip():
+    if _addresses_are_equivalent(new_full_address, entry.ADRESSE):
         return False
 
     entry.ADRESSE = new_full_address
