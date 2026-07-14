@@ -285,7 +285,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
             # Set approved status
             if godkommu.STATUS.strip() == 'IND_MOD':
                 godkommu.STATUS = 'IND_GODK'
-                logger.info("Set Godkommu.STATUS to 'IND_GODK' for NAVNID %s", entry.ID)
+                logger.info("Set Godkommu.STATUS to 'IND_GODK' for Name ID %s", entry.ID)
 
             # Update timestamps if any relevant changes were made
             if any([is_new_district, is_new_address_set, has_changed_ansvarshpl, has_changed_personusers, is_new_kommunekode]):
