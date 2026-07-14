@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class District(Base):
     __tablename__ = 'sundhedsplejedistrikter_rk_all'
-    __table_args__ = {'schema': 'nye_tabeller'}
+    __table_args__ = {'schema': 's22_sundhed_kultur'}
     distriktnavn = Column(String, primary_key=True)
     wkb_geometry = Column(Geometry(geometry_type='MULTIPOLYGON', srid=25832))
 
