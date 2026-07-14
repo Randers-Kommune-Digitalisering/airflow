@@ -64,7 +64,7 @@ Hvis adressen ikke kan valideres/returneres fra Dataforsyningen, ryddes distrikt
   Bruges til at slå CPR-adresse UUID op i Dataforsyningen og hente felter som vejkode, kommunekode, postnr, koordinater m.m.
 
 **District Map API/DB:**
-- **`gis_db`**  
+- **`gis_db_districts`**  
   Bruges til at oversætte koordinater (x/y) til distriktsnavn.
 
 **CPR API:**
