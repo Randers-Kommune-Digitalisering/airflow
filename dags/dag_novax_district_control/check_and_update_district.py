@@ -83,7 +83,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     name_obj.date = note_obj.DATO
                     name_obj.journal = parse_journal_data(note_obj.NOTE)
                     assigned = True
-                    entries.append(name_obj)
+                    entries.append((name_obj, godkommu_obj))
                     seen_navnids.add(navnid)
 
             if not assigned:
@@ -92,7 +92,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
         logger.info(f"Processing {len(entries)} entries for date range {start_date} to {end_date}")
 
         invalid_entries = []
-        for entry in entries:
+        for entry, godkommu in entries:
             # CPR validation
             if not is_valid_cpr(entry.CPR):
                 logger.warning(
@@ -275,12 +275,19 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     "Created primary personuser 'FIKTIV' for Name ID %s",
                     entry.ID,
                 )
+
             elif has_changed_personusers:
                 logger.info(
                     "Updated personusers to keep only 'FIKTIV' as primary for Name ID %s",
                     entry.ID,
                 )
 
+            # Set approved status
+            if godkommu.STATUS.strip() == 'IND_MOD':
+                godkommu.STATUS = 'IND_GODK'
+                logger.info("Set Godkommu.STATUS to 'IND_GODK' for Name ID %s", entry.ID)
+
+            # Update timestamps if any relevant changes were made
             if any([is_new_district, is_new_address_set, has_changed_ansvarshpl, has_changed_personusers, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time

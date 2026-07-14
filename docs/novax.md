@@ -79,7 +79,7 @@ Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsø
   Bruges som Connection id i Airflow til at hente host til Dataforsyningens API.
 
 **District Map API:**
-- **`gis_db`**  
+- **`gis_db_districts`**  
   Bruges som Connection id i Airflow til at hente host, bruger, adgangskode og port til GIS PostgreSQL databasen.
 
 **CPR API:**
