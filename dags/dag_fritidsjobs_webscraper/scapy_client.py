@@ -1,5 +1,6 @@
 import importlib
 import logging
+import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import urlparse, urljoin
@@ -15,6 +16,11 @@ SCRAPY_PLAYWRIGHT_SETTINGS = {
     },
     "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     "PLAYWRIGHT_LAUNCH_OPTIONS": {"headless": True},
+    "PLAYWRIGHT_CONTEXTS": {
+        "default": {
+            "java_script_enabled": True,
+        }
+    },
     "LOG_ENABLED": False,
 }
 
@@ -93,8 +99,9 @@ def _build_config_spider(spider_base_class: type, site_configs: list[dict[str, A
             list_config = response.meta["list_config"]
 
             try:
-                await _follow_list_route(page, list_config.get("list_route", []))
-                html = await page.content()
+                scope = await _follow_list_route(page, list_config.get("list_route", []))
+                await _wait_for_list_elements(page, scope, list_config)
+                html = await _extract_scope_html(page, scope, list_config)
             finally:
                 await page.close()
 
@@ -103,32 +110,40 @@ def _build_config_spider(spider_base_class: type, site_configs: list[dict[str, A
                 base_url=site_config["site_url"],
                 list_elements=list_config.get("list_elements", {}),
             )
+            logger.info("Extracted %d items for site=%s list=%s", len(scraped_items), site_config.get("site_name"), list_config.get("list_name"))
             _store_list_results(scraped_sites, site_config, list_config, scraped_items)
 
     return ConfigurableFritidsjobsSpider
 
 
-async def _follow_list_route(page: Any, list_route: Iterable[Any]) -> None:
+async def _follow_list_route(page: Any, list_route: Iterable[Any]) -> Any:
     """
     Execute each configured browser interaction required before scraping.
 
     :param page: Playwright page used for dynamic navigation
     :param list_route: Ordered browser interaction steps to apply before scraping
-    :return: None
+    :return: The active Playwright scope (page or frame) used for final extraction
     """
+    scope: Any = page
+
     for route_step in list_route:
         if isinstance(route_step, str):
-            await page.locator(route_step).click()
+            await scope.locator(route_step).click()
             await page.wait_for_load_state("networkidle")
             continue
 
         if isinstance(route_step, Mapping):
+            if "frame" in route_step:
+                scope = _resolve_frame_scope(page, route_step["frame"])
+                if len(route_step) == 1:
+                    continue
+
             if "wait_for" in route_step:
-                await page.wait_for_selector(route_step["wait_for"])
+                await _wait_for_in_scope(scope, route_step["wait_for"])
                 continue
 
             if "click" in route_step:
-                await page.locator(route_step["click"]).click()
+                await scope.locator(route_step["click"]).click()
                 await page.wait_for_load_state("networkidle")
                 continue
 
@@ -143,7 +158,7 @@ async def _follow_list_route(page: Any, list_route: Iterable[Any]) -> None:
                     }.items()
                     if value is not None
                 }
-                await page.locator(select_config["selector"]).select_option(**option_kwargs)
+                await scope.locator(select_config["selector"]).select_option(**option_kwargs)
                 await page.wait_for_load_state("networkidle")
                 continue
 
@@ -151,11 +166,207 @@ async def _follow_list_route(page: Any, list_route: Iterable[Any]) -> None:
             for selector in route_step:
                 if not isinstance(selector, str):
                     raise TypeError(f"Unsupported selector in list_route: {selector!r}")
-                await page.locator(selector).click()
+                await scope.locator(selector).click()
                 await page.wait_for_load_state("networkidle")
             continue
 
         raise TypeError(f"Unsupported list_route step: {route_step!r}")
+
+    return scope
+
+
+async def _wait_for_in_scope(scope: Any, selector: str) -> None:
+    """
+    Wait for a selector inside the current interaction scope.
+
+    :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
+    :param selector: CSS selector that must become available
+    :return: None
+    """
+    if hasattr(scope, "wait_for_selector"):
+        await scope.wait_for_selector(selector)
+        return
+
+    await scope.locator(selector).first.wait_for(state="visible")
+
+
+async def _wait_for_list_elements(page: Any, scope: Any, list_config: Mapping[str, Any]) -> None:
+    """
+    Wait for configured list element selectors before extracting HTML.
+
+    :param page: Playwright page used for dynamic navigation
+    :param scope: Active Playwright scope returned from route execution
+    :param list_config: List configuration for the current scrape
+    :return: None
+    """
+    list_elements = list_config.get("list_elements", {})
+    if not isinstance(list_elements, Mapping):
+        return
+
+    wait_selectors = _get_wait_selectors(list_elements)
+    if not wait_selectors:
+        return
+
+    timeout_ms = list_config.get("wait_for_list_elements_timeout_ms", 30000)
+    target_scope = _resolve_wait_scope(page, scope, list_elements)
+
+    for wait_selector in wait_selectors:
+        if hasattr(target_scope, "wait_for_selector"):
+            await target_scope.wait_for_selector(wait_selector, timeout=timeout_ms)
+            continue
+
+        await target_scope.locator(wait_selector).first.wait_for(state="visible", timeout=timeout_ms)
+
+
+def _get_wait_selectors(list_elements: Mapping[str, Any]) -> list[str]:
+    """
+    Collect unique field selectors used to detect rendered list content.
+
+    :param list_elements: Field-to-selector mapping for extraction
+    :return: Ordered selectors to wait for
+    """
+    wait_selectors: list[str] = []
+    seen: set[str] = set()
+
+    for field_name, css_selector in list_elements.items():
+        if field_name in {"frame", "row"}:
+            continue
+        if not isinstance(css_selector, str):
+            continue
+
+        normalized_selector = css_selector.strip()
+        if not normalized_selector or normalized_selector in seen:
+            continue
+
+        wait_selectors.append(normalized_selector)
+        seen.add(normalized_selector)
+
+    row_selector = list_elements.get("row")
+    if isinstance(row_selector, str):
+        normalized_row_selector = row_selector.strip()
+        if normalized_row_selector and normalized_row_selector not in seen:
+            wait_selectors.append(normalized_row_selector)
+
+    return wait_selectors
+
+
+def _resolve_wait_scope(page: Any, fallback_scope: Any, list_elements: Mapping[str, Any]) -> Any:
+    """
+    Resolve the proper scope for waiting on extracted list elements.
+
+    :param page: Playwright page used for dynamic navigation
+    :param fallback_scope: Active Playwright scope returned from route execution
+    :param list_elements: Field-to-selector mapping for extraction
+    :return: Playwright scope used for waiting
+    """
+    frame_config = list_elements.get("frame")
+    if frame_config is not None:
+        return _resolve_frame_scope(page, frame_config)
+
+    return fallback_scope
+
+
+def _resolve_frame_scope(page: Any, frame_config: Any) -> Any:
+    """
+    Resolve a frame locator from a frame selector or frame configuration mapping.
+
+    :param page: Playwright page used for dynamic navigation
+    :param frame_config: Frame selector string or mapping with selector/url_contains/name
+    :return: Playwright frame locator scope for element interactions
+    """
+    if isinstance(frame_config, str):
+        return page.frame_locator(frame_config)
+
+    if not isinstance(frame_config, Mapping):
+        raise TypeError(f"Unsupported frame configuration: {frame_config!r}")
+
+    selector = frame_config.get("selector")
+    if isinstance(selector, str) and selector:
+        return page.frame_locator(selector)
+
+    url_contains = frame_config.get("url_contains")
+    if isinstance(url_contains, str) and url_contains:
+        frame = page.frame(url=re.compile(f".*{re.escape(url_contains)}.*"))
+        if frame is None:
+            raise RuntimeError(f"No iframe matched url_contains={url_contains!r}")
+        return frame
+
+    frame_name = frame_config.get("name")
+    if isinstance(frame_name, str) and frame_name:
+        frame = page.frame(name=frame_name)
+        if frame is None:
+            raise RuntimeError(f"No iframe matched name={frame_name!r}")
+        return frame
+
+    raise ValueError("Frame configuration must include selector, url_contains, or name")
+
+
+async def _extract_scope_html(page: Any, scope: Any, list_config: Mapping[str, Any]) -> str:
+    """
+    Extract HTML from either the current scope or an explicitly configured content frame.
+
+    :param page: Playwright page used for dynamic navigation
+    :param scope: Active Playwright scope returned from route execution
+    :param list_config: List configuration for the current scrape
+    :return: Rendered HTML string used by scrapy selectors
+    """
+    list_elements = list_config.get("list_elements", {})
+    extraction_frame_config = None
+
+    if isinstance(list_elements, Mapping):
+        extraction_frame_config = list_elements.get("frame")
+
+    if extraction_frame_config is not None:
+        explicit_frame = await _resolve_content_frame(page, extraction_frame_config)
+        return await explicit_frame.content()
+
+    if hasattr(scope, "content"):
+        return await scope.content()
+
+    return await page.content()
+
+
+async def _resolve_content_frame(page: Any, frame_config: Any) -> Any:
+    """
+    Resolve a Playwright frame object used to extract iframe HTML content.
+
+    :param page: Playwright page used for dynamic navigation
+    :param frame_config: Frame selector string or mapping with selector/url_contains/name
+    :return: Playwright frame object
+    """
+    if isinstance(frame_config, str):
+        frame_element = await page.query_selector(frame_config)
+        if frame_element is None:
+            raise RuntimeError(f"No iframe matched selector={frame_config!r}")
+
+        frame = await frame_element.content_frame()
+        if frame is None:
+            raise RuntimeError(f"Could not resolve frame content for selector={frame_config!r}")
+
+        return frame
+
+    if not isinstance(frame_config, Mapping):
+        raise TypeError(f"Unsupported content_frame configuration: {frame_config!r}")
+
+    selector = frame_config.get("selector")
+    if isinstance(selector, str) and selector:
+        return await _resolve_content_frame(page, selector)
+
+    url_contains = frame_config.get("url_contains")
+    if isinstance(url_contains, str) and url_contains:
+        frame = page.frame(url=re.compile(f".*{re.escape(url_contains)}.*"))
+        if frame is None:
+            raise RuntimeError(f"No iframe matched url_contains={url_contains!r}")
+        return frame
+
+    frame_name = frame_config.get("name")
+    if isinstance(frame_name, str) and frame_name:
+        frame = page.frame(name=frame_name)
+        if frame is None:
+            raise RuntimeError(f"No iframe matched name={frame_name!r}")
+        return frame
+
+    raise ValueError("content_frame must include selector, url_contains, or name")
 
 
 async def _configure_request_blocking(
@@ -171,6 +382,10 @@ async def _configure_request_blocking(
     :param list_config: List configuration for the current scrape
     :return: None
     """
+    if not _should_block_external_requests(site_config, list_config):
+        logger.info("External request blocking disabled for this scrape configuration.")
+        return
+
     allowed_domains = _collect_allowed_domains(site_config, list_config)
 
     async def handle_route(route: Any) -> None:
@@ -183,6 +398,28 @@ async def _configure_request_blocking(
         await route.abort()
 
     await page.route("**/*", handle_route)
+
+
+def _should_block_external_requests(
+    site_config: Mapping[str, Any],
+    list_config: Mapping[str, Any],
+) -> bool:
+    """
+    Determine whether external request blocking should be active.
+
+    :param site_config: Site configuration for the current scrape
+    :param list_config: List configuration for the current scrape
+    :return: True when external requests should be blocked
+    """
+    list_override = list_config.get("block_external_requests")
+    if isinstance(list_override, bool):
+        return list_override
+
+    site_default = site_config.get("block_external_requests")
+    if isinstance(site_default, bool):
+        return site_default
+
+    return True
 
 
 async def _init_page(page: Any, request: Any) -> None:
@@ -218,7 +455,7 @@ def _collect_allowed_domains(
     ]
 
     allowed_domains = {
-        domain.lower()
+        _normalize_allowed_domain(domain)
         for domain in configured_domains
         if isinstance(domain, str) and domain
     }
@@ -226,6 +463,27 @@ def _collect_allowed_domains(
         allowed_domains.add(site_hostname.lower())
 
     return allowed_domains
+
+
+def _normalize_allowed_domain(domain: str) -> str:
+    """
+    Normalize allowed domain entries from hostnames, wildcards, or full URLs.
+
+    :param domain: Raw domain entry from configuration
+    :return: Normalized hostname or wildcard domain suffix
+    """
+    normalized = domain.strip().lower()
+
+    if normalized.startswith("*."):
+        return normalized
+
+    parsed = urlparse(normalized)
+    if parsed.scheme:
+        return (parsed.hostname or normalized).lower()
+
+    host = normalized.split("/", 1)[0]
+    host = host.split(":", 1)[0]
+    return host
 
 
 def _is_allowed_request_url(request_url: str, allowed_domains: set[str]) -> bool:
@@ -245,6 +503,13 @@ def _is_allowed_request_url(request_url: str, allowed_domains: set[str]) -> bool
         return True
 
     normalized_hostname = hostname.lower()
+
+    for allowed_domain in allowed_domains:
+        if allowed_domain.startswith("*."):
+            wildcard_domain = allowed_domain[2:]
+            if normalized_hostname == wildcard_domain or normalized_hostname.endswith(f".{wildcard_domain}"):
+                return True
+
     return any(
         normalized_hostname == allowed_domain or normalized_hostname.endswith(f".{allowed_domain}")
         for allowed_domain in allowed_domains
@@ -322,7 +587,7 @@ def _extract_list_items(
     field_selectors = {
         field_name: css_selector
         for field_name, css_selector in list_elements.items()
-        if field_name != "row"
+        if field_name not in {"row", "frame"}
     }
     if not field_selectors:
         return []
