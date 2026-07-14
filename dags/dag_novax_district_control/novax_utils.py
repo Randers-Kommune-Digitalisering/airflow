@@ -36,14 +36,14 @@ def parse_journal_data(journal_string: str) -> dict:
         calculated due date (based on gestational age and journal date)
     """
 
-    date_match = re.search(r"Afsendt:\s*(\d{2}-\d{2}-\d{4})\s*kl\.\s*(\d{2}:\d{2})", journal_string)
+    date_match = re.search(r"Afsendt:\h*(\d{2}-\d{2}-\d{4})\h*kl\.\h*(\d{2}:\d{2})", journal_string)
     journal_date = datetime.strptime(date_match.group(1) + " " + date_match.group(2), "%d-%m-%Y %H:%M").date() if date_match else None
 
-    phone_match = re.search(r'(?:(?:Tlf\.*)(?:\s*nr\.*)?|Mobil):*[\s ](?:(?:\+|00)45\s?)?(\d{8}|(?:\d{2}\s){3}\d{2})', journal_string, re.IGNORECASE)
+    phone_match = re.search(r'(?:(?:Tlf\.*)(?:\s*nr\.*)?|Mobil):*[\h ]*(?:(?:\+|00)45\h?)?(\d{8}|(?:\d{2}\h){3}\d{2})', journal_string, re.IGNORECASE)
     phone = phone_match.group(1).strip() if phone_match else None
     normalized_phone = normalize_phone_number(phone)
 
-    gest_match = re.search(r'Gestationsalder\r?\nUge:\s*(\d{1,2})(?:,\s*Dag:\s*(\d)\s?)?', journal_string)
+    gest_match = re.search(r'Gestationsalder\r?\nUge:\h*(\d{1,2})(?:,\s*Dag:\s*(\d)\h?)?', journal_string)
     gest_week = int(gest_match.group(1)) if gest_match else None
     gest_day = int(gest_match.group(2)) if gest_match and gest_match.group(2) else 0  # Default to 0 if not found, as gestational days may not always be provided.
 
