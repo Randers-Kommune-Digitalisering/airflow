@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import date, datetime, timedelta
 import logging
-import re
+import regex as re
 
 
 logger = logging.getLogger(__name__)
