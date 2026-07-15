@@ -11,7 +11,7 @@ Formålet med jobbet er at hente og opdatere patienters adresse- og distriktsinf
 Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfører følgende trin:
 
 - Bestemmer datointerval automatisk baseret på sidste succesfulde scheduled DAG-run (kun `run_type = scheduled` og `state = success`). Intervallet beregnes fra sidste runs `data_interval_end` frem til det aktuelle runs `data_interval_end`.
-- Henter graviditetsjournaler fra Novax-databasen for intervallet ved at udvælge journalposter med emne som “Orientering - Gravid”.
+- Henter graviditetsjournaler fra Novax-databasen for intervallet ved at udvælge journalposter med emne som “Orientering - Gravid” og status `IND_MOD`.
 - Filtrerer dubletter pr. patient (NAVNID) og beholder kun seneste journalindslag i perioden.
 - For hver patient:
   - Springer over hvis patientens CPR er angivet i Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste).
@@ -46,14 +46,16 @@ Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfø
     - Kommune-ID opdateres i `Name.TS_KOMID` samt `NameDetails.TS_KOMID` og `NameDetails.KOMMUNE_OPR` hvis en valid adresse returneres fra Dataforsyningen
     - Tidsstempler opdateres ved ændringer (fx `Name.TS_UPDD`, `Name.TS_UPDT`, `NameDetails.TS_UPDD`, `NameDetails.TS_UPDT`)
   - Opdaterer Novax via en samlet batch
+  - Sætter altid `Godkommu.STATUS = 'IND_GODK'` for behandlede journalposter, så de ikke kan genbehandles ved senere kørsler (også ved historiske dato-intervaller)
 
 **Vigtigt: “Always updates” pr. patient**
 
 Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsøger jobkørslen altid at sikre denne værdi pr. patient (dvs. feltet skrives hvis det ikke allerede har den ønskede værdi):
 
 - Patienten tildeles altid til **“Gravid til fordeling”** ved at sætte `AnsvarsShpl = 'FIKTIV'` i Novax
+- Den behandlede journalpost godkendes altid ved at sætte `Godkommu.STATUS = 'IND_GODK'`, hvilket forhindrer genbehandling af samme post
 
-**OBS:** Perioden for dataudtræk bestemmes automatisk ud fra sidste succesfulde scheduled run og det aktuelle runs data-interval (DAG'ens timezone). Intervaller behandles som hele datoer, hvor start og slut anvendes direkte i databasefilteret (start `>=`, slut `<=`).
+**OBS:** Perioden for dataudtræk bestemmes automatisk ud fra sidste succesfulde scheduled run og det aktuelle runs data-interval (DAG'ens timezone). Intervaller behandles som hele datoer, hvor start og slut anvendes direkte i databasefilteret (start `>=`, slut `<`).
 
 **Dataflow:**
 - Data fra Novax DB (journal) → Adresseopslag via CPR og Dataforsyning → Distriktsopslag via District Map API → Opdatering i Novax DB
