@@ -12,7 +12,6 @@ class RouteResult:
     :param scope: Active Playwright interaction scope (Page, Frame, or FrameLocator)
     :param frame_config: Last frame configuration selected during route execution
     """
-
     scope: Any
     frame_config: Any | None = None
 

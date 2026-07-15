@@ -1,12 +1,11 @@
 import logging
 from typing import Any
 from dag_fritidsjobs_webscraper.scapy_client import scrape_sites
-from dag_fritidsjobs_webscraper.email_construction import construct_email
+from dag_fritidsjobs_webscraper.utils.email_construction import construct_email
 
 from airflow.models import Variable
 # from airflow.hooks.base import BaseHook
 # from airflow.exceptions import AirflowFailException
-# from dag_fritidsjobs_webscraper.fritidsjobs_webscraper_data import placeholder_function
 from rkdigi.email_handling import EmailSender
 # from rkdigi.database_manager import DatabaseManager
 
@@ -49,17 +48,16 @@ def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
     logger.info("Constructed email body: %s", email_body)
 
     email_sender = EmailSender(smtp_server=smtp_server)
-    email_sender.send_email(
-        sender=sender,
-        recipients=recipients,
-        subject=subject,
-        body=email_body,
-        attachments=[],
-    )
+    for recipient in recipients:
+        email_sender.send_email(
+            sender=sender,
+            recipients=recipients,
+            subject=subject,
+            body=email_body,
+            attachments=[],
+        )
 
-    # return scraped_sites
-
-    # placeholder_function()
+    return
 
     # sender = runtime_config["sender_email"]
     # recipients = runtime_config["recipient_emails"]

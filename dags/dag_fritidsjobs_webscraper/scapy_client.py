@@ -4,8 +4,8 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import urlparse
 
-from dag_fritidsjobs_webscraper.item_extraction import extract_list_items
-from dag_fritidsjobs_webscraper.playwright_navigation import extract_scope_html, follow_list_route, wait_for_list_elements
+from dag_fritidsjobs_webscraper.utils.item_extraction import extract_list_items
+from dag_fritidsjobs_webscraper.utils.playwright_navigation import extract_scope_html, follow_list_route, wait_for_list_elements
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,8 @@ SCRAPY_PLAYWRIGHT_SETTINGS = {
         "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
         "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
     },
+    # Keep Scrapy retries for transient server/network errors, but do not retry 429 responses.
+    "RETRY_HTTP_CODES": [500, 502, 503, 504, 522, 524, 408],
     "PLAYWRIGHT_BROWSER_TYPE": "chromium",
     "PLAYWRIGHT_LAUNCH_OPTIONS": {"headless": True},
     "PLAYWRIGHT_CONTEXTS": {
@@ -64,7 +66,6 @@ def _build_config_spider(spider_base_class: type, site_configs: list[dict[str, A
     :param scraped_sites: Mutable result container updated during scraping
     :return: Configured spider class for the current scrape run
     """
-
     class ConfigurableFritidsjobsSpider(spider_base_class):
         name = "fritidsjobs_config_spider"
 
