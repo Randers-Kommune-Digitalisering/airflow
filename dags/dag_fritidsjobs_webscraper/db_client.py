@@ -12,8 +12,8 @@ def insert_jobs(session: Session, job_data: list[dict[str, Any]]):
     :param job_data: List of scraped site/list/item structures
     """
     try:
-        for title, url in _iter_job_pairs(job_data):
-            new_job = Job(title=title, url=url)
+        for site, title, url in _iter_job_rows(job_data):
+            new_job = Job(site=site, title=title, url=url)
             session.add(new_job)
         session.commit()
     except Exception:
@@ -73,21 +73,22 @@ def filter_existing_jobs(session: Session, job_data: list[dict[str, Any]]) -> li
         raise
 
 
-def _iter_job_pairs(job_data: list[dict[str, Any]]) -> list[tuple[str, str]]:
+def _iter_job_rows(job_data: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
     """
-    Flatten site/list/item payload into title/url tuples.
+    Flatten site/list/item payload into site/title/url tuples.
 
     :param job_data: List of scraped site/list/item structures
-    :return: Flat title/url pairs
+    :return: Flat site/title/url rows
     """
-    job_pairs: list[tuple[str, str]] = []
+    job_rows: list[tuple[str, str, str]] = []
 
     for site in job_data:
+        site_name = site.get("site_name") or site.get("site_url") or "unknown"
         for job_list in site.get("lists", []):
             for item in job_list.get("items", []):
                 title = item.get("title")
                 url = item.get("link") or item.get("url")
                 if title and url:
-                    job_pairs.append((title, url))
+                    job_rows.append((site_name, title, url))
 
-    return job_pairs
+    return job_rows
