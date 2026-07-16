@@ -1,0 +1,182 @@
+{
+    "sender_email": "digitalisering@randers.dk",
+    "recipient_emails": ["st@randers.dk"],
+    "smtp_server": "smtp.randers.dk",
+    "sites": [
+        {
+            "site_name": "Jem & Fix",
+            "site_url": "https://www.jemogfix.dk/job-karriere/ledige-stillinger/",
+            "allowed_domains": [
+                "api.teamtailor.com",
+                "scripts.teamtailor-cdn.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers N",
+                    "list_route": [
+                        {
+                            "wait_for": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select"
+                        },
+                        {
+                            "select": {
+                                "selector": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select",
+                                "label": "Randers N"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div.teamtailor-jobs__job-wrapper > div.teamtailor-jobs__job",
+                        "title": "a.teamtailor-jobs__job-title",
+                        "link": "a.teamtailor-jobs__job-title"
+                    }
+                },
+                {
+                    "list_name": "Randers S",
+                    "list_route": [
+                        {
+                            "wait_for": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select"
+                        },
+                        {
+                            "select": {
+                                "selector": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select",
+                                "label": "Randers S"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div.teamtailor-jobs__job-wrapper",
+                        "title": "a.teamtailor-jobs__job-title",
+                        "link": "a.teamtailor-jobs__job-title"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Elgiganten",
+            "site_url": "https://www.elgiganten.dk/om-elgiganten/ledige-stillinger",
+            "block_external_requests": false,
+            "allowed_domains": [
+                "reachmee.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "#riframe"
+                        },
+                        {
+                            "wait_for": "div#mainjoblist"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#filter_select_1",
+                                "label": "Randers"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": ".mainjoblist table#jobsTable tr",
+                        "title": "td:first-child > a[href]",
+                        "link": "td:first-child > a[href]"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Normal",
+            "site_url": "https://jobs.butik.normal.dk/jobs?split_view=true&geobound_coordinates%5Btop_left_lat%5D=56.46097894202437&geobound_coordinates%5Btop_left_lon%5D=10.035458207130432&geobound_coordinates%5Bbottom_right_lat%5D=56.457822292965254&geobound_coordinates%5Bbottom_right_lon%5D=10.0422602891922&query=",
+            "allowed_domains": [
+                "teamtailor-cdn.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Dytmærsken",
+                    "list_route": [
+                        {
+                            "wait_for": "ul#jobs_list_container"
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "ul#jobs_list_container li",
+                        "title": "a span.text-block-base-link",
+                        "link": "a"
+                    }
+                }
+            ]
+    
+        },
+        {
+            "site_name": "Rema 1000",
+            "site_url": "https://job.rema1000.dk/ledige-stillinger",
+            "allowed_domains": [
+                "hr-manager.net"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "iframe#iFrameResizer0"
+                        },
+                        {
+                            "wait_for": "select#location_ddfilter"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#location_ddfilter",
+                                "label": "Region Midtjylland"
+                            }
+                        },
+                        {
+                            "wait_for": "select#location_ddfiltercascade1"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#location_ddfiltercascade1",
+                                "label": "Randers"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div[role='listitem']",
+                        "title": "div.project-title",
+                        "link": "div.project-title"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "McDonald's",
+            "site_url": "https://www.mcdonalds.com/dk/da-dk/job-og-fremtid/job.html",
+            "allowed_domains": [
+                "jobylon.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "div.cmp-embed > iframe"
+                        },
+                        {
+                            "wait_for": "div.select.location-select"
+                        },
+                        {
+                            "select": {
+                                "selector": "div.select.location-select select",
+                                "label": "Randers"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "a[id^='job-']",
+                        "title": "p.title",
+                        "link": "a[id^='job-']"
+                    }
+                }
+            ],
+            "block_external_requests": false
+        }
+    ]
+}
