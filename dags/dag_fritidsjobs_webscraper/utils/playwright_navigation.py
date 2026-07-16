@@ -1,4 +1,6 @@
+import asyncio
 import re
+import time
 from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -30,38 +32,33 @@ async def follow_list_route(page: Any, list_route: Iterable[Any]) -> RouteResult
     for route_step in list_route:
         if isinstance(route_step, str):
             await scope.locator(route_step).click()
-            await page.wait_for_load_state("networkidle")
+            await _wait_for_route_step_settle(page)
             continue
 
         if isinstance(route_step, Mapping):
+            handled = False
+
             if "frame" in route_step:
                 frame_config = route_step["frame"]
                 scope = _resolve_interaction_scope(page, frame_config)
-                if len(route_step) == 1:
-                    continue
+                handled = True
 
             if "wait_for" in route_step:
                 await _wait_for_in_scope(scope, route_step["wait_for"])
-                continue
+                handled = True
 
             if "click" in route_step:
                 await scope.locator(route_step["click"]).click()
-                await page.wait_for_load_state("networkidle")
-                continue
+                await _wait_for_route_step_settle(page)
+                handled = True
 
             if "select" in route_step:
                 select_config = route_step["select"]
-                option_kwargs = {
-                    key: value
-                    for key, value in {
-                        "value": select_config.get("value"),
-                        "label": select_config.get("label"),
-                        "index": select_config.get("index"),
-                    }.items()
-                    if value is not None
-                }
-                await scope.locator(select_config["selector"]).select_option(**option_kwargs)
-                await page.wait_for_load_state("networkidle")
+                await _select_option_in_scope(scope, select_config)
+                await _wait_for_route_step_settle(page)
+                handled = True
+
+            if handled:
                 continue
 
         if isinstance(route_step, Iterable) and not isinstance(route_step, (str, bytes, Mapping)):
@@ -69,12 +66,34 @@ async def follow_list_route(page: Any, list_route: Iterable[Any]) -> RouteResult
                 if not isinstance(selector, str):
                     raise TypeError(f"Unsupported selector in list_route: {selector!r}")
                 await scope.locator(selector).click()
-                await page.wait_for_load_state("networkidle")
+                await _wait_for_route_step_settle(page)
             continue
 
         raise TypeError(f"Unsupported list_route step: {route_step!r}")
 
     return RouteResult(scope=scope, frame_config=frame_config)
+
+
+async def _wait_for_route_step_settle(page: Any, timeout_ms: int = 30000) -> None:
+    """
+    Wait for the page to settle after a route interaction.
+
+    Some pages keep long-lived requests open (analytics, trackers, websockets),
+    which can prevent `networkidle` from ever being reached. In that case,
+    fall back to DOM readiness so route execution can continue.
+
+    :param page: Playwright page used for dynamic navigation
+    :param timeout_ms: Timeout in milliseconds for waiting on networkidle
+    :return: None
+    """
+    try:
+        await page.wait_for_load_state("networkidle", timeout=timeout_ms)
+        return
+    except Exception as exc:
+        if exc.__class__.__name__ != "TimeoutError":
+            raise
+
+    await page.wait_for_load_state("domcontentloaded")
 
 
 async def wait_for_list_elements(page: Any, route_result: RouteResult, list_config: Mapping[str, Any]) -> None:
@@ -95,10 +114,27 @@ async def wait_for_list_elements(page: Any, route_result: RouteResult, list_conf
         return
 
     timeout_ms = list_config.get("wait_for_list_elements_timeout_ms", 30000)
+    wait_state = str(list_config.get("wait_for_list_elements_state", "attached")).strip().lower()
+    if wait_state not in {"attached", "detached", "visible", "hidden"}:
+        wait_state = "attached"
+
     target_scope = _resolve_wait_scope(page, route_result.scope, list_elements)
 
     for wait_selector in wait_selectors:
-        await _wait_for_in_scope(target_scope, wait_selector, timeout_ms)
+        await _wait_for_in_scope(target_scope, wait_selector, timeout_ms, wait_state)
+
+    if list_config.get("wait_for_list_update_after_route", True) is not False:
+        update_selector = _resolve_list_update_selector(list_config, list_elements, wait_selectors)
+        if update_selector is not None:
+            stability_ms = _coerce_positive_int(list_config.get("wait_for_list_update_stability_ms"), 800)
+            poll_ms = _coerce_positive_int(list_config.get("wait_for_list_update_poll_ms"), 150)
+            await _wait_for_selector_stability(
+                target_scope,
+                update_selector,
+                timeout_ms,
+                stability_ms=stability_ms,
+                poll_ms=poll_ms,
+            )
 
 
 async def extract_scope_html(page: Any, route_result: RouteResult, list_config: Mapping[str, Any]) -> str:
@@ -114,6 +150,16 @@ async def extract_scope_html(page: Any, route_result: RouteResult, list_config: 
     extraction_frame_config = None
 
     if isinstance(list_elements, Mapping):
+        visible_rows_only = list_config.get("extract_visible_rows_only", True) is not False
+        row_selector = list_elements.get("row")
+        if visible_rows_only and isinstance(row_selector, str):
+            normalized_row_selector = row_selector.strip()
+            if normalized_row_selector:
+                target_scope = _resolve_wait_scope(page, route_result.scope, list_elements)
+                visible_rows_html = await _extract_visible_rows_html(target_scope, normalized_row_selector)
+                if visible_rows_html is not None:
+                    return visible_rows_html
+
         extraction_frame_config = list_elements.get("frame")
 
     if extraction_frame_config is None:
@@ -129,26 +175,194 @@ async def extract_scope_html(page: Any, route_result: RouteResult, list_config: 
     return await page.content()
 
 
-async def _wait_for_in_scope(scope: Any, selector: str, timeout_ms: int | None = None) -> None:
+async def _extract_visible_rows_html(scope: Any, row_selector: str) -> str | None:
+    """
+    Extract HTML for currently visible row elements only.
+
+    :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
+    :param row_selector: CSS selector used to identify list rows
+    :return: Wrapped HTML containing only visible rows, or None on empty/error
+    """
+    try:
+        visible_rows: list[str] = await scope.locator(row_selector).evaluate_all(
+            """(elements) => elements
+                .filter((element) => {
+                    const style = window.getComputedStyle(element);
+                    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+                        return false;
+                    }
+
+                    if (element.hidden) {
+                        return false;
+                    }
+
+                    if ((element.getAttribute("aria-hidden") || "").toLowerCase() === "true") {
+                        return false;
+                    }
+
+                    const rect = element.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                })
+                .map((element) => element.outerHTML)
+            """
+        )
+    except Exception:
+        return None
+
+    if not isinstance(visible_rows, list) or not visible_rows:
+        return None
+
+    normalized_rows = [row_html for row_html in visible_rows if isinstance(row_html, str) and row_html.strip()]
+    if not normalized_rows:
+        return None
+
+    return "<div data-visible-rows='1'>" + "".join(normalized_rows) + "</div>"
+
+
+async def _wait_for_in_scope(
+    scope: Any,
+    selector: str,
+    timeout_ms: int | None = None,
+    wait_state: str = "attached",
+) -> None:
     """
     Wait for a selector in the current interaction scope.
 
     :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
     :param selector: CSS selector that must become available
     :param timeout_ms: Optional timeout in milliseconds
+    :param wait_state: Playwright wait state (attached/detached/visible/hidden)
     :return: None
     """
     if hasattr(scope, "wait_for_selector"):
-        if timeout_ms is None:
-            await scope.wait_for_selector(selector)
-        else:
-            await scope.wait_for_selector(selector, timeout=timeout_ms)
+        wait_kwargs: dict[str, Any] = {"state": wait_state}
+        if timeout_ms is not None:
+            wait_kwargs["timeout"] = timeout_ms
+        await scope.wait_for_selector(selector, **wait_kwargs)
         return
 
-    wait_args: dict[str, Any] = {"state": "visible"}
+    wait_args: dict[str, Any] = {"state": wait_state}
     if timeout_ms is not None:
         wait_args["timeout"] = timeout_ms
     await scope.locator(selector).first.wait_for(**wait_args)
+
+
+async def _wait_for_selector_stability(
+    scope: Any,
+    selector: str,
+    timeout_ms: int,
+    stability_ms: int = 800,
+    poll_ms: int = 150,
+) -> None:
+    """
+    Wait for selector content to stop changing for a short stability window.
+
+    This helps pages where list elements already exist, but filtering updates
+    happen asynchronously after select interactions.
+
+    :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
+    :param selector: CSS selector representing list rows or list container
+    :param timeout_ms: Maximum time to wait for stabilization
+    :param stability_ms: Required stable duration in milliseconds
+    :param poll_ms: Polling interval in milliseconds
+    :return: None
+    """
+    timeout_seconds = max(timeout_ms, 1) / 1000
+    deadline = time.monotonic() + timeout_seconds
+    stable_seconds = max(stability_ms, 1) / 1000
+    sleep_seconds = max(poll_ms, 25) / 1000
+
+    last_snapshot = await _snapshot_selector_state(scope, selector)
+    last_change = time.monotonic()
+
+    while True:
+        now = time.monotonic()
+        if now - last_change >= stable_seconds:
+            return
+
+        if now >= deadline:
+            return
+
+        await asyncio.sleep(sleep_seconds)
+        current_snapshot = await _snapshot_selector_state(scope, selector)
+        if current_snapshot != last_snapshot:
+            last_snapshot = current_snapshot
+            last_change = time.monotonic()
+
+
+async def _snapshot_selector_state(scope: Any, selector: str) -> str:
+    """
+    Build a compact selector snapshot for stability comparisons.
+
+    :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
+    :param selector: CSS selector used for snapshot sampling
+    :return: JSON string containing count and normalized text sample
+    """
+    return await scope.locator(selector).evaluate_all(
+        r"""(elements) => JSON.stringify({
+            count: elements.length,
+            sample: elements.slice(0, 8).map((element) =>
+                (element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120)
+            )
+        })"""
+    )
+
+
+def _resolve_list_update_selector(
+    list_config: Mapping[str, Any],
+    list_elements: Mapping[str, Any],
+    wait_selectors: Iterable[str],
+) -> str | None:
+    """
+    Resolve selector used to detect list updates after route interactions.
+
+    :param list_config: List configuration for the current scrape
+    :param list_elements: Field-to-selector mapping for extraction
+    :param wait_selectors: Selectors already used for initial readiness checks
+    :return: Selector string for update tracking, or None
+    """
+    configured_selector = list_config.get("wait_for_list_update_selector")
+    if isinstance(configured_selector, str):
+        normalized_configured = configured_selector.strip()
+        if normalized_configured:
+            return normalized_configured
+
+    row_selector = list_elements.get("row")
+    if isinstance(row_selector, str):
+        normalized_row_selector = row_selector.strip()
+        if normalized_row_selector:
+            return normalized_row_selector
+
+    for wait_selector in wait_selectors:
+        normalized_wait_selector = wait_selector.strip()
+        if normalized_wait_selector:
+            return normalized_wait_selector
+
+    return None
+
+
+def _coerce_positive_int(value: Any, default: int) -> int:
+    """
+    Coerce config values to positive integers with fallback.
+
+    :param value: Raw configured value
+    :param default: Fallback integer when coercion fails
+    :return: Positive integer
+    """
+    if isinstance(value, int) and value > 0:
+        return value
+
+    if isinstance(value, float) and value > 0:
+        return int(value)
+
+    if isinstance(value, str):
+        stripped_value = value.strip()
+        if stripped_value.isdigit():
+            parsed_value = int(stripped_value)
+            if parsed_value > 0:
+                return parsed_value
+
+    return default
 
 
 def _get_wait_selectors(list_elements: Mapping[str, Any]) -> list[str]:
@@ -197,6 +411,132 @@ def _resolve_wait_scope(page: Any, fallback_scope: Any, list_elements: Mapping[s
         return _resolve_interaction_scope(page, frame_config)
 
     return fallback_scope
+
+
+async def _select_option_in_scope(scope: Any, select_config: Mapping[str, Any]) -> None:
+    """
+    Select an option in the current scope with tolerant label matching fallback.
+
+    :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
+    :param select_config: Select step configuration from list_route
+    :return: None
+    """
+    selector = str(select_config["selector"])
+    locator = scope.locator(selector)
+    option_kwargs = {
+        key: value
+        for key, value in {
+            "value": select_config.get("value"),
+            "label": select_config.get("label"),
+            "index": select_config.get("index"),
+        }.items()
+        if value is not None
+    }
+
+    requested_label = select_config.get("label")
+    has_only_label = set(option_kwargs.keys()) == {"label"}
+    if isinstance(requested_label, str) and requested_label and has_only_label:
+        current_options = await _read_select_options(locator)
+        current_match_value = _match_option_value_for_label(current_options, requested_label)
+        if current_match_value is not None:
+            await locator.select_option(value=current_match_value)
+            return
+
+    try:
+        await locator.select_option(**option_kwargs)
+        return
+    except Exception:
+        if not (isinstance(requested_label, str) and requested_label and has_only_label):
+            raise
+
+        options = await _read_select_options(locator)
+        matched_value = _match_option_value_for_label(options, requested_label)
+        if matched_value is None:
+            raise
+
+        await locator.select_option(value=matched_value)
+
+
+async def _read_select_options(locator: Any) -> list[dict[str, str]]:
+    """
+    Read option labels and values from a select element.
+
+    :param locator: Playwright locator for a single select element
+    :return: List of option mappings with value and label
+    """
+    options = await locator.evaluate(
+        """(el) => Array.from(el.options || []).map((option) => ({
+            value: option.value,
+            label: option.label || option.textContent || ""
+        }))"""
+    )
+    if not isinstance(options, list):
+        return []
+
+    normalized_options: list[dict[str, str]] = []
+    for option in options:
+        if not isinstance(option, Mapping):
+            continue
+
+        option_value = option.get("value")
+        option_label = option.get("label")
+        if not isinstance(option_value, str) or not isinstance(option_label, str):
+            continue
+
+        normalized_options.append({"value": option_value, "label": option_label})
+
+    return normalized_options
+
+
+def _match_option_value_for_label(options: Iterable[Any], requested_label: str) -> str | None:
+    """
+    Match an option value against a requested label using normalized comparisons.
+
+    :param options: Iterable of option dicts containing value and label keys
+    :param requested_label: Desired option label from configuration
+    :return: Matched option value, or None when no label match is found
+    """
+    target_label = _normalize_label(requested_label)
+    if not target_label:
+        return None
+
+    normalized_options: list[tuple[str, str]] = []
+    for option in options:
+        if not isinstance(option, Mapping):
+            continue
+
+        option_value = option.get("value")
+        option_label = option.get("label")
+        if not isinstance(option_value, str) or not isinstance(option_label, str):
+            continue
+
+        normalized_label = _normalize_label(option_label)
+        if not normalized_label:
+            continue
+
+        normalized_options.append((option_value, normalized_label))
+        if normalized_label == target_label:
+            return option_value
+
+    for option_value, normalized_label in normalized_options:
+        if target_label in normalized_label:
+            return option_value
+
+        # Avoid weak reverse matches like single-character labels.
+        if len(normalized_label) >= 3 and normalized_label in target_label:
+            return option_value
+
+    return None
+
+
+def _normalize_label(value: str) -> str:
+    """
+    Normalize labels for resilient string matching.
+
+    :param value: Raw label value
+    :return: Lowercased label with collapsed whitespace
+    """
+    return " ".join(value.split()).casefold()
 
 
 def _resolve_interaction_scope(page: Any, frame_config: Any) -> Any:
