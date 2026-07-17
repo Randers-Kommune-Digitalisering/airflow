@@ -200,6 +200,41 @@
                     }
                 }
             ]
+        },
+        {
+            "site_name": "Subway",
+            "site_url": "https://www.jomp.dk/73/subway",
+            "allowed_domains": [
+                "hr-manager.net"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "iframe#iFrameResizer0"
+                        },
+                        {
+                            "wait_for": "select#location_ddfilter"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#location_ddfilter",
+                                "label": "Midtjylland"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div[role='listitem']",
+                        "title": "div.project-title",
+                        "link": "div[role='listitem']",
+                        "regex": {
+                            "selector": "div.project-title",
+                            "pattern": ".*Randers.*"
+                        }
+                    }
+                }
+            ]
         }
     ]
 }
