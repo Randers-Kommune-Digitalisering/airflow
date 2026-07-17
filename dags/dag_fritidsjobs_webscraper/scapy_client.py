@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from dag_fritidsjobs_webscraper.utils.item_extraction import extract_list_items
-from dag_fritidsjobs_webscraper.utils.playwright_navigation import extract_scope_html, follow_list_route, wait_for_list_elements
+from dag_fritidsjobs_webscraper.utils.playwright_navigation import capture_row_links_via_click, extract_scope_html, follow_list_route, wait_for_list_elements
 
 logger = logging.getLogger(__name__)
 
@@ -101,19 +101,25 @@ def _build_config_spider(spider_base_class: type, site_configs: list[dict[str, A
             page = response.meta["playwright_page"]
             site_config = response.meta["site_config"]
             list_config = response.meta["list_config"]
+            list_elements = list_config.get("list_elements", {})
+            scraped_items: list[dict[str, str]] = []
 
             try:
                 route_result = await follow_list_route(page, list_config.get("list_route", []))
                 await wait_for_list_elements(page, route_result, list_config)
                 html = await extract_scope_html(page, route_result, list_config)
+
+                scraped_items = extract_list_items(
+                    html=html,
+                    base_url=site_config["site_url"],
+                    list_elements=list_elements,
+                )
+
+                if _should_capture_click_links(list_elements):
+                    captured_links = await capture_row_links_via_click(page, route_result, list_config)
+                    _attach_captured_links(scraped_items, captured_links)
             finally:
                 await page.close()
-
-            scraped_items = extract_list_items(
-                html=html,
-                base_url=site_config["site_url"],
-                list_elements=list_config.get("list_elements", {}),
-            )
             logger.info(
                 "Extracted %d items for site=%s list=%s",
                 len(scraped_items),
@@ -323,3 +329,105 @@ def _store_list_results(
             "items": scraped_items,
         }
     )
+
+
+def _should_capture_click_links(list_elements: Any) -> bool:
+    """
+    Determine whether click-and-capture URL fallback should be used.
+
+    Only activate when list_elements is an object and the link key is missing.
+
+    :param list_elements: list_elements section from list config
+    :return: True when click capture should run
+    """
+    if not isinstance(list_elements, Mapping):
+        return False
+
+    return "link" not in list_elements
+
+
+def _attach_captured_links(
+    scraped_items: list[dict[str, str]],
+    captured_links: list[dict[str, str]],
+) -> None:
+    """
+    Attach captured links to scraped items that are missing a URL.
+
+    Titles are matched first when available; remaining unmatched links are attached
+    in capture order.
+
+    :param scraped_items: Item dictionaries produced from HTML extraction
+    :param captured_links: Title/link dictionaries captured via row clicks
+    :return: None
+    """
+    if not scraped_items or not captured_links:
+        return
+
+    links_by_title: dict[str, list[str]] = {}
+    ordered_links: list[str] = []
+
+    for captured_item in captured_links:
+        link = captured_item.get("link")
+        if not isinstance(link, str) or not link:
+            continue
+
+        ordered_links.append(link)
+
+        title = captured_item.get("title")
+        normalized_title = _normalize_match_key(title)
+        if not normalized_title:
+            continue
+
+        links_by_title.setdefault(normalized_title, []).append(link)
+
+    if not ordered_links:
+        return
+
+    remaining_links = ordered_links.copy()
+
+    for item in scraped_items:
+        if item.get("link") or item.get("url"):
+            continue
+
+        assigned_link: str | None = None
+        title_key = _normalize_match_key(item.get("title"))
+
+        if title_key:
+            title_matches = links_by_title.get(title_key, [])
+            if title_matches:
+                assigned_link = title_matches.pop(0)
+                _remove_first_match(remaining_links, assigned_link)
+
+        if not assigned_link and remaining_links:
+            assigned_link = remaining_links.pop(0)
+
+        if assigned_link:
+            item["link"] = assigned_link
+
+
+def _normalize_match_key(value: Any) -> str | None:
+    """
+    Normalize text keys used for title-based matching.
+
+    :param value: Raw text value
+    :return: Normalized key or None
+    """
+    if not isinstance(value, str):
+        return None
+
+    normalized = " ".join(value.split()).casefold().strip()
+    return normalized or None
+
+
+def _remove_first_match(values: list[str], target: str) -> None:
+    """
+    Remove the first list entry equal to target.
+
+    :param values: Mutable list of strings
+    :param target: Target value to remove
+    :return: None
+    """
+    try:
+        values.remove(target)
+    except ValueError:
+        return

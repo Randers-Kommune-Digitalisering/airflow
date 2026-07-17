@@ -175,6 +175,67 @@ async def extract_scope_html(page: Any, route_result: RouteResult, list_config: 
     return await page.content()
 
 
+async def capture_row_links_via_click(
+    page: Any,
+    route_result: RouteResult,
+    list_config: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    """
+    Capture row target URLs by clicking rows when no direct link selector is configured.
+
+    Each row is clicked in the same tab, the destination URL is captured,
+    then browser history returns to the list before continuing.
+
+    :param page: Playwright page used for dynamic navigation
+    :param route_result: Result returned from route execution
+    :param list_config: List configuration for the current scrape
+    :return: Captured title/link mappings in row order
+    """
+    list_elements = list_config.get("list_elements", {})
+    if not isinstance(list_elements, Mapping):
+        return []
+
+    row_selector = list_elements.get("row")
+    if not isinstance(row_selector, str) or not row_selector.strip():
+        return []
+    row_selector = row_selector.strip()
+
+    title_selector = list_elements.get("title")
+    if not isinstance(title_selector, str) or not title_selector.strip():
+        title_selector = None
+    else:
+        title_selector = title_selector.strip()
+
+    click_scope = _resolve_click_capture_scope(page, route_result, list_elements)
+    row_count = await click_scope.locator(row_selector).count()
+    if row_count <= 0:
+        return []
+
+    captured_links: list[dict[str, str]] = []
+    for row_index in range(row_count):
+        click_scope = _resolve_click_capture_scope(page, route_result, list_elements)
+        row_locator = click_scope.locator(row_selector).nth(row_index)
+
+        row_title = await _read_row_title_for_capture(row_locator, title_selector)
+        captured_url = await _capture_url_for_row_click(
+            page,
+            row_locator,
+            title_selector,
+        )
+
+        if not captured_url:
+            continue
+
+        await wait_for_list_elements(page, route_result, list_config)
+
+        captured_item: dict[str, str] = {"link": captured_url}
+        if row_title:
+            captured_item["title"] = row_title
+        captured_links.append(captured_item)
+
+    return captured_links
+
+
 async def _extract_visible_rows_html(scope: Any, row_selector: str) -> str | None:
     """
     Extract HTML for currently visible row elements only.
@@ -217,6 +278,106 @@ async def _extract_visible_rows_html(scope: Any, row_selector: str) -> str | Non
         return None
 
     return "<div data-visible-rows='1'>" + "".join(normalized_rows) + "</div>"
+
+
+def _resolve_click_capture_scope(page: Any, route_result: RouteResult, list_elements: Mapping[str, Any]) -> Any:
+    """
+    Resolve click scope for row URL capture.
+
+    :param page: Playwright page used for dynamic navigation
+    :param route_result: Result returned from route execution
+    :param list_elements: Field-to-selector mapping for extraction
+    :return: Playwright scope used for row clicking
+    """
+    frame_config = list_elements.get("frame")
+    if frame_config is None:
+        frame_config = route_result.frame_config
+
+    if frame_config is None:
+        return page
+
+    return _resolve_interaction_scope(page, frame_config)
+
+
+async def _read_row_title_for_capture(row_locator: Any, title_selector: str | None) -> str | None:
+    """
+    Read row title text for matching captured links back to scraped items.
+
+    :param row_locator: Locator scoped to a single list row
+    :param title_selector: Optional configured title selector
+    :return: Normalized row title text, or None when unavailable
+    """
+    if title_selector:
+        try:
+            title_text = await row_locator.locator(title_selector).first.text_content()
+            normalized_title = _normalize_capture_text(title_text)
+            if normalized_title:
+                return normalized_title
+        except Exception:
+            pass
+
+    try:
+        return _normalize_capture_text(await row_locator.text_content())
+    except Exception:
+        return None
+
+
+async def _capture_url_for_row_click(
+    page: Any,
+    row_locator: Any,
+    title_selector: str | None,
+) -> str | None:
+    """
+    Capture one row URL by same-tab click and history back navigation.
+
+    :param page: Playwright page used for dynamic navigation
+    :param row_locator: Locator scoped to a single list row
+    :param title_selector: Optional configured title selector
+    :return: Captured URL, or None when no navigation occurred
+    """
+    before_url = page.url
+
+    clicked = False
+    if title_selector:
+        try:
+            await row_locator.locator(title_selector).first.click()
+            clicked = True
+        except Exception:
+            clicked = False
+
+    if not clicked:
+        try:
+            await row_locator.click()
+            clicked = True
+        except Exception:
+            return None
+
+    await _wait_for_route_step_settle(page)
+    after_url = page.url
+    if not after_url or after_url == before_url:
+        return None
+
+    try:
+        await page.go_back(wait_until="domcontentloaded")
+        await _wait_for_route_step_settle(page)
+    except Exception:
+        return after_url
+
+    return after_url
+
+
+def _normalize_capture_text(value: Any) -> str | None:
+    """
+    Normalize extracted text for stable matching.
+
+    :param value: Raw text value
+    :return: Normalized text or None
+    """
+    if not isinstance(value, str):
+        return None
+
+    normalized_value = " ".join(value.split()).strip()
+    return normalized_value or None
 
 
 async def _wait_for_in_scope(

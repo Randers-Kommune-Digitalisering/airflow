@@ -254,6 +254,22 @@
                     }
                 }
             ]
+        },
+        {
+            "site_name": "Lidl",
+            "site_url": "https://karriere.lidl.dk/soeg?page=1&baseSearch={%22location%22:{%22midPointName%22:%22Aalborg%22,%22latitude%22:57.0488195,%22longitude%22:9.921747}}",
+            "allowed_domains": [
+                "googleapis.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_elements": {
+                        "row": "div.lica-search-results__item",
+                        "title": "div.lica-search-results__header > h3"
+                    }
+                }
+            ]
         }
     ]
 }

@@ -7,6 +7,7 @@ from dag_fritidsjobs_webscraper.utils.playwright_navigation import RouteResult
 from dag_fritidsjobs_webscraper.utils.playwright_navigation import _match_option_value_for_label
 from dag_fritidsjobs_webscraper.utils.playwright_navigation import _wait_for_in_scope
 from dag_fritidsjobs_webscraper.utils.playwright_navigation import _wait_for_route_step_settle
+from dag_fritidsjobs_webscraper.utils.playwright_navigation import capture_row_links_via_click
 from dag_fritidsjobs_webscraper.utils.playwright_navigation import extract_scope_html
 from dag_fritidsjobs_webscraper.utils.playwright_navigation import wait_for_list_elements
 
@@ -310,3 +311,132 @@ def test_extract_scope_html_falls_back_to_scope_content_when_visible_rows_missin
     extracted_html = asyncio.run(extract_scope_html(object(), route_result, list_config))
 
     assert "Full content" in extracted_html
+
+
+def test_capture_row_links_via_click_returns_empty_when_row_selector_is_missing() -> None:
+    route_result = RouteResult(scope=object())
+    list_config = {
+        "list_elements": {
+            "title": "h3",
+        }
+    }
+
+    captured = asyncio.run(capture_row_links_via_click(object(), route_result, list_config))
+
+    assert captured == []
+
+
+def test_capture_row_links_via_click_collects_title_and_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FakeRowLocator:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
+    class _FakeRowsLocator:
+        def __init__(self, count: int) -> None:
+            self._count = count
+
+        async def count(self) -> int:
+            return self._count
+
+        def nth(self, index: int) -> _FakeRowLocator:
+            return _FakeRowLocator(index)
+
+    class _FakeScope:
+        def locator(self, _selector: str) -> _FakeRowsLocator:
+            return _FakeRowsLocator(2)
+
+    async def fake_read_row_title_for_capture(row_locator: _FakeRowLocator, _title_selector: str | None) -> str:
+        return f"Job {row_locator.index + 1}"
+
+    async def fake_capture_url_for_row_click(_page: object, row_locator: _FakeRowLocator, _title_selector: str | None) -> str:
+        return f"https://example.com/jobs/{row_locator.index + 1}"
+
+    async def fake_wait_for_list_elements(
+        _page: object,
+        _route_result: RouteResult,
+        _list_config: dict[str, object],
+    ) -> None:
+        return
+
+    monkeypatch.setattr(navigation, "_resolve_click_capture_scope", lambda _page, _route_result, _list_elements: _FakeScope())
+    monkeypatch.setattr(navigation, "_read_row_title_for_capture", fake_read_row_title_for_capture)
+    monkeypatch.setattr(navigation, "_capture_url_for_row_click", fake_capture_url_for_row_click)
+    monkeypatch.setattr(navigation, "wait_for_list_elements", fake_wait_for_list_elements)
+
+    route_result = RouteResult(scope=object())
+    list_config = {
+        "list_elements": {
+            "row": "div.row",
+            "title": "h3",
+        }
+    }
+
+    captured = asyncio.run(capture_row_links_via_click(object(), route_result, list_config))
+
+    assert captured == [
+        {
+            "title": "Job 1",
+            "link": "https://example.com/jobs/1",
+        },
+        {
+            "title": "Job 2",
+            "link": "https://example.com/jobs/2",
+        },
+    ]
+
+
+def test_capture_row_links_via_click_waits_for_list_restore_after_same_tab_navigation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeRowLocator:
+        def __init__(self, index: int) -> None:
+            self.index = index
+
+    class _FakeRowsLocator:
+        def __init__(self, count: int) -> None:
+            self._count = count
+
+        async def count(self) -> int:
+            return self._count
+
+        def nth(self, index: int) -> _FakeRowLocator:
+            return _FakeRowLocator(index)
+
+    class _FakeScope:
+        def locator(self, _selector: str) -> _FakeRowsLocator:
+            return _FakeRowsLocator(1)
+
+    restore_calls: list[tuple[object, RouteResult, dict[str, object]]] = []
+
+    async def fake_wait_for_list_elements(page: object, route_result: RouteResult, list_config: dict[str, object]) -> None:
+        restore_calls.append((page, route_result, list_config))
+
+    async def fake_read_row_title_for_capture(_row_locator: _FakeRowLocator, _title_selector: str | None) -> str:
+        return "Job 1"
+
+    async def fake_capture_url_for_row_click(_page: object, _row_locator: _FakeRowLocator, _title_selector: str | None) -> str:
+        return "https://example.com/jobs/1"
+
+    monkeypatch.setattr(navigation, "_resolve_click_capture_scope", lambda _page, _route_result, _list_elements: _FakeScope())
+    monkeypatch.setattr(navigation, "_read_row_title_for_capture", fake_read_row_title_for_capture)
+    monkeypatch.setattr(navigation, "_capture_url_for_row_click", fake_capture_url_for_row_click)
+    monkeypatch.setattr(navigation, "wait_for_list_elements", fake_wait_for_list_elements)
+
+    page = object()
+    route_result = RouteResult(scope=object())
+    list_config: dict[str, object] = {
+        "list_elements": {
+            "row": "div.row",
+            "title": "h3",
+        }
+    }
+
+    captured = asyncio.run(capture_row_links_via_click(page, route_result, list_config))
+
+    assert captured == [
+        {
+            "title": "Job 1",
+            "link": "https://example.com/jobs/1",
+        }
+    ]
+    assert len(restore_calls) == 1
