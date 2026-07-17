@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 def extract_list_items(
     html: str,
     base_url: str,
-    list_elements: Mapping[str, str],
+    list_elements: Mapping[str, Any],
 ) -> list[dict[str, str]]:
     """
     Extract configured fields from rendered HTML into item dictionaries.
@@ -20,10 +20,11 @@ def extract_list_items(
     """
     selector_class = importlib.import_module("scrapy").Selector
     selector = selector_class(text=html)
+    regex_config = _normalize_regex_config(list_elements.get("regex"))
     field_selectors = {
         field_name: css_selector
         for field_name, css_selector in list_elements.items()
-        if field_name not in {"row", "frame"}
+        if field_name not in {"row", "frame", "regex"} and isinstance(css_selector, str)
     }
     if not field_selectors:
         return []
@@ -31,17 +32,36 @@ def extract_list_items(
     row_selector = list_elements.get("row")
     if row_selector:
         row_nodes = selector.css(row_selector)
-        return [
-            _build_item_from_node(row_node, selector, base_url, field_selectors, index)
-            for index, row_node in enumerate(row_nodes)
-        ]
+        items: list[dict[str, str]] = []
+        for index, row_node in enumerate(row_nodes):
+            item = _build_item_from_node(
+                row_node,
+                selector,
+                base_url,
+                field_selectors,
+                index,
+                regex_config=regex_config,
+            )
+            if item is not None:
+                items.append(item)
+        return items
 
     primary_field_name, primary_selector = next(iter(field_selectors.items()))
     primary_nodes = selector.css(primary_selector)
-    return [
-        _build_item_from_node(node, selector, base_url, field_selectors, index, primary_field_name)
-        for index, node in enumerate(primary_nodes)
-    ]
+    items = []
+    for index, node in enumerate(primary_nodes):
+        item = _build_item_from_node(
+            node,
+            selector,
+            base_url,
+            field_selectors,
+            index,
+            primary_field_name,
+            regex_config=regex_config,
+        )
+        if item is not None:
+            items.append(item)
+    return items
 
 
 def _build_item_from_node(
@@ -51,7 +71,8 @@ def _build_item_from_node(
     field_selectors: Mapping[str, str],
     index: int,
     primary_field_name: str | None = None,
-) -> dict[str, str]:
+    regex_config: Mapping[str, str] | None = None,
+) -> dict[str, str] | None:
     """
     Build one scraped item from a selector node and its configured fields.
 
@@ -61,8 +82,12 @@ def _build_item_from_node(
     :param field_selectors: Field-to-selector mapping for extraction
     :param index: Current item index used for fallback alignment
     :param primary_field_name: Field name used to anchor item extraction
-    :return: Extracted item values for the current node
+    :param regex_config: Optional selector+pattern filter evaluated per row
+    :return: Extracted item values for the current node or None when filtered out
     """
+    if regex_config and not _matches_regex_filter(node, root_selector, index, regex_config):
+        return None
+
     item: dict[str, str] = {}
 
     for field_name, css_selector in field_selectors.items():
@@ -79,6 +104,65 @@ def _build_item_from_node(
             item[field_name] = field_value
 
     return item
+
+
+def _normalize_regex_config(raw_regex_config: Any) -> dict[str, str] | None:
+    """
+    Validate and normalize optional regex filter configuration.
+
+    :param raw_regex_config: Raw value from list_elements["regex"]
+    :return: Normalized regex config containing selector and pattern
+    """
+    if raw_regex_config is None:
+        return None
+
+    if not isinstance(raw_regex_config, Mapping):
+        raise TypeError("list_elements['regex'] must be an object with 'selector' and 'pattern'")
+
+    selector = raw_regex_config.get("selector")
+    pattern = raw_regex_config.get("pattern")
+    if not isinstance(selector, str) or not selector.strip():
+        raise TypeError("list_elements['regex']['selector'] must be a non-empty string")
+    if not isinstance(pattern, str) or not pattern.strip():
+        raise TypeError("list_elements['regex']['pattern'] must be a non-empty string")
+
+    return {
+        "selector": selector.strip(),
+        "pattern": pattern,
+    }
+
+
+def _matches_regex_filter(
+    node: Any,
+    root_selector: Any,
+    index: int,
+    regex_config: Mapping[str, str],
+) -> bool:
+    """
+    Evaluate row-level regex filtering using existing selector fallback behavior.
+
+    :param node: Selector node representing the current item row
+    :param root_selector: Root selector for page-level fallback lookups
+    :param index: Current item index used for fallback alignment
+    :param regex_config: Selector and regex pattern used for row filtering
+    :return: True when row should be kept, False when row should be skipped
+    """
+    candidate_text = _extract_field_value(
+        node=node,
+        root_selector=root_selector,
+        field_name="regex_filter_value",
+        css_selector=regex_config["selector"],
+        base_url="",
+        index=index,
+        prefer_node_text=False,
+    )
+    if not candidate_text:
+        return False
+
+    try:
+        return re.search(regex_config["pattern"], candidate_text, flags=re.IGNORECASE) is not None
+    except re.error as exc:
+        raise ValueError(f"Invalid regex pattern in list_elements['regex']['pattern']: {exc}") from exc
 
 
 def _extract_field_value(

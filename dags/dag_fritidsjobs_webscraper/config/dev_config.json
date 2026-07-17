@@ -177,6 +177,29 @@
                 }
             ],
             "block_external_requests": false
+        },
+        {
+            "site_name": "Burger King",
+            "site_url": "https://app.elvium.com/da/organizations/burger-king-jylland-fyn/job_postings/export?referer_host=www.burgerking.dk",
+            "allowed_domains": [
+                "nr-data.net",
+                "newrelic.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "extract_visible_rows_only": false,
+                    "list_elements": {
+                        "row": "tbody > tr",
+                        "title": "td:first-child a",
+                        "link": "td:first-child a",
+                        "regex": {
+                            "selector": "td:nth-child(2)",
+                            "pattern": ".*Randers.*"
+                        }
+                    }
+                }
+            ]
         }
     ]
 }
