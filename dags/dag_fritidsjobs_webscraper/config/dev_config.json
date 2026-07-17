@@ -235,6 +235,25 @@
                     }
                 }
             ]
+        },
+        {
+            "site_name": "XL-Byg",
+            "site_url": "https://www.xl-byg.dk/karriere",
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "extract_visible_rows_only": false,
+                    "list_elements": {
+                        "row": "table.w-full > tbody > tr",
+                        "title": "td:first-child p",
+                        "link": "td:last-child a",
+                        "regex": {
+                            "selector": "td:nth-child(2) p",
+                            "pattern": ".*Randers.*"
+                        }
+                    }
+                }
+            ]
         }
     ]
 }
