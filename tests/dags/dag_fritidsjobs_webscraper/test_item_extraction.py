@@ -120,6 +120,19 @@ def test_extract_list_items_raises_for_invalid_regex_config(monkeypatch: pytest.
         )
 
 
+def test_extract_list_items_raises_when_url_key_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match=r"list_elements\['url'\] is not supported"):
+        item_extraction.extract_list_items(
+            html="<div class='job-row'><a href='/jobs/1'>Job</a></div>",
+            base_url="https://example.com",
+            list_elements={
+                "row": ".job-row",
+                "title": "a",
+                "url": "a",
+            },
+        )
+
+
 def test_extract_list_items_skips_rows_marked_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_scrapy_selector_import(monkeypatch)
 

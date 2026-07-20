@@ -21,8 +21,12 @@ def extract_list_items(
     :param list_elements: Field-to-selector mapping for extraction
     :return: Extracted items for the current list
     """
+    if "url" in list_elements:
+        raise ValueError("list_elements['url'] is not supported. Use list_elements['link'] instead.")
+
     selector_class = importlib.import_module("scrapy").Selector
     selector = selector_class(text=html)
+
     regex_config = _normalize_regex_config(list_elements.get("regex"))
     field_selectors = {
         field_name: css_selector
@@ -77,13 +81,13 @@ def _apply_default_site_link(
     base_url: str,
 ) -> None:
     """
-    Populate item link with site URL when no link/url was extracted.
+    Populate item link with site URL when no link was extracted.
 
     :param item: Extracted item dictionary
     :param base_url: Site URL used as fallback link target
     :return: None
     """
-    if item.get("link") or item.get("url"):
+    if item.get("link"):
         return
 
     normalized_base_url = base_url.strip()

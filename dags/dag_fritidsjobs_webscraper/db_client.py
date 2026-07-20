@@ -40,16 +40,16 @@ def filter_existing_jobs(session: Session, job_data: list[dict[str, Any]]) -> li
                 filtered_items: list[dict[str, str]] = []
                 for item in job_list.get("items", []):
                     title = item.get("title")
-                    url = item.get("link") or item.get("url")
-                    if not title or not url:
+                    link = item.get("link")
+                    if not title or not link:
                         continue
 
-                    job_key = (title, url)
+                    job_key = (title, link)
                     if job_key in existing_jobs_set or job_key in seen_new_jobs:
                         continue
 
                     seen_new_jobs.add(job_key)
-                    filtered_items.append({"title": title, "link": url})
+                    filtered_items.append({"title": title, "link": link})
 
                 if filtered_items:
                     filtered_lists.append(
@@ -87,8 +87,8 @@ def _iter_job_rows(job_data: list[dict[str, Any]]) -> list[tuple[str, str, str]]
         for job_list in site.get("lists", []):
             for item in job_list.get("items", []):
                 title = item.get("title")
-                url = item.get("link") or item.get("url")
-                if title and url:
-                    job_rows.append((site_name, title, url))
+                link = item.get("link")
+                if title and link:
+                    job_rows.append((site_name, title, link))
 
     return job_rows

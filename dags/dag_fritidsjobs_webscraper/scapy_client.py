@@ -351,7 +351,7 @@ def _attach_captured_links(
     captured_links: list[dict[str, str]],
 ) -> None:
     """
-    Attach captured links to scraped items that are missing a URL.
+    Attach captured links to scraped items that are missing a link.
 
     Titles are matched first when available; remaining unmatched links are attached
     in capture order.
@@ -386,7 +386,7 @@ def _attach_captured_links(
     remaining_links = ordered_links.copy()
 
     for item in scraped_items:
-        if item.get("link") or item.get("url"):
+        if item.get("link"):
             continue
 
         assigned_link: str | None = None

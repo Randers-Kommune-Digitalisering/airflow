@@ -261,7 +261,7 @@ def _collect_target_selectors_for_row_diagnostics(
     selectors: list[str] = []
     seen: set[str] = set()
 
-    for field_name in ("title", "url", "link"):
+    for field_name in ("title", "link"):
         value = list_elements.get(field_name)
         if not isinstance(value, str):
             continue

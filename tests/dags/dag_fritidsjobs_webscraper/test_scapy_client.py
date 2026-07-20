@@ -44,3 +44,22 @@ def test_attach_captured_links_keeps_existing_links_untouched() -> None:
         {"title": "Job A", "link": "https://existing.example.com/a"},
         {"title": "Job B", "link": "https://example.com/b"},
     ]
+
+
+def test_attach_captured_links_treats_url_key_as_missing_link() -> None:
+    scraped_items = [
+        {"title": "Job A", "url": "https://legacy.example.com/a"},
+    ]
+    captured_links = [
+        {"title": "Job A", "link": "https://example.com/a"},
+    ]
+
+    scapy_client._attach_captured_links(scraped_items, captured_links)
+
+    assert scraped_items == [
+        {
+            "title": "Job A",
+            "url": "https://legacy.example.com/a",
+            "link": "https://example.com/a",
+        }
+    ]

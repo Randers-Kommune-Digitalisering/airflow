@@ -37,8 +37,7 @@ async def follow_list_route(page: Any, list_route: Iterable[Any]) -> RouteResult
 
     for route_step in list_route:
         if isinstance(route_step, str):
-            await scope.locator(route_step).click()
-            await _wait_for_route_step_settle(page)
+            await _click_selector_in_scope(scope, page, route_step)
             continue
 
         if isinstance(route_step, Mapping):
@@ -54,8 +53,7 @@ async def follow_list_route(page: Any, list_route: Iterable[Any]) -> RouteResult
                 handled = True
 
             if "click" in route_step:
-                await scope.locator(route_step["click"]).click()
-                await _wait_for_route_step_settle(page)
+                await _click_selector_in_scope(scope, page, route_step["click"])
                 handled = True
 
             if "select" in route_step:
@@ -71,13 +69,25 @@ async def follow_list_route(page: Any, list_route: Iterable[Any]) -> RouteResult
             for selector in route_step:
                 if not isinstance(selector, str):
                     raise TypeError(f"Unsupported selector in list_route: {selector!r}")
-                await scope.locator(selector).click()
-                await _wait_for_route_step_settle(page)
+                await _click_selector_in_scope(scope, page, selector)
             continue
 
         raise TypeError(f"Unsupported list_route step: {route_step!r}")
 
     return RouteResult(scope=scope, frame_config=frame_config)
+
+
+async def _click_selector_in_scope(scope: Any, page: Any, selector: str) -> None:
+    """
+    Click selector in current scope and wait for page to settle.
+
+    :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
+    :param page: Playwright page used for dynamic navigation
+    :param selector: CSS selector to click
+    :return: None
+    """
+    await scope.locator(selector).click()
+    await _wait_for_route_step_settle(page)
 
 
 async def _wait_for_route_step_settle(page: Any, timeout_ms: int = 30000) -> None:
@@ -96,7 +106,7 @@ async def _wait_for_route_step_settle(page: Any, timeout_ms: int = 30000) -> Non
         await page.wait_for_load_state("networkidle", timeout=timeout_ms)
         return
     except Exception as exc:
-        if exc.__class__.__name__ != "TimeoutError":
+        if not is_timeout_error(exc):
             raise
 
     await page.wait_for_load_state("domcontentloaded")
@@ -298,14 +308,7 @@ def _resolve_click_capture_scope(page: Any, route_result: RouteResult, list_elem
     :param list_elements: Field-to-selector mapping for extraction
     :return: Playwright scope used for row clicking
     """
-    frame_config = list_elements.get("frame")
-    if frame_config is None:
-        frame_config = route_result.frame_config
-
-    if frame_config is None:
-        return page
-
-    return _resolve_interaction_scope(page, frame_config)
+    return _resolve_wait_scope(page, route_result.scope, list_elements)
 
 
 async def _read_row_title_for_capture(row_locator: Any, title_selector: str | None) -> str | None:
@@ -549,7 +552,7 @@ def _get_wait_selectors(list_elements: Mapping[str, Any]) -> list[str]:
     """
     wait_selectors: list[str] = []
     seen: set[str] = set()
-    metadata_fields = {"frame"}
+    metadata_fields = {"frame", "regex"}
 
     for field_name, css_selector in list_elements.items():
         if field_name in metadata_fields:
@@ -563,12 +566,6 @@ def _get_wait_selectors(list_elements: Mapping[str, Any]) -> list[str]:
 
         wait_selectors.append(normalized_selector)
         seen.add(normalized_selector)
-
-    row_selector = list_elements.get("row")
-    if isinstance(row_selector, str):
-        normalized_row_selector = row_selector.strip()
-        if normalized_row_selector and normalized_row_selector not in seen:
-            wait_selectors.append(normalized_row_selector)
 
     return wait_selectors
 
@@ -757,16 +754,7 @@ def _resolve_interaction_scope(page: Any, frame_config: Any) -> Any:
     if mode == "selector":
         return page.frame_locator(value)
 
-    if mode == "url_contains":
-        frame = page.frame(url=re.compile(f".*{re.escape(value)}.*"))
-        if frame is None:
-            raise RuntimeError(f"No iframe matched url_contains={value!r}")
-        return frame
-
-    frame = page.frame(name=value)
-    if frame is None:
-        raise RuntimeError(f"No iframe matched name={value!r}")
-    return frame
+    return _resolve_page_frame(page, mode, value)
 
 
 async def _resolve_content_frame(page: Any, frame_config: Any) -> Any:
@@ -789,6 +777,18 @@ async def _resolve_content_frame(page: Any, frame_config: Any) -> Any:
             raise RuntimeError(f"Could not resolve frame content for selector={value!r}")
         return frame
 
+    return _resolve_page_frame(page, mode, value)
+
+
+def _resolve_page_frame(page: Any, mode: str, value: str) -> Any:
+    """
+    Resolve a Playwright frame by configured lookup mode.
+
+    :param page: Playwright page used for dynamic navigation
+    :param mode: Frame lookup mode (url_contains or name)
+    :param value: Frame lookup value for the selected mode
+    :return: Playwright frame object
+    """
     if mode == "url_contains":
         frame = page.frame(url=re.compile(f".*{re.escape(value)}.*"))
         if frame is None:
