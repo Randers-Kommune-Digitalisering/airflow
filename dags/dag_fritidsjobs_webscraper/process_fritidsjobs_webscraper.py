@@ -47,7 +47,7 @@ def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
         db_manager = DatabaseManager(
             profile_name="fritidsjobs_webscraper_db",
             db_type="postgres",
-            airflow_connection_id="fritidsjobs_webscraper_db",  # TODO: create this Airflow Connection with the same ID and correct connection type and details
+            airflow_connection_id="fritidsjobs_webscraper_db",
             base_model=Base,
         )
         db_session = db_manager.get_session()
