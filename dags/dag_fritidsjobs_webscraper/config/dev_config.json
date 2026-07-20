@@ -276,6 +276,25 @@
                     }
                 }
             ]
+        },
+        {
+            "site_name": "Plantorama",
+            "site_url": "https://plantorama.easycruit.com/",
+            "lists":[
+                {
+                    "list_name": "Randers / Hele landet",
+                    "list_elements": {
+                        "row": "table.list > tbody > tr",
+                        "title": "td[class^='list-item'] > a",
+                        "link": "td[class^='list-item'] > a",
+                        "regex": {
+                            "selector": "td[class^='list-item']:nth-child(2)",
+                            "pattern": ".*Randers|Hele landet.*"
+                        }
+                    }
+                }
+            ],
+            "block_external_requests": false
         }
     ]
 }
