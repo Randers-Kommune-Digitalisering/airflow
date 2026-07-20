@@ -17,7 +17,7 @@ with DAG(
     max_active_runs=1,
     default_args=dag_args,
     description="Placeholder description for fritidsjobs_webscraper",
-    tags=["fritidsjobs_webscraper", "rpa", "postgresql", "webscraper"],
+    tags=["fritidsjobs_webscraper", "rpa", "postgres", "webscraper"],
 ) as dag:
 
     run_fritidsjobs_webscraper = PythonOperator(
