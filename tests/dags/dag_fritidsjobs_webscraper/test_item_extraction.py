@@ -182,3 +182,67 @@ def test_extract_list_items_preserves_root_fallback_index_when_hidden_rows_are_s
             "link": "https://example.com/jobs/v",
         }
     ]
+
+
+def test_extract_list_items_sets_site_url_link_when_link_field_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_scrapy_selector_import(monkeypatch)
+
+    html = """
+    <div class='job-row'>
+        <h3>Job A</h3>
+    </div>
+    <div class='job-row'>
+        <h3>Job B</h3>
+    </div>
+    """
+
+    items = item_extraction.extract_list_items(
+        html=html,
+        base_url="https://example.com/jobs",
+        list_elements={
+            "row": ".job-row",
+            "title": "h3",
+        },
+    )
+
+    assert items == [
+        {
+            "title": "Job A",
+            "link": "https://example.com/jobs",
+        },
+        {
+            "title": "Job B",
+            "link": "https://example.com/jobs",
+        },
+    ]
+
+
+def test_extract_list_items_sets_site_url_link_when_link_field_is_configured_but_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_scrapy_selector_import(monkeypatch)
+
+    html = """
+    <div class='job-row'>
+        <h3>Job Without Link</h3>
+    </div>
+    """
+
+    items = item_extraction.extract_list_items(
+        html=html,
+        base_url="https://example.com/jobs",
+        list_elements={
+            "row": ".job-row",
+            "title": "h3",
+            "link": "a.missing-link",
+        },
+    )
+
+    assert items == [
+        {
+            "title": "Job Without Link",
+            "link": "https://example.com/jobs",
+        }
+    ]

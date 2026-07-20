@@ -49,6 +49,7 @@ def extract_list_items(
                 regex_config=regex_config,
             )
             if item is not None:
+                _apply_default_site_link(item, base_url)
                 items.append(item)
         return items
 
@@ -66,8 +67,30 @@ def extract_list_items(
             regex_config=regex_config,
         )
         if item is not None:
+            _apply_default_site_link(item, base_url)
             items.append(item)
     return items
+
+
+def _apply_default_site_link(
+    item: dict[str, str],
+    base_url: str,
+) -> None:
+    """
+    Populate item link with site URL when no link/url was extracted.
+
+    :param item: Extracted item dictionary
+    :param base_url: Site URL used as fallback link target
+    :return: None
+    """
+    if item.get("link") or item.get("url"):
+        return
+
+    normalized_base_url = base_url.strip()
+    if not normalized_base_url:
+        return
+
+    item["link"] = normalized_base_url
 
 
 def _should_include_row_node(row_node: Any) -> bool:

@@ -295,6 +295,19 @@
                 }
             ],
             "block_external_requests": false
+        },
+        {
+            "site_name": "Randers Storcenter",
+            "site_url": "https://randersstorcenter.dk/information/job",
+            "lists": [
+                {
+                    "list_name": "Randers Storcenter",
+                    "list_elements": {
+                        "row": "div.dsc-row.dsc-faq-question-row",
+                        "title": "h3"
+                    }
+                }
+            ]
         }
     ]
 }
