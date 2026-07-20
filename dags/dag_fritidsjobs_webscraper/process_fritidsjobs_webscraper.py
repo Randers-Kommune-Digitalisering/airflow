@@ -76,6 +76,15 @@ def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
     logger.info("Constructed email subject: %s", subject)
     logger.info("Constructed email body: %s", email_body)
 
+    # If no new jobs are found, log and exit without sending an email
+    if not filtered_jobs:
+        logger.info("No new jobs found. Exiting without sending email.")
+
+        if db_session is not None:
+            db_session.close()
+        return []
+
+    # Send email with new jobs
     email_sender = EmailSender(smtp_server=smtp_server)
     try:
         email_sender.send_email(
@@ -99,5 +108,4 @@ def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
 
     if db_session is not None:
         db_session.close()
-
     return
