@@ -118,3 +118,67 @@ def test_extract_list_items_raises_for_invalid_regex_config(monkeypatch: pytest.
                 },
             },
         )
+
+
+def test_extract_list_items_skips_rows_marked_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_scrapy_selector_import(monkeypatch)
+
+    html = """
+    <div class='job-row' data-rk-visible-row-state='hidden'>
+        <a class='job-link' href='/jobs/h'>Hidden Job</a>
+    </div>
+    <div class='job-row' data-rk-visible-row-state='visible'>
+        <a class='job-link' href='/jobs/v'>Visible Job</a>
+    </div>
+    """
+
+    items = item_extraction.extract_list_items(
+        html=html,
+        base_url="https://example.com",
+        list_elements={
+            "row": ".job-row",
+            "title": "a.job-link",
+            "link": "a.job-link",
+        },
+    )
+
+    assert items == [
+        {
+            "title": "Visible Job",
+            "link": "https://example.com/jobs/v",
+        }
+    ]
+
+
+def test_extract_list_items_preserves_root_fallback_index_when_hidden_rows_are_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_scrapy_selector_import(monkeypatch)
+
+    html = """
+    <div class='job-row' data-rk-visible-row-state='hidden'></div>
+    <div class='job-row' data-rk-visible-row-state='visible'></div>
+
+    <span class='global-title'>Hidden Title</span>
+    <span class='global-title'>Visible Title</span>
+
+    <a class='global-link' href='/jobs/h'>Hidden Link</a>
+    <a class='global-link' href='/jobs/v'>Visible Link</a>
+    """
+
+    items = item_extraction.extract_list_items(
+        html=html,
+        base_url="https://example.com",
+        list_elements={
+            "row": ".job-row",
+            "title": ".global-title",
+            "link": ".global-link",
+        },
+    )
+
+    assert items == [
+        {
+            "title": "Visible Title",
+            "link": "https://example.com/jobs/v",
+        }
+    ]

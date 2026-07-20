@@ -5,6 +5,9 @@ from typing import Any
 from urllib.parse import urljoin
 
 
+VISIBLE_ROW_STATE_ATTR = "data-rk-visible-row-state"
+
+
 def extract_list_items(
     html: str,
     base_url: str,
@@ -34,6 +37,9 @@ def extract_list_items(
         row_nodes = selector.css(row_selector)
         items: list[dict[str, str]] = []
         for index, row_node in enumerate(row_nodes):
+            if not _should_include_row_node(row_node):
+                continue
+
             item = _build_item_from_node(
                 row_node,
                 selector,
@@ -62,6 +68,26 @@ def extract_list_items(
         if item is not None:
             items.append(item)
     return items
+
+
+def _should_include_row_node(row_node: Any) -> bool:
+    """
+    Decide whether a row should be included based on optional visibility markers.
+
+    When no marker is present, keep backward-compatible behavior and include the row.
+
+    :param row_node: Selector node representing the current row
+    :return: True when row should be considered for extraction
+    """
+    marker_state = row_node.xpath(f"@{VISIBLE_ROW_STATE_ATTR}").get()
+    if not isinstance(marker_state, str):
+        return True
+
+    normalized_state = marker_state.strip().lower()
+    if not normalized_state:
+        return True
+
+    return normalized_state == "visible"
 
 
 def _build_item_from_node(

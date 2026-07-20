@@ -53,21 +53,11 @@
         },
         {
             "site_name": "Elgiganten",
-            "site_url": "https://www.elgiganten.dk/om-elgiganten/ledige-stillinger",
-            "block_external_requests": false,
-            "allowed_domains": [
-                "reachmee.com"
-            ],
+            "site_url": "https://web103.reachmee.com/ext/I022/2126/main?site=15&validator=3cc71ec923ccaf7527e8b30ecbdf32c0&lang=DK",
             "lists": [
                 {
                     "list_name": "Randers",
                     "list_route": [
-                        {
-                            "frame": "#riframe"
-                        },
-                        {
-                            "wait_for": "div#mainjoblist"
-                        },
                         {
                             "select": {
                                 "selector": "select#filter_select_1",
@@ -76,7 +66,7 @@
                         }
                     ],
                     "list_elements": {
-                        "row": ".mainjoblist table#jobsTable tr",
+                        "row": "table#jobsTable tr",
                         "title": "td:first-child > a[href]",
                         "link": "td:first-child > a[href]"
                     }
@@ -175,8 +165,7 @@
                         "link": "a[id^='job-']"
                     }
                 }
-            ],
-            "block_external_requests": false
+            ]
         },
         {
             "site_name": "Burger King",
@@ -188,7 +177,6 @@
             "lists": [
                 {
                     "list_name": "Randers",
-                    "extract_visible_rows_only": false,
                     "list_elements": {
                         "row": "tbody > tr",
                         "title": "td:first-child a",
@@ -242,7 +230,6 @@
             "lists": [
                 {
                     "list_name": "Randers",
-                    "extract_visible_rows_only": false,
                     "list_elements": {
                         "row": "table.w-full > tbody > tr",
                         "title": "td:first-child p",
@@ -267,6 +254,25 @@
                     "list_elements": {
                         "row": "div.lica-search-results__item",
                         "title": "div.lica-search-results__header > h3"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Coop",
+            "site_url": "https://jobs.coop.dk/search/?searchResultView=LIST&markerViewed=&carouselIndex=&facetFilters=%7B%22filter3%22%3A%5B%22Region+Midtjylland%22%5D%7D&pageNumber=0&q=randers&sortBy=date",
+            "allowed_domains": [
+                "performancemanager5.successfactors.eu",
+                "rmkcdn.successfactors.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "extract_visible_rows_only": false,
+                    "list_elements": {
+                        "row": "ul[class^='JobsList_jobCardResultList'] > li",
+                        "title": "a[class*='JobsList_jobCardTitle']",
+                        "link": "a[class*='JobsList_jobCardTitle']"
                     }
                 }
             ]

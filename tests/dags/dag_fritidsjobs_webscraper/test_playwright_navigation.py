@@ -269,13 +269,19 @@ def test_follow_list_route_runs_wait_and_select_in_same_mapping(monkeypatch: pyt
     ]
 
 
-def test_extract_scope_html_prefers_visible_rows_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def fake_extract_visible_rows_html(_scope: object, _row_selector: str) -> str | None:
-        return "<div data-visible-rows='1'><div role='listitem'>Filtered</div></div>"
+def test_extract_scope_html_annotates_rows_and_returns_scope_content(monkeypatch: pytest.MonkeyPatch) -> None:
+    annotation_calls: list[tuple[object, str]] = []
 
-    monkeypatch.setattr(navigation, "_extract_visible_rows_html", fake_extract_visible_rows_html)
+    async def fake_annotate_visible_rows_in_scope(scope: object, row_selector: str) -> None:
+        annotation_calls.append((scope, row_selector))
 
-    route_result = RouteResult(scope=object())
+    class _FakeScope:
+        async def content(self) -> str:
+            return "<html><body>Full content</body></html>"
+
+    monkeypatch.setattr(navigation, "_annotate_visible_rows_in_scope", fake_annotate_visible_rows_in_scope)
+
+    route_result = RouteResult(scope=_FakeScope())
     list_config = {
         "list_elements": {
             "row": "div[role='listitem']",
@@ -285,20 +291,22 @@ def test_extract_scope_html_prefers_visible_rows_when_available(monkeypatch: pyt
 
     extracted_html = asyncio.run(extract_scope_html(object(), route_result, list_config))
 
-    assert "Filtered" in extracted_html
+    assert "Full content" in extracted_html
+    assert len(annotation_calls) == 1
+    assert annotation_calls[0][1] == "div[role='listitem']"
 
 
-def test_extract_scope_html_falls_back_to_scope_content_when_visible_rows_missing(
+def test_extract_scope_html_ignores_annotation_errors_and_returns_scope_content(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    async def fake_extract_visible_rows_html(_scope: object, _row_selector: str) -> str | None:
-        return None
-
-    monkeypatch.setattr(navigation, "_extract_visible_rows_html", fake_extract_visible_rows_html)
+    async def fake_annotate_visible_rows_in_scope(_scope: object, _row_selector: str) -> None:
+        raise RuntimeError("annotation failed")
 
     class _FakeScope:
         async def content(self) -> str:
             return "<html><body>Full content</body></html>"
+
+    monkeypatch.setattr(navigation, "_annotate_visible_rows_in_scope", fake_annotate_visible_rows_in_scope)
 
     route_result = RouteResult(scope=_FakeScope())
     list_config = {

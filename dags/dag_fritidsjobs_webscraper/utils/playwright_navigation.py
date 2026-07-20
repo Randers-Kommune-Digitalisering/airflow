@@ -5,6 +5,12 @@ from dataclasses import dataclass
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from .playwright_diagnostics import (  # pyright: ignore[reportMissingImports]
+    is_timeout_error,
+    log_list_wait_timeout_diagnostics,
+    log_wait_timeout_diagnostics,
+)
+
 
 @dataclass
 class RouteResult:
@@ -118,10 +124,22 @@ async def wait_for_list_elements(page: Any, route_result: RouteResult, list_conf
     if wait_state not in {"attached", "detached", "visible", "hidden"}:
         wait_state = "attached"
 
+    await _wait_for_frame_scope_selector(page, list_elements, timeout_ms)
     target_scope = _resolve_wait_scope(page, route_result.scope, list_elements)
 
     for wait_selector in wait_selectors:
-        await _wait_for_in_scope(target_scope, wait_selector, timeout_ms, wait_state)
+        try:
+            await _wait_for_in_scope(target_scope, wait_selector, timeout_ms, wait_state)
+        except Exception as exc:
+            if is_timeout_error(exc):
+                await log_list_wait_timeout_diagnostics(
+                    target_scope,
+                    wait_selector,
+                    list_elements,
+                    timeout_ms,
+                    wait_state,
+                )
+            raise
 
     if list_config.get("wait_for_list_update_after_route", True) is not False:
         update_selector = _resolve_list_update_selector(list_config, list_elements, wait_selectors)
@@ -156,9 +174,10 @@ async def extract_scope_html(page: Any, route_result: RouteResult, list_config: 
             normalized_row_selector = row_selector.strip()
             if normalized_row_selector:
                 target_scope = _resolve_wait_scope(page, route_result.scope, list_elements)
-                visible_rows_html = await _extract_visible_rows_html(target_scope, normalized_row_selector)
-                if visible_rows_html is not None:
-                    return visible_rows_html
+                try:
+                    await _annotate_visible_rows_in_scope(target_scope, normalized_row_selector)
+                except Exception:
+                    pass
 
         extraction_frame_config = list_elements.get("frame")
 
@@ -236,48 +255,38 @@ async def capture_row_links_via_click(
     return captured_links
 
 
-async def _extract_visible_rows_html(scope: Any, row_selector: str) -> str | None:
+async def _annotate_visible_rows_in_scope(scope: Any, row_selector: str) -> None:
     """
-    Extract HTML for currently visible row elements only.
+    Annotate matched rows with visibility markers in the live DOM.
 
     :param scope: Playwright interaction scope (Page, Frame, or FrameLocator)
     :param row_selector: CSS selector used to identify list rows
-    :return: Wrapped HTML containing only visible rows, or None on empty/error
+    :return: None
     """
     try:
-        visible_rows: list[str] = await scope.locator(row_selector).evaluate_all(
+        await scope.locator(row_selector).evaluate_all(
             """(elements) => elements
-                .filter((element) => {
+                .forEach((element) => {
                     const style = window.getComputedStyle(element);
-                    if (style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
-                        return false;
-                    }
-
-                    if (element.hidden) {
-                        return false;
-                    }
-
-                    if ((element.getAttribute("aria-hidden") || "").toLowerCase() === "true") {
-                        return false;
-                    }
+                    const isVisibleByStyle = !(
+                        style.display === "none" ||
+                        style.visibility === "hidden" ||
+                        style.visibility === "collapse"
+                    );
+                    const isHiddenAttribute = !!element.hidden;
+                    const isAriaHidden = (element.getAttribute("aria-hidden") || "").toLowerCase() === "true";
 
                     const rect = element.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0;
+                    const hasSize = rect.width > 0 && rect.height > 0;
+                    const isVisible = isVisibleByStyle && !isHiddenAttribute && !isAriaHidden && hasSize;
+
+                    element.setAttribute("data-rk-visible-row", "1");
+                    element.setAttribute("data-rk-visible-row-state", isVisible ? "visible" : "hidden");
                 })
-                .map((element) => element.outerHTML)
             """
         )
     except Exception:
-        return None
-
-    if not isinstance(visible_rows, list) or not visible_rows:
-        return None
-
-    normalized_rows = [row_html for row_html in visible_rows if isinstance(row_html, str) and row_html.strip()]
-    if not normalized_rows:
-        return None
-
-    return "<div data-visible-rows='1'>" + "".join(normalized_rows) + "</div>"
+        return
 
 
 def _resolve_click_capture_scope(page: Any, route_result: RouteResult, list_elements: Mapping[str, Any]) -> Any:
@@ -395,17 +404,22 @@ async def _wait_for_in_scope(
     :param wait_state: Playwright wait state (attached/detached/visible/hidden)
     :return: None
     """
-    if hasattr(scope, "wait_for_selector"):
-        wait_kwargs: dict[str, Any] = {"state": wait_state}
-        if timeout_ms is not None:
-            wait_kwargs["timeout"] = timeout_ms
-        await scope.wait_for_selector(selector, **wait_kwargs)
-        return
+    try:
+        if hasattr(scope, "wait_for_selector"):
+            wait_kwargs: dict[str, Any] = {"state": wait_state}
+            if timeout_ms is not None:
+                wait_kwargs["timeout"] = timeout_ms
+            await scope.wait_for_selector(selector, **wait_kwargs)
+            return
 
-    wait_args: dict[str, Any] = {"state": wait_state}
-    if timeout_ms is not None:
-        wait_args["timeout"] = timeout_ms
-    await scope.locator(selector).first.wait_for(**wait_args)
+        wait_args: dict[str, Any] = {"state": wait_state}
+        if timeout_ms is not None:
+            wait_args["timeout"] = timeout_ms
+        await scope.locator(selector).first.wait_for(**wait_args)
+    except Exception as exc:
+        if is_timeout_error(exc):
+            await log_wait_timeout_diagnostics(scope, selector, timeout_ms, wait_state)
+        raise
 
 
 async def _wait_for_selector_stability(
@@ -535,9 +549,10 @@ def _get_wait_selectors(list_elements: Mapping[str, Any]) -> list[str]:
     """
     wait_selectors: list[str] = []
     seen: set[str] = set()
+    metadata_fields = {"frame"}
 
     for field_name, css_selector in list_elements.items():
-        if field_name in {"frame", "row"}:
+        if field_name in metadata_fields:
             continue
         if not isinstance(css_selector, str):
             continue
@@ -572,6 +587,36 @@ def _resolve_wait_scope(page: Any, fallback_scope: Any, list_elements: Mapping[s
         return _resolve_interaction_scope(page, frame_config)
 
     return fallback_scope
+
+
+async def _wait_for_frame_scope_selector(
+    page: Any,
+    list_elements: Mapping[str, Any],
+    timeout_ms: int | None,
+) -> None:
+    """
+    Wait for iframe scope selector before resolving frame-located waits.
+
+    Frame selectors define interaction scope, not row/content fields, so they are
+    handled separately from field wait selectors.
+
+    :param page: Playwright page used for dynamic navigation
+    :param list_elements: Field-to-selector mapping for extraction
+    :param timeout_ms: Optional timeout in milliseconds
+    :return: None
+    """
+    frame_config = list_elements.get("frame")
+    if frame_config is None:
+        return
+
+    mode, value = _parse_frame_config(frame_config)
+    if mode != "selector":
+        return
+
+    wait_kwargs: dict[str, Any] = {"state": "attached"}
+    if timeout_ms is not None:
+        wait_kwargs["timeout"] = timeout_ms
+    await page.locator(value).first.wait_for(**wait_kwargs)
 
 
 async def _select_option_in_scope(scope: Any, select_config: Mapping[str, Any]) -> None:
@@ -614,7 +659,6 @@ async def _select_option_in_scope(scope: Any, select_config: Mapping[str, Any]) 
         matched_value = _match_option_value_for_label(options, requested_label)
         if matched_value is None:
             raise
-
         await locator.select_option(value=matched_value)
 
 
