@@ -1,7 +1,7 @@
 import logging
 import json
 
-from dag_fritidsjobs_webscraper.scapy_client import scrape_sites
+from dag_fritidsjobs_webscraper.scrapy_client import scrape_sites
 from dag_fritidsjobs_webscraper.utils.email_construction import construct_email
 from dag_fritidsjobs_webscraper.db_client import filter_existing_jobs, insert_jobs
 from dag_fritidsjobs_webscraper.utils.model import Base

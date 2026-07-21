@@ -39,6 +39,6 @@ RUN PYTHON_VERSION=$(python -c "import sys; print(str(sys.version_info.major)+'.
 RUN pip install --no-cache-dir -r /requirements.txt --constraint /tmp/custom_constraints.txt
 
 USER root
-RUN PYTHON_VERSION=$(python -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))") && PYTHONPATH="/home/airflow/.local/lib/python${PYTHON_VERSION}/site-packages" /home/airflow/.local/bin/playwright install-deps chromium
+RUN PYTHON_VERSION=$(python -c "import sys; print(str(sys.version_info.major)+'.'+str(sys.version_info.minor))") && PYTHONPATH="/home/airflow/.local/lib/python${PYTHON_VERSION}/site-packages" python -m playwright install-deps chromium
 USER airflow
 RUN python -m playwright install chromium
