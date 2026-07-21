@@ -75,6 +75,8 @@ def process_fritidsjobs_webscraper() -> None:
         logger.info("Finished scraping fritidsjobs_webscraper data: %s", json.dumps(scraped_sites, ensure_ascii=False))
     except Exception as e:
         logger.error("Error during scraping: %s", str(e))
+        if db_session is not None:
+            db_session.close()
         raise AirflowFailException(f"Error during scraping: {str(e)}") from e
 
     # Filter out existing jobs from the database
@@ -83,6 +85,8 @@ def process_fritidsjobs_webscraper() -> None:
         logger.info("Filtered jobs: %s", json.dumps(filtered_jobs, ensure_ascii=False))
     except Exception as e:
         logger.error("Error filtering existing jobs: %s", str(e))
+        if db_session is not None:
+            db_session.close()
         raise AirflowFailException(f"Error filtering existing jobs: {str(e)}") from e
 
     subject, email_body = construct_email(filtered_jobs)
@@ -101,13 +105,15 @@ def process_fritidsjobs_webscraper() -> None:
     try:
         email_sender.send_email(
             sender=sender,
-            recipients=recipients,
+            recipients=recipient_entries,
             subject=subject,
             body=email_body,
             attachments=[],
         )
     except Exception as e:
         logger.error("Failed to send email: %s", str(e))
+        if db_session is not None:
+            db_session.close()
         raise AirflowFailException(f"Failed to send email: {str(e)}") from e
 
     # Insert new jobs into the database
@@ -116,6 +122,8 @@ def process_fritidsjobs_webscraper() -> None:
         logger.info("Inserted new jobs into the database successfully.")
     except Exception as e:
         logger.error("Failed to insert jobs into the database: %s", str(e))
+        if db_session is not None:
+            db_session.close()
         raise AirflowFailException(f"Failed to insert jobs into the database: {str(e)}") from e
 
     if db_session is not None:

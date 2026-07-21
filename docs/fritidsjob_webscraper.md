@@ -12,7 +12,7 @@ Denne dokumentation giver et overblik over:
 | Nøgle | Type | Påkrævet | Standard | Beskrivelse |
 |---|---|---|---|---|
 | `sender_email` | string | Ja | - | Afsender til e-mailnotifikationer. |
-| `recipient_emails` | array[string] | Ja | - | Modtagere af e-mailnotifikationer. |
+| `recipient_emails` | string / tuple(name, email) / array[string eller tuple(name, email)] | Ja | - | Modtagere af e-mailnotifikationer. |
 | `smtp_server` | string | Ja | - | SMTP-host. |
 | `sites` | array[object] | Ja | - | Konfiguration af sites, der skal scrapes. |
 
