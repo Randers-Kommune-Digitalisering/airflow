@@ -37,7 +37,8 @@ def extract_list_items(
         return []
 
     row_selector = list_elements.get("row")
-    if row_selector:
+    if isinstance(row_selector, str) and row_selector.strip():
+        row_selector = row_selector.strip()
         row_nodes = selector.css(row_selector)
         items: list[dict[str, str]] = []
         for index, row_node in enumerate(row_nodes):

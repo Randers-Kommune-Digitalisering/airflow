@@ -20,12 +20,12 @@ Eksempel på overordnet struktur:
 
 ```json
 {
-	"sender_email": "digitalisering@randers.dk",
-	"recipient_emails": ["st@randers.dk"],
-	"smtp_server": "smtp.randers.dk",
+	"sender_email": "no-reply@example.com",
+ 	"recipient_emails": ["recipient@example.com"],
+ 	"smtp_server": "smtp.example.com",
 	"sites": [
 		{
-			"site_name": "Eksempelsite",
+			"site_name": "Eksempel Site",
 			"site_url": "https://example.com/jobs",
 			"lists": [
 				{

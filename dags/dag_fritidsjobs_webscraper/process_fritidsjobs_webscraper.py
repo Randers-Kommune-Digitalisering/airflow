@@ -1,7 +1,6 @@
 import logging
 import json
 
-from typing import Any
 from dag_fritidsjobs_webscraper.scapy_client import scrape_sites
 from dag_fritidsjobs_webscraper.utils.email_construction import construct_email
 from dag_fritidsjobs_webscraper.db_client import filter_existing_jobs, insert_jobs
@@ -12,15 +11,13 @@ from airflow.exceptions import AirflowFailException
 from rkdigi.email_handling import EmailSender
 from rkdigi.database_manager import DatabaseManager
 
-
 logger = logging.getLogger(__name__)
 
 
-def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
+def process_fritidsjobs_webscraper() -> None:
     """
-    Scrape each configured site and list.
-
-    :return: JSON-serializable site results grouped by site and list
+    Scrape each configured site and job list, and sends an email notification with new jobs.
+    Jobs are then stored in a Postgres DB, which is used to filter future scraped jobs.
     """
     logger.info("Starting to process fritidsjobs_webscraper data...")
     db_session = None
@@ -39,8 +36,24 @@ def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
     recipients = runtime_config["recipient_emails"]
     smtp_server = runtime_config["smtp_server"]
 
-    if not all(isinstance(email, str) for email in [sender] + recipients):
-        raise TypeError("runtime_config['sender_email'] and runtime_config['recipient_emails'] must be strings")
+    if not isinstance(sender, str):
+        raise TypeError("runtime_config['sender_email'] must be a string")
+
+    if isinstance(recipients, (str, tuple)):
+        recipient_entries = [recipients]
+    elif isinstance(recipients, list):
+        recipient_entries = recipients
+    else:
+        raise TypeError("runtime_config['recipient_emails'] must be a string, a tuple (name, email), or a list containing these formats")
+
+    for email in recipient_entries:
+        if isinstance(email, str):
+            continue
+        elif isinstance(email, tuple):
+            if len(email) != 2 or not all(isinstance(part, str) for part in email):
+                raise TypeError("Each recipient tuple in runtime_config['recipient_emails'] must contain exactly two strings (name, email)")
+        else:
+            raise TypeError("Each recipient in runtime_config['recipient_emails'] must be a string or a tuple of two strings (name, email)")
 
     # Initialize DatabaseManager
     try:
@@ -73,8 +86,7 @@ def process_fritidsjobs_webscraper() -> list[dict[str, Any]]:
         raise AirflowFailException(f"Error filtering existing jobs: {str(e)}") from e
 
     subject, email_body = construct_email(filtered_jobs)
-    logger.info("Constructed email subject: %s", subject)
-    logger.info("Constructed email body: %s", email_body)
+    logger.info("Constructed email with subject: %s", subject)
 
     # If no new jobs are found, log and exit without sending an email
     if not filtered_jobs:
