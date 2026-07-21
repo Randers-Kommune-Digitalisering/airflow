@@ -13,3 +13,7 @@ geoalchemy2==0.18.1
 shapely==2.1.0
 rk-digi==2.2.0
 kombit-client==1.1.1
+playwright==1.54.0
+Scrapy==2.12.0
+scrapy-playwright==0.0.43
+Twisted==25.5.0
