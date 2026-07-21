@@ -23,4 +23,5 @@ with DAG(
     run_fritidsjobs_webscraper = PythonOperator(
         task_id="process_fritidsjobs_webscraper_task",
         python_callable=process_fritidsjobs_webscraper,
+        do_xcom_push=False,
     )
