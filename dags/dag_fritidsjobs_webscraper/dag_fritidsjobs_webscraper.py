@@ -16,7 +16,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
-    description="Placeholder description for fritidsjobs_webscraper",
+    description="Scrape configured sites for new job listings, send email notifications, and store jobs in a Postgres database.",
     tags=["fritidsjobs_webscraper", "rpa", "postgres", "webscraper"],
 ) as dag:
 

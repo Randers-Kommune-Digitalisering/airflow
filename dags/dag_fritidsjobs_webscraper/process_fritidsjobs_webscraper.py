@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def process_fritidsjobs_webscraper() -> None:
     """
-    Scrape each configured site and job list, and sends an email notification with new jobs.
+    Scrape each configured site for job listings, and sends an email notification with new jobs.
     Jobs are then stored in a Postgres DB, which is used to filter future scraped jobs.
     """
     logger.info("Starting to process fritidsjobs_webscraper data...")
@@ -98,7 +98,7 @@ def process_fritidsjobs_webscraper() -> None:
 
         if db_session is not None:
             db_session.close()
-        return []
+        return
 
     # Send email with new jobs
     email_sender = EmailSender(smtp_server=smtp_server)
