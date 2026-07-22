@@ -180,7 +180,6 @@ def _validate_schema_node(payload: Any, schema: dict[str, Any], path: str) -> tu
     """
     if not isinstance(payload, dict):
         msg = f"{path} must be a dictionary, got {type(payload).__name__}"
-        logger.error(msg)
         return False, msg
 
     required = set(schema.get("required", []))
@@ -190,13 +189,11 @@ def _validate_schema_node(payload: Any, schema: dict[str, Any], path: str) -> tu
     missing_keys = [key for key in required if key not in payload]
     if missing_keys:
         msg = f"Missing required keys in {path}: {', '.join(sorted(missing_keys))}"
-        logger.error(msg)
         return False, msg
 
     unknown_keys = [key for key in payload if key not in allowed]
     if unknown_keys:
         msg = f"Unknown keys in {path}: {', '.join(sorted(unknown_keys))}"
-        logger.error(msg)
         return False, msg
 
     for key, type_name in schema.get("types", {}).items():
@@ -205,26 +202,22 @@ def _validate_schema_node(payload: Any, schema: dict[str, Any], path: str) -> tu
         checker = TYPE_CHECKERS[type_name]
         if not checker(payload[key]):
             msg = f"Invalid type for {path}.{key}. Expected {type_name}"
-            logger.error(msg)
             return False, msg
 
     for key, valid_values in schema.get("enum", {}).items():
         if key in payload and payload[key] not in valid_values:
             msg = f"Invalid value for {path}.{key}: {payload[key]!r}. Expected one of: {', '.join(valid_values)}"
-            logger.error(msg)
             return False, msg
 
     at_least_one = schema.get("at_least_one", [])
     if at_least_one and not any(key in payload for key in at_least_one):
         msg = f"At least one of these keys is required in {path}: {', '.join(at_least_one)}"
-        logger.error(msg)
         return False, msg
 
     for conflict_group in schema.get("mutually_exclusive", []):
         present = [key for key in conflict_group if key in payload]
         if len(present) > 1:
             msg = f"Conflicting keys in {path}: {', '.join(present)}"
-            logger.error(msg)
             return False, msg
 
     for rule in schema.get("conditional_required", []):
@@ -239,7 +232,6 @@ def _validate_schema_node(payload: Any, schema: dict[str, Any], path: str) -> tu
                 f"Missing required keys in {path} when {trigger_key}={trigger_value!r}: "
                 f"{', '.join(missing)}"
             )
-            logger.error(msg)
             return False, msg
 
     for key, child_name in schema.get("children", {}).items():
@@ -282,7 +274,6 @@ def _validate_semantic_rules(config: dict[str, Any]) -> tuple[bool, str]:
     if action.get("type") == "delete":
         if "min_age_for_delete_days" not in safety:
             msg = "config.safety.min_age_for_delete_days is required when action.type='delete'"
-            logger.error(msg)
             return False, msg
 
         min_age_days = safety["min_age_for_delete_days"]
@@ -291,7 +282,6 @@ def _validate_semantic_rules(config: dict[str, Any]) -> tuple[bool, str]:
 
         if older_than_days is None and older_than_hours is None:
             msg = "Delete action requires requirements.age.older_than_days or requirements.age.older_than_hours"
-            logger.error(msg)
             return False, msg
 
         if older_than_days is not None and older_than_days < min_age_days:
@@ -299,7 +289,6 @@ def _validate_semantic_rules(config: dict[str, Any]) -> tuple[bool, str]:
                 "requirements.age.older_than_days must be greater than or equal to "
                 "safety.min_age_for_delete_days for delete action"
             )
-            logger.error(msg)
             return False, msg
 
         if older_than_hours is not None and older_than_hours < min_age_days * 24:
@@ -307,7 +296,6 @@ def _validate_semantic_rules(config: dict[str, Any]) -> tuple[bool, str]:
                 "requirements.age.older_than_hours must be greater than or equal to "
                 "safety.min_age_for_delete_days * 24 for delete action"
             )
-            logger.error(msg)
             return False, msg
 
     return True, "OK"
@@ -322,7 +310,6 @@ def _validate_regex_list(regex_patterns: list[str], path: str) -> tuple[bool, st
             re.compile(pattern)
         except re.error as exc:
             msg = f"Invalid regex in {path}: {pattern!r} ({exc})"
-            logger.error(msg)
             return False, msg
 
     return True, "OK"
@@ -338,12 +325,10 @@ def _validate_airflow_imap_config(connection_id: str) -> tuple[bool, str]:
         conn = BaseHook.get_connection(connection_id)
     except Exception as exc:
         msg = f"Failed to retrieve Airflow connection '{connection_id}': {exc}"
-        logger.error(msg)
         return False, msg
 
     if not conn.host or not conn.login or not conn.password:
         msg = f"Airflow connection '{connection_id}' is missing required fields (host, login, password)"
-        logger.error(msg)
         return False, msg
 
     return True, "OK"

@@ -58,30 +58,10 @@ def process_mailbox_cleaner() -> None:
         }
     }
 
-    return validate_config(demo_config)
+    is_valid, error_message = validate_config(demo_config)
+    if not is_valid:
+        logger.error(f"Configuration validation failed: {error_message}")
+        # raise AirflowFailException(f"Configuration validation failed: {error_message}")
+        return
 
-    # # TODO: Create this Airflow Connection with the same ID and correct connection type and details
-    # imap_conn = BaseHook.get_connection("mailbox_cleaner_imap")
-
-    # email_reader = EmailReader(
-    #     email=imap_conn.login,
-    #     password=imap_conn.password,
-    # )
-    # mailboxes = email_reader.list_mailboxes()
-    # logger.info(f"EmailReader initialized for connection: mailbox_cleaner_imap. Available mailboxes: {mailboxes}")
-
-    # # TODO: Create this Airflow Connection with the same ID and correct connection type and details
-    # db_manager = DatabaseManager(
-    #     profile_name="mailbox_cleaner_db",
-    #     db_type="postgres",
-    #     airflow_connection_id="mailbox_cleaner_db"
-    # )
-    # db_manager.can_connect()
-    # logger.info("DatabaseManager initialized for profile: mailbox_cleaner_db and connection: mailbox_cleaner_db")
-
-
-def _validate_config(config: dict) -> tuple[bool, str]:
-    """
-    Backward-compatible wrapper around centralized validation.
-    """
-    return validate_config(config)
+    # TODO: Implement the actual processing logic for mailbox_cleaner here.
