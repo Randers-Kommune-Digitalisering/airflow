@@ -167,6 +167,10 @@ def validate_config(config: dict[str, Any]) -> tuple[bool, str]:
     if not valid:
         return False, msg
 
+    valid, msg = _validate_airflow_imap_config(config["mail_connection_id"])
+    if not valid:
+        return False, msg
+
     return True, "OK"
 
 
@@ -320,5 +324,26 @@ def _validate_regex_list(regex_patterns: list[str], path: str) -> tuple[bool, st
             msg = f"Invalid regex in {path}: {pattern!r} ({exc})"
             logger.error(msg)
             return False, msg
+
+    return True, "OK"
+
+
+def _validate_airflow_imap_config(connection_id: str) -> tuple[bool, str]:
+    """
+    Validate that the Airflow IMAP connection exists and has the required fields.
+    """
+    from airflow.hooks.base import BaseHook
+
+    try:
+        conn = BaseHook.get_connection(connection_id)
+    except Exception as exc:
+        msg = f"Failed to retrieve Airflow connection '{connection_id}': {exc}"
+        logger.error(msg)
+        return False, msg
+
+    if not conn.host or not conn.login or not conn.password:
+        msg = f"Airflow connection '{connection_id}' is missing required fields (host, login, password)"
+        logger.error(msg)
+        return False, msg
 
     return True, "OK"
