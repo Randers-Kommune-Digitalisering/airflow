@@ -3,7 +3,7 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_inbox_cleaner.process_inbox_cleaner import process_mailbox_cleaner
+from dag_mailbox_cleaner.process_mailbox_cleaner import process_mailbox_cleaner
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1

@@ -30,6 +30,7 @@ A cleanup job is one JSON object inside an array. Each job:
 ## Top-Level Properties
 
 - `id` (string, required): Unique rule id.
+- `description` (string, optional): Rule description/notes.
 - `enabled` (boolean, optional, default `true`): Disable a job without deleting it.
 - `mail_connection_id` (string, required): Airflow connection id for IMAP credentials.
 - `mailbox` (string, optional, default `INBOX`): Mailbox/folder to scan.
@@ -75,6 +76,8 @@ At least one requirement must be configured.
 - `has_attachments` (boolean): Require with/without attachments.
 - `type` (string[]): Allowed attachment file extensions (for example `pdf`, `docx`).
 - `name.contains_any` (string[]): Match if filename contains any value.
+- `name.contains_all` (string[]): Match if filename contains all values.
+- `name.regex` (string[]): Match if filename matches any regex pattern.
 
 ## Action
 

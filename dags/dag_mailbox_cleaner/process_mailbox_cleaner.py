@@ -1,5 +1,7 @@
 import logging
 
+from dag_mailbox_cleaner.config_validation import validate_config
+
 # from airflow.hooks.base import BaseHook
 # from airflow.exceptions import AirflowFailException
 
@@ -13,12 +15,12 @@ def process_mailbox_cleaner() -> None:
     """
     Placeholder function for processing the mailbox_cleaner data.
     """
-    logger.info("Starting to process mailbox_cleaner data...")
+    logger.info("Validating mailbox_cleaner configuration ...")
 
-    demo_config = [{
+    demo_config = {
         "id": "invoices_cleanup",
         "enabled": True,
-        "mail_connection_id": "inbox_cleaner_demo_imap",
+        "mail_connection_id": "mailbox_cleaner_demo_imap",
         "mailbox": "INBOX",
         "match_mode": "all",
         "requirements": {
@@ -28,20 +30,10 @@ def process_mailbox_cleaner() -> None:
                     "Payment"
                 ],
                 "contains_all": [
-                    "Invoice",
-                    "Payment"
-                ],
-                "regex": [
-                    ".*(Invoice|Payment).*"
+                    "Reminder"
                 ]
             },
             "from": {
-                "match": [
-                    "example@example.com"
-                ],
-                "not_match": [
-                    "noreply@example.com"
-                ],
                 "regex": [
                     ".*@example\\.com"
                 ]
@@ -49,39 +41,14 @@ def process_mailbox_cleaner() -> None:
             "flags": {
                 "include_all": [
                     "\\Seen"
-                ],
-                "include_any": [
-                    "\\Seen"
-                ],
-                "exclude_any": [
-                    "\\Flagged"
-                ],
-                "exclude_all": [
-                    "\\Flagged"
                 ]
             },
             "age": {
-                "older_than_days": 30,
-                "older_than_hours": 720,
-                "newer_than_days": 7,
-                "newer_than_hours": 168
-            },
-            "attachments": {
-                "has_attachments": True,
-                "type": [
-                    "pdf",
-                    "docx"
-                ],
-                "name": {
-                    "contains_any": [
-                        "invoice",
-                        "payment"
-                    ]
-                }
+                "older_than_days": 30
             }
         },
         "action": {
-            "type": "move",  # Possible actions: "archive", "delete", "move_to_folder"
+            "type": "move",
             "target_mailbox": "Archive/Finance"
         },
         "safety": {
@@ -89,9 +56,9 @@ def process_mailbox_cleaner() -> None:
             "max_messages_per_run": 200,
             "min_age_for_delete_days": 14
         }
-    }]
+    }
 
-    return demo_config
+    return validate_config(demo_config)
 
     # # TODO: Create this Airflow Connection with the same ID and correct connection type and details
     # imap_conn = BaseHook.get_connection("mailbox_cleaner_imap")
@@ -111,3 +78,10 @@ def process_mailbox_cleaner() -> None:
     # )
     # db_manager.can_connect()
     # logger.info("DatabaseManager initialized for profile: mailbox_cleaner_db and connection: mailbox_cleaner_db")
+
+
+def _validate_config(config: dict) -> tuple[bool, str]:
+    """
+    Backward-compatible wrapper around centralized validation.
+    """
+    return validate_config(config)
