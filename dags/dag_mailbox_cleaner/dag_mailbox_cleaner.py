@@ -1,5 +1,7 @@
 from airflow import DAG
 from airflow.decorators import task
+from airflow.exceptions import AirflowFailException
+from json import JSONDecodeError
 from airflow.models import Variable
 from airflow.models.variable import Variable as VariableModel
 from airflow.utils.session import create_session
@@ -33,7 +35,10 @@ def _list_mailbox_cleaner_config_keys(prefix: str = CONFIG_PREFIX) -> list[str]:
 
 @task(task_id="process_mailbox_cleaner", max_active_tis_per_dag=1)
 def _run_mailbox_cleaner_for_config(config_key: str) -> None:
-    config = Variable.get(config_key, deserialize_json=True)
+    try:
+        config = Variable.get(config_key, deserialize_json=True)
+    except JSONDecodeError as exc:
+        raise AirflowFailException(f"Failed to decode JSON for variable '{config_key}'") from exc
     process_mailbox_cleaner(config)
 
 
