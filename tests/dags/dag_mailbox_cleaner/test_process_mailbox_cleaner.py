@@ -1,0 +1,117 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from email.message import EmailMessage
+
+from airflow.hooks.base import BaseHook
+
+import dag_mailbox_cleaner.process_mailbox_cleaner as process_module
+from dag_mailbox_cleaner.imap_client import ImapFetchedMessage
+
+
+class _FakeConnection:
+    host = "imap.example.com"
+    login = "mailbox@example.com"
+    password = "secret"
+    port = 143
+
+
+class _FakeImapClient:
+    moved_uids: list[tuple[bytes, str]] = []
+    deleted_uids: list[bytes] = []
+    expunge_called = False
+
+    def __init__(self, host: str, port: int, username: str, password: str) -> None:
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+
+    def __enter__(self) -> "_FakeImapClient":
+        return self
+
+    def __exit__(self, exc_type, exc, exc_tb) -> None:  # type: ignore[no-untyped-def]
+        return None
+
+    def select_mailbox(self, mailbox: str, readonly: bool = False) -> None:
+        _ = readonly
+        self.mailbox = mailbox
+
+    def search_uids(self, criteria: str = "ALL", max_results: int | None = None, newest_first: bool = True) -> list[bytes]:
+        _ = criteria
+        _ = max_results
+        _ = newest_first
+        return [b"101"]
+
+    def fetch_message(self, uid: bytes) -> ImapFetchedMessage:
+        message = EmailMessage()
+        message["Subject"] = "Invoice follow-up"
+        message["From"] = "sender@example.com"
+        message.set_content("Body")
+        return ImapFetchedMessage(
+            uid=uid,
+            message=message,
+            flags={"\\Seen"},
+            internal_date=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        )
+
+    def move_email(self, uid: bytes, target_mailbox: str) -> None:
+        self.moved_uids.append((uid, target_mailbox))
+
+    def delete_email(self, uid: bytes) -> None:
+        self.deleted_uids.append(uid)
+
+    def expunge_if_needed(self) -> None:
+        self.expunge_called = True
+
+
+def _config(dry_run: bool) -> dict:
+    return {
+        "id": "clean_invoices",
+        "enabled": True,
+        "mail_connection_id": "mailbox_cleaner_demo_imap",
+        "mailbox": "INBOX",
+        "match_mode": "all",
+        "requirements": {
+            "subject": {"contains_any": ["Invoice"]},
+            "from": {"regex": [".*@example\\.com"]},
+        },
+        "action": {
+            "type": "move",
+            "target_mailbox": "Archive/Finance",
+        },
+        "safety": {
+            "dry_run": dry_run,
+            "max_messages_per_run": 10,
+            "min_age_for_delete_days": 14,
+        },
+    }
+
+
+def _reset_fake_state() -> None:
+    _FakeImapClient.moved_uids = []
+    _FakeImapClient.deleted_uids = []
+    _FakeImapClient.expunge_called = False
+
+
+def test_process_mailbox_cleaner_dry_run_has_no_writes(monkeypatch) -> None:
+    _reset_fake_state()
+
+    monkeypatch.setattr(BaseHook, "get_connection", lambda _: _FakeConnection())
+    monkeypatch.setattr(process_module, "ImapClient", _FakeImapClient)
+
+    process_module.process_mailbox_cleaner(config=_config(dry_run=True))
+
+    assert _FakeImapClient.moved_uids == []
+    assert _FakeImapClient.deleted_uids == []
+
+
+def test_process_mailbox_cleaner_move_executes_write(monkeypatch) -> None:
+    _reset_fake_state()
+
+    monkeypatch.setattr(BaseHook, "get_connection", lambda _: _FakeConnection())
+    monkeypatch.setattr(process_module, "ImapClient", _FakeImapClient)
+
+    process_module.process_mailbox_cleaner(config=_config(dry_run=False))
+
+    assert _FakeImapClient.moved_uids == [(b"101", "Archive/Finance")]

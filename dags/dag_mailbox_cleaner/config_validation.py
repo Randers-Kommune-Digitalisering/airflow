@@ -1,4 +1,5 @@
 import logging
+import importlib
 import re
 from typing import Any
 
@@ -140,6 +141,11 @@ SCHEMA_REGISTRY: dict[str, dict[str, Any]] = {
                 "if_key": "type",
                 "if_value": "move",
                 "required": ["target_mailbox"],
+            },
+            {
+                "if_key": "type",
+                "if_value": "archive",
+                "required": ["target_mailbox"],
             }
         ],
     },
@@ -159,6 +165,10 @@ def validate_config(config: dict[str, Any]) -> tuple[bool, str]:
     """
     Validate one mailbox cleaner job configuration.
     """
+    valid, msg = _strip_dict_keys_in_place(config, path="config")
+    if not valid:
+        return False, msg
+
     valid, msg = _validate_schema_node(config, CONFIG_SCHEMA, "config")
     if not valid:
         return False, msg
@@ -193,7 +203,8 @@ def _validate_schema_node(payload: Any, schema: dict[str, Any], path: str) -> tu
 
     unknown_keys = [key for key in payload if key not in allowed]
     if unknown_keys:
-        msg = f"Unknown keys in {path}: {', '.join(sorted(unknown_keys))}"
+        visible_unknown_keys = ", ".join(repr(key) for key in sorted(unknown_keys))
+        msg = f"Unknown keys in {path}: {visible_unknown_keys}"
         return False, msg
 
     for key, type_name in schema.get("types", {}).items():
@@ -319,10 +330,15 @@ def _validate_airflow_imap_config(connection_id: str) -> tuple[bool, str]:
     """
     Validate that the Airflow IMAP connection exists and has the required fields.
     """
-    from airflow.hooks.base import BaseHook
+    try:
+        airflow_base_module = importlib.import_module("airflow.hooks.base")
+        base_hook = getattr(airflow_base_module, "BaseHook")
+    except Exception as exc:
+        msg = f"Failed to import Airflow BaseHook for connection validation: {exc}"
+        return False, msg
 
     try:
-        conn = BaseHook.get_connection(connection_id)
+        conn = base_hook.get_connection(connection_id)
     except Exception as exc:
         msg = f"Failed to retrieve Airflow connection '{connection_id}': {exc}"
         return False, msg
@@ -330,5 +346,46 @@ def _validate_airflow_imap_config(connection_id: str) -> tuple[bool, str]:
     if not conn.host or not conn.login or not conn.password:
         msg = f"Airflow connection '{connection_id}' is missing required fields (host, login, password)"
         return False, msg
+
+    return True, "OK"
+
+
+def _strip_dict_keys_in_place(payload: Any, path: str) -> tuple[bool, str]:
+    """
+    Strip surrounding whitespace from all dictionary keys recursively.
+
+    This prevents subtle key mismatches caused by copied JSON with invisible
+    whitespace. If two different keys collapse into the same stripped key,
+    validation fails with a conflict error.
+    """
+    if isinstance(payload, dict):
+        normalized: dict[Any, Any] = {}
+
+        for raw_key, value in payload.items():
+            normalized_key = raw_key.strip() if isinstance(raw_key, str) else raw_key
+
+            if normalized_key in normalized:
+                msg = (
+                    f"Conflicting keys in {path} after stripping whitespace: "
+                    f"{raw_key!r} conflicts with {normalized_key!r}"
+                )
+                return False, msg
+
+            child_path = f"{path}.{normalized_key}" if isinstance(normalized_key, str) else path
+            valid, msg = _strip_dict_keys_in_place(value, path=child_path)
+            if not valid:
+                return False, msg
+
+            normalized[normalized_key] = value
+
+        payload.clear()
+        payload.update(normalized)
+        return True, "OK"
+
+    if isinstance(payload, list):
+        for index, item in enumerate(payload):
+            valid, msg = _strip_dict_keys_in_place(item, path=f"{path}[{index}]")
+            if not valid:
+                return False, msg
 
     return True, "OK"
