@@ -4,7 +4,7 @@ This guide explains how to configure a cleanup job for the Mailbox Cleaner DAG.
 
 ## Purpose
 
-A cleanup job is one JSON object inside an array. Each job:
+A cleanup job is defined by a JSON object configuration. Each configuration:
 
 - Targets one mailbox and one Airflow mail connection.
 - Defines one or more matching requirements.
@@ -13,7 +13,7 @@ A cleanup job is one JSON object inside an array. Each job:
 
 ## Config Storage
 
-Store each cleanup job in a separate Airflow Variable.
+Store each configuration in a separate Airflow Variable.
 
 - Use the naming pattern `mailbox_cleaner_conf_<job_name>`.
 - `<job_name>` should be unique and descriptive.
