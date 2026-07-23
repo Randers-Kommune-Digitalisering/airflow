@@ -6,7 +6,7 @@ from dag_mailbox_cleaner.imap_client import ImapClient
 from dag_mailbox_cleaner.mail_matching import evaluate_email_match
 
 from airflow.hooks.base import BaseHook
-from airflow.exceptions import AirflowFailException
+from airflow.exceptions import AirflowException, AirflowFailException
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,6 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
     """
     Process one mailbox-cleaner job configuration.
     """
-    # AirflowFailException = _resolve_airflow_fail_exception()
-    # BaseHook = _resolve_airflow_base_hook()
-
     job_config = config or {}
     config_id = str(job_config.get("id", "unknown"))
 
@@ -124,7 +121,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
             if is_match:
                 matched_uids.append(uid)
             else:
-                logger.info(
+                logger.debug(
                     "Candidate did not match id=%s uid=%s group_results=%s flags=%s internal_date=%s",
                     config_id,
                     uid_text,
@@ -143,7 +140,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
 
         if not matched_uids:
             if fetch_failures:
-                raise AirflowFailException(
+                raise AirflowException(
                     f"Mailbox cleaner id={config_id} found no matching emails and had "
                     f"{len(fetch_failures)} fetch failure(s)."
                 )
@@ -193,7 +190,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
             logger.error("Failed expunge for id=%s mailbox=%s: %s", config_id, mailbox, exc)
 
     if fetch_failures or action_failures:
-        raise AirflowFailException(
+        raise AirflowException(
             f"Mailbox cleaner id={config_id} completed with failures. "
             f"fetch_failures={len(fetch_failures)} action_failures={len(action_failures)} acted={acted_count}"
         )
