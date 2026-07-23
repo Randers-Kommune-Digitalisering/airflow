@@ -135,16 +135,11 @@ SCHEMA_REGISTRY: dict[str, dict[str, Any]] = {
             "type": "str",
             "target_mailbox": "str",
         },
-        "enum": {"type": ["archive", "delete", "move"]},
+        "enum": {"type": ["delete", "move"]},
         "conditional_required": [
             {
                 "if_key": "type",
                 "if_value": "move",
-                "required": ["target_mailbox"],
-            },
-            {
-                "if_key": "type",
-                "if_value": "archive",
                 "required": ["target_mailbox"],
             }
         ],

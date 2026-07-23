@@ -1,5 +1,4 @@
 import logging
-# import importlib
 from typing import Any
 
 from dag_mailbox_cleaner.config_validation import validate_config
@@ -153,9 +152,9 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
         action_type = str(action.get("type", ""))
         target_mailbox = action.get("target_mailbox")
 
-        if action_type in {"move", "archive"} and not target_mailbox:
+        if action_type == "move" and not target_mailbox:
             raise AirflowFailException(
-                "Action requires 'target_mailbox' when action.type is 'move' or 'archive'"
+                "Action requires 'target_mailbox' when action.type is 'move'"
             )
 
         if dry_run:
@@ -176,7 +175,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
         for uid in matched_uids:
             uid_text = _uid_to_text(uid)
             try:
-                if action_type in {"move", "archive"}:
+                if action_type == "move":
                     imap_client.move_email(uid=uid, target_mailbox=str(target_mailbox))
                 elif action_type == "delete":
                     imap_client.delete_email(uid=uid)
@@ -210,20 +209,3 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
 
 def _uid_to_text(uid: bytes) -> str:
     return uid.decode(errors="ignore")
-
-
-# def _resolve_airflow_fail_exception() -> type[Exception]:
-#     try:
-#         module = importlib.import_module("airflow.exceptions")
-#         exception_cls = getattr(module, "AirflowFailException")
-#         if isinstance(exception_cls, type) and issubclass(exception_cls, Exception):
-#             return exception_cls
-#     except Exception:
-#         pass
-
-#     return RuntimeError
-
-
-# def _resolve_airflow_base_hook() -> Any:
-#     module = importlib.import_module("airflow.hooks.base")
-#     return getattr(module, "BaseHook")

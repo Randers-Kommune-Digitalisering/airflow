@@ -5,26 +5,35 @@ This guide explains how to configure a cleanup job for the Mailbox Cleaner DAG.
 ## Purpose
 
 A cleanup job is one JSON object inside an array. Each job:
+
 - Targets one mailbox and one Airflow mail connection.
 - Defines one or more matching requirements.
 - Defines one action to run on matching emails.
 - Applies safety limits for safe operation.
 
+## Config Storage
+
+Store each cleanup job in a separate Airflow Variable.
+
+- Use the naming pattern `mailbox_cleaner_conf_<job_name>`.
+- `<job_name>` should be unique and descriptive.
+- Prefer using the same value as the config `id` to keep naming consistent.
+- Each Airflow Variable should contain exactly one config JSON object.
+- Each job is intended to run as an individual task.
+
 ## Config Shape
 
 ```json
-[
-  {
-    "id": "invoices_cleanup",
-    "enabled": true,
-    "mail_connection_id": "mailbox_cleaner_demo_imap",
-    "mailbox": "INBOX",
-    "match_mode": "all",
-    "requirements": {},
-    "action": {},
-    "safety": {}
-  }
-]
+{
+  "id": "mailbox_cleanup",
+  "enabled": true,
+  "mail_connection_id": "mailbox_cleaner_demo_imap",
+  "mailbox": "INBOX",
+  "match_mode": "all",
+  "requirements": {},
+  "action": {},
+  "safety": {}
+}
 ```
 
 ## Top-Level Properties
@@ -81,7 +90,7 @@ At least one requirement must be configured.
 
 ## Action
 
-- `action.type` (string, required): `archive`, `delete`, or `move`.
+- `action.type` (string, required): `delete` or `move`.
 - `action.target_mailbox` (string, required when `type = move`): Destination mailbox/folder.
 
 ## Safety
@@ -107,89 +116,79 @@ Use these rules when implementing validation:
 ## Minimal Example
 
 ```json
-[
-  {
-    "id": "archive_old_invoices",
-    "enabled": true,
-    "mail_connection_id": "mailbox_cleaner_imap",
-    "mailbox": "INBOX",
-    "match_mode": "all",
-    "requirements": {
-      "subject": {
-        "contains_any": ["Invoice"]
-      },
-      "age": {
-        "older_than_days": 30
-      }
+{
+  "id": "move_old_invoices",
+  "enabled": true,
+  "mail_connection_id": "mailbox_cleaner_imap",
+  "mailbox": "INBOX",
+  "match_mode": "all",
+  "requirements": {
+    "subject": {
+      "contains_any": ["Invoice"]
     },
-    "action": {
-      "type": "archive"
-    },
-    "safety": {
-      "dry_run": true,
-      "max_messages_per_run": 100
+    "age": {
+      "older_than_days": 30
     }
+  },
+  "action": {
+    "type": "move",
+    "target_mailbox": "Archive"
+  },
+  "safety": {
+    "dry_run": true,
+    "max_messages_per_run": 100
   }
-]
+}
 ```
 
 ## Full Example
 
 ```json
-[
-  {
-    "id": "invoices_cleanup",
-    "enabled": true,
-    "mail_connection_id": "mailbox_cleaner_demo_imap",
-    "mailbox": "INBOX",
-    "match_mode": "all",
-    "requirements": {
-      "subject": {
-        "contains_any": ["Invoice", "Payment"],
-        "contains_all": ["Invoice", "Payment"],
-        "regex": [".*(Invoice|Payment).*"]
-      },
-      "from": {
-        "match": ["example@example.com"],
-        "not_match": ["noreply@example.com"],
-        "regex": [".*@example\\.com"]
-      },
-      "flags": {
-        "include_all": ["\\Seen"],
-        "include_any": ["\\Seen"],
-        "exclude_any": ["\\Flagged"],
-        "exclude_all": ["\\Flagged"]
-      },
-      "age": {
-        "older_than_days": 30,
-        "older_than_hours": 720,
-        "newer_than_days": 7,
-        "newer_than_hours": 168
-      },
-      "attachments": {
-        "has_attachments": true,
-        "type": ["pdf", "docx"],
-        "name": {
-          "contains_any": ["invoice", "payment"]
-        }
+{
+  "id": "invoice_reminders_cleanup",
+  "enabled": true,
+  "mail_connection_id": "mailbox_cleaner_demo_imap",
+  "mailbox": "INBOX",
+  "match_mode": "all",
+  "requirements": {
+    "subject": {
+      "contains_any": ["Invoice", "Payment"],
+      "contains_all": ["Reminder"],
+    },
+    "from": {
+      "not_match": ["noreply@example.com"],
+      "regex": [".*@example\\.com"]
+    },
+    "flags": {
+      "include_all": ["\\Seen"]
+    },
+    "age": {
+      "older_than_days": 30,
+      "newer_than_hours": 36
+    },
+    "attachments": {
+      "has_attachments": true,
+      "type": ["pdf", "docx"],
+      "name": {
+        "contains_any": ["invoice", "payment"]
       }
-    },
-    "action": {
-      "type": "move",
-      "target_mailbox": "Archive/Finance"
-    },
-    "safety": {
-      "dry_run": true,
-      "max_messages_per_run": 200,
-      "min_age_for_delete_days": 14
     }
+  },
+  "action": {
+    "type": "move",
+    "target_mailbox": "Archive"
+  },
+  "safety": {
+    "dry_run": true,
+    "max_messages_per_run": 200,
+    "min_age_for_delete_days": 14
   }
-]
+}
 ```
 
 ## Recommended Rollout
 
 - Start with `dry_run: true`.
 - Verify logs and expected hit count.
-- Enable non-destructive actions first (`archive` or `move`).
+- Enable non-destructive actions first (`move` to an archive mailbox/folder).
 - Enable `delete` only after validation and retention agreement.

@@ -38,7 +38,6 @@ class _FakeImap4:
         return None
 
 
-
 def test_fetch_message_uses_body_peek(monkeypatch) -> None:
     fake_conn = _FakeImap4(host="imap.example.com", port=143)
 

@@ -97,7 +97,7 @@ def _reset_fake_state() -> None:
 def test_process_mailbox_cleaner_dry_run_has_no_writes(monkeypatch) -> None:
     _reset_fake_state()
 
-    monkeypatch.setattr(BaseHook, "get_connection", lambda _: _FakeConnection())
+    monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
     monkeypatch.setattr(process_module, "ImapClient", _FakeImapClient)
 
     process_module.process_mailbox_cleaner(config=_config(dry_run=True))
@@ -109,7 +109,7 @@ def test_process_mailbox_cleaner_dry_run_has_no_writes(monkeypatch) -> None:
 def test_process_mailbox_cleaner_move_executes_write(monkeypatch) -> None:
     _reset_fake_state()
 
-    monkeypatch.setattr(BaseHook, "get_connection", lambda _: _FakeConnection())
+    monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
     monkeypatch.setattr(process_module, "ImapClient", _FakeImapClient)
 
     process_module.process_mailbox_cleaner(config=_config(dry_run=False))

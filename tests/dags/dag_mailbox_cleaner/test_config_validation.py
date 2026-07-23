@@ -66,3 +66,15 @@ def test_validate_config_rejects_conflicting_keys_after_strip(monkeypatch) -> No
     assert valid is False
     assert "Conflicting keys" in msg
     assert "stripping whitespace" in msg
+
+
+def test_validate_config_rejects_archive_action_type(monkeypatch) -> None:
+    monkeypatch.setattr(validation, "_validate_airflow_imap_config", lambda _: (True, "OK"))
+
+    config = _base_config()
+    config["action"]["type"] = "archive"
+
+    valid, msg = validation.validate_config(config)
+
+    assert valid is False
+    assert "Invalid value for config.action.type" in msg
