@@ -51,7 +51,11 @@ class ImapClient:
             return
 
         conn = imaplib.IMAP4(host=self.host, port=self.port)
-        conn.starttls()
+        starttls_result = conn.starttls()
+        if isinstance(starttls_result, tuple):
+            status, _ = starttls_result
+            if status != "OK":
+                raise ConnectionError("IMAP STARTTLS failed")
         status, _ = conn.login(self.username, self.password)
         if status != "OK":
             raise ConnectionError("IMAP login failed")

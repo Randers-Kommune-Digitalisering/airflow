@@ -40,6 +40,8 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
 
     if max_messages is not None:
         max_messages = int(max_messages)
+        if max_messages <= 0:
+            raise AirflowFailException("safety.max_messages_per_run must be a positive integer")
 
     airflow_connection_id = str(job_config["mail_connection_id"])
     connection = BaseHook.get_connection(airflow_connection_id)

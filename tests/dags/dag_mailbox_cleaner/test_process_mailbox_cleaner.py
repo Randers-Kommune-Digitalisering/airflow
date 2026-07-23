@@ -118,3 +118,15 @@ def test_process_mailbox_cleaner_move_executes_write(monkeypatch) -> None:
 
     fake_client = created["client"]
     assert fake_client.moved_uids == [(b"101", "Archive/Finance")]
+
+
+def test_process_mailbox_cleaner_delete_executes_write(monkeypatch) -> None:
+    monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
+    created = _patch_fake_imap_client(monkeypatch)
+    config = _config(dry_run=False)
+    config["action"] = {"type": "delete"}
+    config["requirements"]["age"] = {"older_than_days": 14}
+    process_module.process_mailbox_cleaner(config=config)
+    fake_client = created["client"]
+    assert fake_client.deleted_uids == [b"101"]
+    assert fake_client.expunge_called is True

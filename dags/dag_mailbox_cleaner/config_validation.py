@@ -277,6 +277,17 @@ def _validate_semantic_rules(config: dict[str, Any]) -> tuple[bool, str]:
     safety = config.get("safety", {})
     age = requirements.get("age", {})
 
+    max_messages = safety.get("max_messages_per_run")
+    if max_messages is not None and max_messages <= 0:
+        return False, "config.safety.max_messages_per_run must be a positive integer"
+    min_age_days = safety.get("min_age_for_delete_days")
+    if min_age_days is not None and min_age_days < 0:
+        return False, "config.safety.min_age_for_delete_days must be >= 0"
+    for key in ("older_than_days", "older_than_hours", "newer_than_days", "newer_than_hours"):
+        value = age.get(key)
+        if value is not None and value < 0:
+            return False, f"config.requirements.age.{key} must be >= 0"
+
     if action.get("type") == "delete":
         if "min_age_for_delete_days" not in safety:
             msg = "config.safety.min_age_for_delete_days is required when action.type='delete'"
