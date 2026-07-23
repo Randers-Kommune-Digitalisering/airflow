@@ -153,7 +153,7 @@ Use these rules when implementing validation:
   "requirements": {
     "subject": {
       "contains_any": ["Invoice", "Payment"],
-      "contains_all": ["Reminder"],
+      "contains_all": ["Reminder"]
     },
     "from": {
       "not_match": ["noreply@example.com"],
@@ -164,7 +164,7 @@ Use these rules when implementing validation:
     },
     "age": {
       "older_than_days": 30,
-      "newer_than_hours": 36
+      "newer_than_days": 365
     },
     "attachments": {
       "has_attachments": true,

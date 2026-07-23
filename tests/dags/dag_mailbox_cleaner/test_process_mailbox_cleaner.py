@@ -17,15 +17,14 @@ class _FakeConnection:
 
 
 class _FakeImapClient:
-    moved_uids: list[tuple[bytes, str]] = []
-    deleted_uids: list[bytes] = []
-    expunge_called = False
-
     def __init__(self, host: str, port: int, username: str, password: str) -> None:
         self.host = host
         self.port = port
         self.username = username
         self.password = password
+        self.moved_uids: list[tuple[bytes, str]] = []
+        self.deleted_uids: list[bytes] = []
+        self.expunge_called = False
 
     def __enter__(self) -> "_FakeImapClient":
         return self
@@ -88,30 +87,34 @@ def _config(dry_run: bool) -> dict:
     }
 
 
-def _reset_fake_state() -> None:
-    _FakeImapClient.moved_uids = []
-    _FakeImapClient.deleted_uids = []
-    _FakeImapClient.expunge_called = False
+def _patch_fake_imap_client(monkeypatch):
+    created: dict[str, _FakeImapClient] = {}
+
+    def _factory(host: str, port: int, username: str, password: str) -> _FakeImapClient:
+        client = _FakeImapClient(host=host, port=port, username=username, password=password)
+        created["client"] = client
+        return client
+
+    monkeypatch.setattr(process_module, "ImapClient", _factory)
+    return created
 
 
 def test_process_mailbox_cleaner_dry_run_has_no_writes(monkeypatch) -> None:
-    _reset_fake_state()
-
     monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
-    monkeypatch.setattr(process_module, "ImapClient", _FakeImapClient)
+    created = _patch_fake_imap_client(monkeypatch)
 
     process_module.process_mailbox_cleaner(config=_config(dry_run=True))
 
-    assert _FakeImapClient.moved_uids == []
-    assert _FakeImapClient.deleted_uids == []
+    fake_client = created["client"]
+    assert fake_client.moved_uids == []
+    assert fake_client.deleted_uids == []
 
 
 def test_process_mailbox_cleaner_move_executes_write(monkeypatch) -> None:
-    _reset_fake_state()
-
     monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
-    monkeypatch.setattr(process_module, "ImapClient", _FakeImapClient)
+    created = _patch_fake_imap_client(monkeypatch)
 
     process_module.process_mailbox_cleaner(config=_config(dry_run=False))
 
-    assert _FakeImapClient.moved_uids == [(b"101", "Archive/Finance")]
+    fake_client = created["client"]
+    assert fake_client.moved_uids == [(b"101", "Archive/Finance")]

@@ -49,7 +49,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
-    description="Placeholder description for mailbox_cleaner",
+    description="Clean IMAP mailboxes based on job configs stored in Airflow Variables",
     tags=["mailbox_cleaner", "imap", "mail", "email", "cleaner"],
 ) as dag:
     config_keys = _list_mailbox_cleaner_config_keys()
