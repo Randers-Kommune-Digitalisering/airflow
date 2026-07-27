@@ -22,20 +22,20 @@ def _resolve_month_interval() -> tuple[str, str]:
     """
     Resolve and validate month interval from DAG runtime params.
 
-    :return: Tuple containing (start_dato, slut_dato).
+    :return: Tuple containing (start_date, end_date).
     :raises AirflowFailException: If required params are missing or the interval is invalid.
     """
     ctx = get_current_context()
-    start_dato = (ctx.get("params") or {}).get("start_dato")
-    slut_dato = (ctx.get("params") or {}).get("slut_dato")
+    start_date = (ctx.get("params") or {}).get("start_date")
+    end_date = (ctx.get("params") or {}).get("end_date")
 
-    if not start_dato or not slut_dato:
-        raise AirflowFailException("Need to specify both start_dato and slut_dato (YYYY-MM-DD).")
+    if not start_date or not end_date:
+        raise AirflowFailException("Need to specify both start_date and end_date (YYYY-MM-DD).")
 
-    if start_dato > slut_dato:
-        raise AirflowFailException("start_dato must not be after slut_dato.")
+    if start_date > end_date:
+        raise AirflowFailException("start_date must not be after end_date.")
 
-    return start_dato, slut_dato
+    return start_date, end_date
 
 
 def process_modregning() -> None:
@@ -71,8 +71,8 @@ def process_modregning() -> None:
     uid, attachment_name, excel_bytes = found
     logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
 
-    start_dato, slut_dato = _resolve_month_interval()
-    logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
+    start_date, end_date = _resolve_month_interval()
+    logger.info(f"Modregning date range: {start_date} -> {end_date}")
 
     try:
         df = pd.read_excel(
@@ -98,7 +98,7 @@ def process_modregning() -> None:
             ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
             for cpr in cpr_list:
                 try:
-                    payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
+                    payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_date, slut_dato=end_date)
 
                     ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
 
@@ -130,7 +130,7 @@ def process_modregning() -> None:
             sender=sender,
             recipients=recipients,
             subject=f"Modregninger for {report_date}",
-            body=f"Liste af Modregning er vedhæftet: fra {report_date} med Startdato {start_dato} og Slutdato {slut_dato}",
+            body=f"Liste af Modregning er vedhæftet: fra {report_date} med Startdato {start_date} og Slutdato {end_date}",
             attachments=[(filename, excel_bytes)],
         )
 
