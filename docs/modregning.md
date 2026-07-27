@@ -10,9 +10,15 @@ Formålet med jobbet er at understøtte Betalingskontorets behov for at sammenho
 
 Koden består af et DAG-job, der udfører følgende trin:
 
-- Beregner dato-interval ud fra Airflow `logical_date`:
-  - `start_dato`: 1. dag i forrige måned
-  - `slut_dato`: `logical_date` (dagens dato i DAG’ens timezone)
+- Læser `start_date` og `end_date` fra DAG params (valgfrie)
+- Hvis begge datoer er angivet ved trigger:
+  - `start_date` og `end_date` bruges direkte (format YYYY-MM-DD)
+  - Jobbet validerer at `start_date` ikke er efter `end_date`
+- Hvis ingen datoer er angivet ved trigger:
+  - `start_date` beregnes automatisk som første dag i forrige måned (ud fra logical_date i DAG timezone)
+  - `end_date` sættes automatisk til logical_date (i DAG timezone)
+- Hvis kun én af datoerne er angivet:
+  - Jobbet fejler med valideringsfejl (begge datoer skal angives sammen, eller begge udelades)
 - Finder nyeste Excel-vedhæftning i en IMAP Modregning-postkassen (default `INBOX`)
   - Email hentes via IMAP (EmailReader)
   - Jobbet scanner de seneste emails (nyeste først) og leder efter en `.xlsx`-vedhæftning, hvor filnavnet starter med et af de konfigurerede prefixes (fx `Modregning`)
@@ -23,7 +29,7 @@ Koden består af et DAG-job, der udfører følgende trin:
   - Hvis der ingen ydelser findes i svaret sættes feltet til `Ingen Ydelse`
 - Bygger en Excel-rapport (in-memory) med kolonnerne `cpr` og `YdelseNavn`
 - Sender rapporten som vedhæftet fil via SMTP (filnavn: `Modregning_YYYY-MM-DD.xlsx`)
-- Sletter input-emailen fra Modregning-postkassen efter vellykket gennemførsel (rapport sendt)
+- Sletter input-emailen fra Modregning-postkassen uanset vellykket gennemførsel eller hvis der er en fejl i Excel-arket(Mangler `ID-nummer`).
   - Emailen slettes via UID i `INBOX` og expunges med det samme. Det vil sige at input mailen hverken kan findes under
   `INBOX` eller `Deleted Items`. Den bliver slettet permanent.
 
@@ -35,9 +41,13 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 **Forudsætning(manuel proces):**
 
-Den 15. i hver måned sender Betalingskontoret en ny CPR-liste (Excel) til Modregning Postkassen. CPR-listen bruges som input til modregningsopslag.
+Betalingskontoret en ny CPR-liste sender (Excel) til Modregning Postkassen. CPR-listen bruges som input til modregningsopslag.
 Excel-filen skal indeholde kolonnen `ID-nummer` (CPR). 
-Jobbet bruger den nyeste matchende vedhæftning i postkassen, hvis der ikke ligger en relevant mail med vedhæftet Excel, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov).
+Jobbet bruger den nyeste matchende vedhæftning i postkassen, hvis der ikke ligger en relevant mail med vedhæftet Excel, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov). 
+
+- Brugeren, der trigger DAG'en/jobbet, kan vælge enten:
+  - Angive både `start_date` og `end_date` manuelt
+  - Lade begge felter være tomme, så dato-intervallet beregnes automatisk
 
 ## Afhængigheder
 
@@ -98,4 +108,24 @@ Eksempel:
 
 ## Schedule
 
-Betalingskontoret har adgang til UI'en i Airflow med rollen: `Modregning` hvor de kun kan se det DAG som tilhører Modregning. Her kan de selv trigger DAG'et efter eget behov.
+Betalingskontoret har adgang til UI'en i Airflow med rollen: `Modregning` hvor de kun kan se det DAG som tilhører Modregning. Her kan de selv trigger DAG'et efter eget behov. Når man trigger jobbet, er dato-parametre valgfrie.
+
+Mulighed 1 (manuel periode):
+
+- `start_date`: `YYYY-MM-DD`
+- `end_date`: `YYYY-MM-DD`
+
+Eksempel:
+- `start_date`: `2026-06-01`
+- `end_date`: `2026-07-27`
+
+
+Mulighed 2 (automatisk periode):
+
+- `start_date`: `tom`
+- `end_date`: `tom`
+
+
+Automatisk beregning:
+- `start_date` = første dag i forrige måned (relativt til logical_date)
+- `end_date` = logical_date
