@@ -17,16 +17,18 @@ with DAG(
     tags=["modregning", "mailbox", "serviceplatform", "email"],
     params={
         "start_date": Param(
-            type="string",  # required start_date
+            default=None,
+            type=["null", "string"],
             minLength=10,
             maxLength=10,
-            description="Påkrævet startdato i format YYYY-MM-DD, fx 2026-06-01",
+            description="Valgfri startdato i format YYYY-MM-DD fx 2026-06-01. Hvis tom, beregnes automatisk.",
         ),
         "end_date": Param(
-            type="string",  # required end_date
+            default=None,
+            type=["null", "string"],
             minLength=10,
             maxLength=10,
-            description="Påkrævet slutdato i format YYYY-MM-DD, fx 2026-07-27",
+            description="Valgfri slutdato i format YYYY-MM-DD fx 2026-07-27. Hvis tom, beregnes automatisk.",
         ),
     },
 ) as dag:

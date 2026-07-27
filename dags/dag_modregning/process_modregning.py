@@ -18,24 +18,34 @@ from dag_modregning.modregning_data import (
 logger = logging.getLogger(__name__)
 
 
-def _resolve_month_interval() -> tuple[str, str]:
+def _resolve_date_range() -> tuple[str, str]:
     """
-    Resolve and validate month interval from DAG runtime params.
+    Resolve and validate date interval from DAG runtime params.
 
-    :return: Tuple containing (start_date, end_date).
-    :raises AirflowFailException: If required params are missing or the interval is invalid.
+    If both start_date and end_date are provided, use them.
+    If neither is provided, derive defaults from logical_date in DAG timezone:
+    - start_date: first day of the previous month
+    - end_date: logical_date
+
+    :return: Tuple containing (start_date, end_date) in YYYY-MM-DD format.
+    :raises AirflowFailException: If only one date is provided, or if start_date is after end_date.
     """
     ctx = get_current_context()
     start_date = (ctx.get("params") or {}).get("start_date")
     end_date = (ctx.get("params") or {}).get("end_date")
 
-    if not start_date or not end_date:
-        raise AirflowFailException("Need to specify both start_date and end_date (YYYY-MM-DD).")
+    if start_date and end_date:
+        if start_date > end_date:
+            raise AirflowFailException("start_date must not be after end_date.")
+        return start_date, end_date
 
-    if start_date > end_date:
-        raise AirflowFailException("start_date must not be after end_date.")
+    if start_date or end_date:
+        raise AirflowFailException("Either provide both start_date and end_date, or leave both empty for automatic calculation.")
 
-    return start_date, end_date
+    logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
+    start = logical_date.replace(day=1) - relativedelta(months=1)
+    end = logical_date
+    return start.isoformat(), end.isoformat()
 
 
 def process_modregning() -> None:
@@ -71,7 +81,7 @@ def process_modregning() -> None:
     uid, attachment_name, excel_bytes = found
     logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
 
-    start_date, end_date = _resolve_month_interval()
+    start_date, end_date = _resolve_date_range()
     logger.info(f"Modregning date range: {start_date} -> {end_date}")
 
     try:
