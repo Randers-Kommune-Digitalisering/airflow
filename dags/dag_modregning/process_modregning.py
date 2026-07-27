@@ -136,9 +136,9 @@ def process_modregning() -> None:
 
         logger.info("Modregning processing completed successfully (email sent).")
 
+    except Exception as e:
+        raise AirflowFailException("Error processing Modregning") from e
+    finally:
         # Delete the input email right after successful processing (report sent)
         email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
         logger.info(f"Deleted input email {attachment_name} with UID {uid!r} from INBOX")
-
-    except Exception as e:
-        raise AirflowFailException("Error processing Modregning") from e
