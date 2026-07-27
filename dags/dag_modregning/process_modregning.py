@@ -18,21 +18,24 @@ from dag_modregning.modregning_data import (
 logger = logging.getLogger(__name__)
 
 
-def _resolve_date_range() -> tuple[str, str]:
+def _resolve_month_interval() -> tuple[str, str]:
     """
-    Resolve start_dato/slut_dato as ISO dates (YYYY-MM-DD) based on Airflow `logical_date`.
+    Resolve and validate month interval from DAG runtime params.
 
-    - `logical_date` is converted to the DAG timezone and truncated to a date.
-    - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
-    - `slut_dato` is set to `logical_date`.
-
-    :return: (start_dato, slut_dato) as ISO date strings.
+    :return: Tuple containing (start_dato, slut_dato).
+    :raises AirflowFailException: If required params are missing or the interval is invalid.
     """
     ctx = get_current_context()
-    logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
-    start = logical_date.replace(day=1) - relativedelta(months=1)
-    end = logical_date
-    return start.isoformat(), end.isoformat()
+    start_dato = (ctx.get("params") or {}).get("start_dato")
+    slut_dato = (ctx.get("params") or {}).get("slut_dato")
+
+    if not start_dato or not slut_dato:
+        raise AirflowFailException("Need to specify both start_dato and slut_dato (YYYY-MM-DD).")
+
+    if start_dato > slut_dato:
+        raise AirflowFailException("start_dato must not be after slut_dato.")
+
+    return start_dato, slut_dato
 
 
 def process_modregning() -> None:
@@ -68,7 +71,7 @@ def process_modregning() -> None:
     uid, attachment_name, excel_bytes = found
     logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
 
-    start_dato, slut_dato = _resolve_date_range()
+    start_dato, slut_dato = _resolve_month_interval()
     logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
 
     try:
