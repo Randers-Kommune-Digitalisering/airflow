@@ -20,15 +20,28 @@ logger = logging.getLogger(__name__)
 
 def _resolve_date_range() -> tuple[str, str]:
     """
-    Resolve start_dato/slut_dato as ISO dates (YYYY-MM-DD) based on Airflow `logical_date`.
+    Resolve and validate date interval from DAG runtime params.
 
-    - `logical_date` is converted to the DAG timezone and truncated to a date.
-    - `start_dato` is set to the 1st day of the previous month relative to `logical_date`.
-    - `slut_dato` is set to `logical_date`.
+    If both start_date and end_date are provided, use them.
+    If neither is provided, derive defaults from logical_date in DAG timezone:
+    - start_date: first day of the previous month
+    - end_date: logical_date
 
-    :return: (start_dato, slut_dato) as ISO date strings.
+    :return: Tuple containing (start_date, end_date) in YYYY-MM-DD format.
+    :raises AirflowFailException: If only one date is provided, or if start_date is after end_date.
     """
     ctx = get_current_context()
+    start_date = (ctx.get("params") or {}).get("start_date")
+    end_date = (ctx.get("params") or {}).get("end_date")
+
+    if start_date and end_date:
+        if start_date > end_date:
+            raise AirflowFailException("start_date must not be after end_date.")
+        return start_date, end_date
+
+    if start_date or end_date:
+        raise AirflowFailException("Either provide both start_date and end_date, or leave both empty for automatic calculation.")
+
     logical_date = ctx["logical_date"].in_timezone(ctx["dag"].timezone).date()
     start = logical_date.replace(day=1) - relativedelta(months=1)
     end = logical_date
@@ -68,8 +81,8 @@ def process_modregning() -> None:
     uid, attachment_name, excel_bytes = found
     logger.info(f"Found Excel attachment in email UID {uid.decode()}: {attachment_name} ({len(excel_bytes)} bytes)")
 
-    start_dato, slut_dato = _resolve_date_range()
-    logger.info(f"Modregning date range: {start_dato} -> {slut_dato}")
+    start_date, end_date = _resolve_date_range()
+    logger.info(f"Modregning date range: {start_date} -> {end_date}")
 
     try:
         df = pd.read_excel(
@@ -95,7 +108,7 @@ def process_modregning() -> None:
             ydelse_client = YdelseListeHentClient(client_certificate_file_path=client_cert_path)
             for cpr in cpr_list:
                 try:
-                    payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_dato, slut_dato=slut_dato)
+                    payload = ydelse_client.effektuering_hent(cpr=cpr, start_dato=start_date, slut_dato=end_date)
 
                     ydelser, found_any = extract_ydelser_from_serviceplatform_response(payload=payload)
 
@@ -127,15 +140,15 @@ def process_modregning() -> None:
             sender=sender,
             recipients=recipients,
             subject=f"Modregninger for {report_date}",
-            body=f"Liste af Modregning er vedhæftet: {report_date}",
+            body=f"Liste af Modregning er vedhæftet: fra {report_date} med Startdato {start_date} og Slutdato {end_date}",
             attachments=[(filename, excel_bytes)],
         )
 
         logger.info("Modregning processing completed successfully (email sent).")
 
+    except Exception as e:
+        raise AirflowFailException("Error processing Modregning") from e
+    finally:
         # Delete the input email right after successful processing (report sent)
         email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
         logger.info(f"Deleted input email {attachment_name} with UID {uid!r} from INBOX")
-
-    except Exception as e:
-        raise AirflowFailException("Error processing Modregning") from e

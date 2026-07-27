@@ -127,3 +127,14 @@ except Exception:
                 cls._store[key] = str(value)
 
     models_mod.Variable = Variable
+
+
+try:
+    from airflow.exceptions import AirflowFailException as _AirflowFailException  # noqa: F401
+except Exception:
+    exceptions_mod = _ensure_module("airflow.exceptions")
+
+    class AirflowFailException(Exception):
+        pass
+
+    exceptions_mod.AirflowFailException = AirflowFailException

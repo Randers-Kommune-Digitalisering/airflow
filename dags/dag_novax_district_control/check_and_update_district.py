@@ -26,7 +26,11 @@ logger = logging.getLogger(__name__)
 def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
     """
     Retrieves and updates user, address and district information
-    for any new patients based on their addresses.
+    for pregnancy journal records in the selected date range.
+
+    Only records with status 'IND_MOD' are processed.
+    Processed records are marked as 'IND_GODK'; this prevents re-processing,
+    including when running on historic date intervals.
     """
     now_dt = datetime.now()
     now_time = now_dt.strftime("%H:%M")
@@ -61,6 +65,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
             .filter(
                 Godkommu.JOURNALDATO >= start_date,
                 Godkommu.JOURNALDATO < end_date,
+                func.trim(Godkommu.STATUS) == 'IND_MOD',
                 Godkommu.EMNEBREV.like('%Orientering - Gravid%'),
                 Name.CPR.not_in(ignore_cprs)
             )
@@ -83,7 +88,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     name_obj.date = note_obj.DATO
                     name_obj.journal = parse_journal_data(note_obj.NOTE)
                     assigned = True
-                    entries.append(name_obj)
+                    entries.append((name_obj, godkommu_obj))
                     seen_navnids.add(navnid)
 
             if not assigned:
@@ -92,7 +97,7 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
         logger.info(f"Processing {len(entries)} entries for date range {start_date} to {end_date}")
 
         invalid_entries = []
-        for entry in entries:
+        for entry, godkommu in entries:
             # CPR validation
             if not is_valid_cpr(entry.CPR):
                 logger.warning(
@@ -179,7 +184,6 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
             # Address + district updates
             is_new_address_set = False
             is_new_district = False
-            is_new_district_details = False
             is_new_kommunekode = False
             is_new_kommunekode_details = False
 
@@ -228,14 +232,15 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 # Kommune update in name and name details
                 is_new_kommunekode, is_new_kommunekode_details = update_kommunekode(entry=entry)
 
-            # Set AnsvarsShpl to 'FIKTIV' if not already set
+            # Distribute Novax record to 'FIKTIV' if not already distributed
+            # First, set AnsvarsShpl to 'FIKTIV' if not already set
             has_changed_ansvarshpl = False
             if entry.AnsvarsShpl != 'FIKTIV':
                 entry.AnsvarsShpl = 'FIKTIV'
                 has_changed_ansvarshpl = True
                 logger.info(f"Set AnsvarsShpl to 'FIKTIV' for Name ID {entry.ID}")
 
-            # Set primary personuser to 'FIKTIV' and demote existing primary personuser
+            # Then set primary personuser to 'FIKTIV' and demote existing primary personuser
             has_changed_personusers = False
             person_users_rows = entry.person_users
 
@@ -275,17 +280,23 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                     "Created primary personuser 'FIKTIV' for Name ID %s",
                     entry.ID,
                 )
+
             elif has_changed_personusers:
                 logger.info(
                     "Updated personusers to keep only 'FIKTIV' as primary for Name ID %s",
                     entry.ID,
                 )
 
+            # Set approved status
+            godkommu.STATUS = 'IND_GODK'
+            logger.info("Set Godkommu.STATUS to 'IND_GODK' for Name ID %s", entry.ID)
+
+            # Update timestamps if any relevant changes were made
             if any([is_new_district, is_new_address_set, has_changed_ansvarshpl, has_changed_personusers, is_new_kommunekode]):
                 entry.TS_UPDD = now_dt
                 entry.TS_UPDT = now_time
 
-            if any([is_due_date_changed, has_changed_protected_status, is_new_district_details, is_new_kommunekode_details]):
+            if any([is_due_date_changed, has_changed_protected_status, is_new_kommunekode_details]):
                 entry.details.TS_UPDD = now_dt
                 entry.details.TS_UPDT = now_time
 
