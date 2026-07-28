@@ -45,7 +45,7 @@ def process_arbejdsfortjeneste() -> None:
      Process Arbejdsfortjeneste CPR input and deliver an income change report.
 
     :return: None.
-    :raises AirflowFailException: If required input is missing or report processing fails.
+    :raises AirflowFailException: If required config or CPR input is missing, or if report processing fails.
     """
     logger.info("Starting to process arbejdsfortjeneste data...")
 
@@ -57,12 +57,21 @@ def process_arbejdsfortjeneste() -> None:
     abonnent_type_kode = skat_client_config["abonnent_type_kode"]
     adgang_formaal_type_kode = skat_client_config["adgang_formaal_type_kode"]
 
+    if not all((virksomhed_se_nummer_identifikator, abonnement_type_kode, abonnent_type_kode, adgang_formaal_type_kode)):
+        raise AirflowFailException("SKAT client configuration is not set properly.")
+
     sender = arbejdsfortjeneste_runtime_config["sender_email"]
     recipients = arbejdsfortjeneste_runtime_config["recipient_emails"]
     smtp_server = arbejdsfortjeneste_runtime_config["smtp_server"]
     imap_server = arbejdsfortjeneste_runtime_config["imap_server"]
 
+    if not all((sender, recipients, smtp_server)):
+        raise AirflowFailException("SMTP configuration is not set properly.")
+
     arbejdsfortjeneste_imap_conn = BaseHook.get_connection("arbejdsfortjeneste_imap")
+
+    if not all((arbejdsfortjeneste_imap_conn.login, arbejdsfortjeneste_imap_conn.password, imap_server)):
+        raise AirflowFailException("IMAP configuration is not set properly.")
 
     email_reader = EmailReader(
         email=arbejdsfortjeneste_imap_conn.login,
