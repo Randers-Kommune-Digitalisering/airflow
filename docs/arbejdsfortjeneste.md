@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at understøtte kontrollen af personer, der er tildelt tabt arbejdsfortjeneste, ved at identificere ændringer i deres indkomst. Jobbet læser den nyeste relevante CPR-liste fra Arbejdsfortjenetse -  Postkassen, henter indkomstoplysninger via Serviceplatformen (SKAT Forward eIndkomst, SF0770A) og sender en rapport til Familie- og rådgivningscenter
+Formålet med jobbet er at understøtte kontrollen af personer, der er tildelt tabt arbejdsfortjeneste, ved at identificere ændringer i deres indkomst. Jobbet læser den nyeste relevante CPR-liste fra Arbejdsfortjenestse -  Postkassen, henter indkomstoplysninger via Serviceplatformen (SKAT Forward eIndkomst, [SF0770A](https://digitaliseringskataloget.dk/integration/sf0770a)) og sender en rapport til Familie- og rådgivningscenter.
 
 ## Beskrivelse
 
@@ -34,11 +34,11 @@ Koden består af et DAG-job, der udfører følgende trin:
 	- `Indkomstoplysninger`
 	- `Ændring` (kun rækker med ændring forskellig fra 0)
 - Sender rapporten som vedhæftet fil via SMTP.
-- Filnavn foelger formatet:
-	- `Arbejdsfortjeneste_STARTMÅNED_til_SLUTMÅNED_YYYY-MM-DD.xlsx`
+- Filnavn følger formatet:
+	- `Arbejdsfortjeneste_<STARTMÅNED>_til_<SLUTMÅNED>_<YYYY-MM-DD>.xlsx`
 
 **Dataflow:**
-- Arbejdsfortjeneste Postkasse Email (Excel vedhæftning) -> CPR-liste -> Serviceplatform-opslag (SF0770A) -> Excel-rapport (Indkomstoplysninger + Ændring) -> Email til Familie- og rådgivningscenter
+- Arbejdsfortjeneste Postkasse Email (Excel vedhæftning) -> CPR-liste -> Serviceplatform-opslag ([SF0770A](https://digitaliseringskataloget.dk/integration/sf0770a)) -> Excel-rapport (Indkomstoplysninger + Ændring) -> Email til Familie- og rådgivningscenter
 
 Bemærk (datahåndtering):
 
