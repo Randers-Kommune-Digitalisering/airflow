@@ -20,6 +20,17 @@ from dag_arbejdsfortjeneste.arbejdsfortjeneste_data import (
 logger = logging.getLogger(__name__)
 
 
+def _get_missing_or_empty_keys(config: dict, required_keys: tuple[str, ...]) -> list[str]:
+    """
+    Return required keys that are missing or have an empty value.
+
+    :param config: Configuration dictionary to validate.
+    :param required_keys: Keys that must be present and non-empty.
+    :return: Missing/empty key names.
+    """
+    return [key for key in required_keys if not config.get(key)]
+
+
 def _resolve_month_interval() -> tuple[str, str]:
     """
     Resolve and validate month interval from DAG runtime params.
@@ -52,21 +63,48 @@ def process_arbejdsfortjeneste() -> None:
     skat_client_config = Variable.get("skat_client_config", deserialize_json=True)
     arbejdsfortjeneste_runtime_config = Variable.get("arbejdsfortjeneste_runtime_config", deserialize_json=True)
 
-    virksomhed_se_nummer_identifikator = skat_client_config["virksomhed_se_nummer_identifikator"]
-    abonnement_type_kode = skat_client_config["abonnement_type_kode"]
-    abonnent_type_kode = skat_client_config["abonnent_type_kode"]
-    adgang_formaal_type_kode = skat_client_config["adgang_formaal_type_kode"]
+    if not isinstance(skat_client_config, dict):
+        raise AirflowFailException("SKAT client configuration must be a JSON object.")
 
-    if not all((virksomhed_se_nummer_identifikator, abonnement_type_kode, abonnent_type_kode, adgang_formaal_type_kode)):
-        raise AirflowFailException("SKAT client configuration is not set properly.")
+    skat_required_keys = (
+        "virksomhed_se_nummer_identifikator",
+        "abonnement_type_kode",
+        "abonnent_type_kode",
+        "adgang_formaal_type_kode",
+    )
+    missing_skat_keys = _get_missing_or_empty_keys(config=skat_client_config, required_keys=skat_required_keys)
+    if missing_skat_keys:
+        raise AirflowFailException(
+            f"SKAT client configuration is missing required keys: {', '.join(missing_skat_keys)}"
+        )
 
-    sender = arbejdsfortjeneste_runtime_config["sender_email"]
-    recipients = arbejdsfortjeneste_runtime_config["recipient_emails"]
-    smtp_server = arbejdsfortjeneste_runtime_config["smtp_server"]
-    imap_server = arbejdsfortjeneste_runtime_config["imap_server"]
+    virksomhed_se_nummer_identifikator = skat_client_config.get("virksomhed_se_nummer_identifikator")
+    abonnement_type_kode = skat_client_config.get("abonnement_type_kode")
+    abonnent_type_kode = skat_client_config.get("abonnent_type_kode")
+    adgang_formaal_type_kode = skat_client_config.get("adgang_formaal_type_kode")
 
-    if not all((sender, recipients, smtp_server)):
-        raise AirflowFailException("SMTP configuration is not set properly.")
+    if not isinstance(arbejdsfortjeneste_runtime_config, dict):
+        raise AirflowFailException("Arbejdsfortjeneste runtime configuration must be a JSON object.")
+
+    runtime_required_keys = (
+        "sender_email",
+        "recipient_emails",
+        "smtp_server",
+        "imap_server",
+    )
+    missing_runtime_keys = _get_missing_or_empty_keys(
+        config=arbejdsfortjeneste_runtime_config,
+        required_keys=runtime_required_keys,
+    )
+    if missing_runtime_keys:
+        raise AirflowFailException(
+            f"Arbejdsfortjeneste runtime configuration is missing required keys: {', '.join(missing_runtime_keys)}"
+        )
+
+    sender = arbejdsfortjeneste_runtime_config.get("sender_email")
+    recipients = arbejdsfortjeneste_runtime_config.get("recipient_emails")
+    smtp_server = arbejdsfortjeneste_runtime_config.get("smtp_server")
+    imap_server = arbejdsfortjeneste_runtime_config.get("imap_server")
 
     arbejdsfortjeneste_imap_conn = BaseHook.get_connection("arbejdsfortjeneste_imap")
 
@@ -102,16 +140,19 @@ def process_arbejdsfortjeneste() -> None:
             raise AirflowFailException("No CPR values found in the Excel file")
 
         start_month, end_month = _resolve_month_interval()
-        months = iter_months(start_yyyymm=start_month, end_yyyymm=end_month)
+        months = list(iter_months(start_yyyymm=start_month, end_yyyymm=end_month))
 
         logger.info(f"Arbejdsfortjeneste date range: {start_month} -> {end_month} (months: {', '.join(months)})")
+
+        field_map = get_report_field_to_blanket_field_id()
+        report_fields = tuple(field_map.keys())
 
         base_cols = [
             "cpr",
             "VirksomhedSENummerIdentifikator",
             "IndkomstPersonGruppeDispositionDato",
             "AngivelsePeriode",
-            *get_report_field_to_blanket_field_id().keys(),
+            *report_fields,
         ]
 
         def _placeholder_row(for_cpr: str) -> dict:
@@ -120,7 +161,7 @@ def process_arbejdsfortjeneste() -> None:
                 "VirksomhedSENummerIdentifikator": None,
                 "IndkomstPersonGruppeDispositionDato": None,
                 "AngivelsePeriode": None,
-                **{k: None for k in get_report_field_to_blanket_field_id().keys()},
+                **{k: None for k in report_fields},
             }
 
         all_diff: list[pd.DataFrame] = []
