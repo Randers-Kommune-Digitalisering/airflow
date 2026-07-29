@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at understøtte kontrollen af personer, der er tildelt tabt arbejdsfortjeneste, ved at identificere ændringer i deres indkomst. Jobbet læser den nyeste relevante CPR-liste fra Arbejdsfortjenestse -  Postkassen, henter indkomstoplysninger via Serviceplatformen (SKAT Forward eIndkomst, [SF0770A](https://digitaliseringskataloget.dk/integration/sf0770a)) og sender en rapport til Familie- og rådgivningscenter.
+Formålet med jobbet er at understøtte kontrollen af personer, der er tildelt tabt arbejdsfortjeneste, ved at identificere ændringer i deres indkomst. Jobbet læser den nyeste relevante CPR-liste fra Arbejdsfortjeneste - Postkassen, henter indkomstoplysninger via Serviceplatformen (SKAT Forward eIndkomst, [SF0770A](https://digitaliseringskataloget.dk/integration/sf0770a)) og sender en rapport til Familie- og rådgivningscenter.
 
 ## Beskrivelse
 
