@@ -91,7 +91,7 @@ def _normalize_cpr(value: object) -> str | None:
 
 def extract_cprs(
     df: pd.DataFrame,
-    column: str = None,
+    column: str | None = None,
 ) -> list[str]:
     """
     Extract CPR numbers from a DataFrame column without deduplicating.
