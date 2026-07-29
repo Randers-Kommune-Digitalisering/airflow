@@ -68,7 +68,7 @@ def map_indkomsttype(value: str | int | None) -> str | None:
     """
     Map an IndkomstType code to a configured label.
 
-    :param value: Raw income type code from Seviceplatform SKAT payload.
+    :param value: Raw income type code from Serviceplatform SKAT payload.
     :return: Mapped label if configured
     """
     if value is None:
@@ -91,7 +91,7 @@ def _normalize_cpr(value: object) -> str | None:
 
 def extract_cprs(
     df: pd.DataFrame,
-    column: str = "Cprnr.",
+    column: str = None,
 ) -> list[str]:
     """
     Extract CPR numbers from a DataFrame column without deduplicating.
@@ -100,6 +100,9 @@ def extract_cprs(
     :param column: Column name containing CPR numbers.
     :return: CPR list
     """
+    if column is None:
+        raise ValueError("Column name must be provided for CPR extraction")
+
     cprs = [
         cpr
         for cpr in df[column].map(_normalize_cpr).tolist()
