@@ -147,7 +147,7 @@ def login_to_sd(
         page.locator(
             "xpath=//*[@id='module-116']/div/div/div/div/a"
         ).click(timeout=20000)
-        logger.info("'Log Ind' button clicked.")
+        logger.info("'Log In' button clicked.")
 
         logger.info("Waiting for 'Arbejdsplads-Login-View' button...")
         existing_pages = list(page.context.pages)
