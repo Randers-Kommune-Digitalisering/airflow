@@ -150,14 +150,13 @@ def login_to_sd(
         logger.info("'Log In' button clicked.")
 
         logger.info("Waiting for 'Arbejdsplads-Login-View' button...")
-        existing_pages = list(page.context.pages)
-        page.locator("#arbejdspladsButton").click(timeout=20000)
-        page.wait_for_timeout(1200)
+        try:
+            with page.context.expect_page(timeout=20000) as page_info:
+                page.locator("#arbejdspladsButton").click(timeout=20000)
+            active_page = page_info.value
+        except PlaywrightTimeoutError:
+            active_page = page
         logger.info("'Arbejdsplads-Login-View' button clicked.")
-
-        # Wait for new page to open after clicking the button
-        new_pages = [p for p in page.context.pages if p not in existing_pages]
-        active_page = new_pages[-1] if new_pages else page
         active_page.wait_for_load_state("domcontentloaded", timeout=30000)
 
         logger.info("Selecting IDP in iframe 'iframe-oiosaml'...")
