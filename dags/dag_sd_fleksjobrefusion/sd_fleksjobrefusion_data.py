@@ -77,7 +77,7 @@ def _log_open_pages(context: BrowserContext, prefix: str) -> None:
         except PlaywrightError:
             url = "<unavailable-during-navigation>"
 
-        logger.info(f"{prefix} page[{index}]: title='{title}' url='{url}'")
+        logger.debug("%s page[%s]: title=%r url=%r", prefix, index, title, url)
 
 
 def _resolve_post_login_page(
