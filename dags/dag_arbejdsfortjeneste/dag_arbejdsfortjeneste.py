@@ -7,7 +7,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_arbejdsfortjeneste.process_arbejdsfortjeneste import process_arbejdsfortjeneste
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 1
+dag_args["retries"] = 0
 
 
 with DAG(
