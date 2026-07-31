@@ -281,9 +281,9 @@ def process_arbejdsfortjeneste() -> None:
 
         logger.info("Arbejdsfortjeneste processing completed successfully (email sent).")
 
-        # Delete the processed input email after sending the report
-        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
-        logger.info(f"Deleted Arbejdsfortjeneste input email {filename} with UID {uid!r} from INBOX")
-
     except Exception as e:
         raise AirflowFailException("Failed to process arbejdsfortjeneste report") from e
+    finally:
+        # Delete the processed input email no matter what
+        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+        logger.info(f"Deleted Arbejdsfortjeneste input email {filename} with UID {uid!r} from INBOX")
