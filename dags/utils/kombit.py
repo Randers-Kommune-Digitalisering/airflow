@@ -1,4 +1,5 @@
 import tempfile
+import base64
 import os
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
@@ -15,6 +16,12 @@ class TempClientCert:
         public_pem = os.environ.get("CLIENT_CERT_PUBLIC_KEY")
         if not private_pem or not public_pem:
             raise ValueError("Both CLIENT_CERT_PRIVATE_KEY and CLIENT_CERT_PUBLIC_KEY environment variables must be set.")
+        
+        if not private_pem.strip().startswith("-----BEGIN"):
+            private_pem = base64.b64decode(private_pem).decode("utf-8")
+        
+        if not public_pem.strip().startswith("-----BEGIN"):
+            public_pem = base64.b64decode(public_pem).decode("utf-8")
 
         private_key = serialization.load_pem_private_key(
             private_pem.encode("utf-8"),
