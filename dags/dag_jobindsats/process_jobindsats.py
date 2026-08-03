@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_jobindsats_config() -> list[dict[str, Any]]:
-    variable_value: Any = Variable.get("jobindsats_config", default_var=None, deserialize_json=True,)
+    variable_value: Any = Variable.get("jobindsats_config_v3", default_var=None, deserialize_json=True,)
 
     if variable_value is None:
         raise AirflowException("Airflow Variable 'jobindsats_config' is missing or empty")
