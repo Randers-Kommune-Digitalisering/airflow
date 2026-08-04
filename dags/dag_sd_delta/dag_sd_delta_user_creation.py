@@ -197,7 +197,7 @@ def extract_transform() -> dict[str, str | bool]:
 
     result = {"file_path": out_file}
 
-    root_logger.removeHandler(log_collector=log_collector)
+    root_logger.removeHandler(log_collector)
 
     # Build log html for email report.
     html_prefix = "".join([
