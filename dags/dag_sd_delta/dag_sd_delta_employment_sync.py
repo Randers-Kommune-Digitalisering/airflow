@@ -22,9 +22,9 @@ from dag_sd_delta.utils import validate_insts_to_import
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["email_on_failure"] = True
-dag_args["email"] = ["delta@randers.dk", "digitalisering@randers.dk"]
 dag_args["retries"] = 2
 dag_args["retry_delay"] = timedelta(minutes=5)
+dag_args["email"].append("delta@randers.dk")
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,7 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
 
 with DAG(
     dag_id="sd_delta_employment_sync",
-    start_date=datetime(year=2026, month=6, day=23, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=8, day=3, tz=timezone("Europe/Copenhagen")),
     schedule="0 7,12,15 * * *",
     render_template_as_native_obj=True,
     default_args=dag_args,

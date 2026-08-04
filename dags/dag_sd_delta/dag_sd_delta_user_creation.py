@@ -25,7 +25,7 @@ from dag_sd_delta.utils import validate_insts_to_import
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["email_on_failure"] = True
-dag_args["email"] = ["delta@randers.dk", "D-It-Supporten@randers.dk", "digitalisering@randers.dk"]
+dag_args["email"].append("digitalisering@randers.dk")
 dag_args["retries"] = 2
 dag_args["retry_delay"] = timedelta(minutes=5)
 
@@ -212,8 +212,8 @@ def extract_transform() -> dict[str, str | bool]:
 
 with DAG(
     dag_id="sd_delta_user_creation",
-    start_date=datetime(year=2026, month=6, day=23, tz=timezone("Europe/Copenhagen")),
-    schedule="30 7 * * *",
+    start_date=datetime(year=2026, month=8, day=3, tz=timezone("Europe/Copenhagen")),
+    schedule="30 7,12,15 * * *",
     render_template_as_native_obj=True,
     default_args=dag_args,
     catchup=False,

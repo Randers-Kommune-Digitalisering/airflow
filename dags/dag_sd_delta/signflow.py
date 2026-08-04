@@ -43,7 +43,7 @@ class LogivaSignflowClient:
         NB: There is no documentation for the Signflow API - this is based on reverse engineering the web interface.
 
         Returns:
-            pd.DataFrame: A DataFrame containing authorizations with columns ['Navn', 'CPR', 'LOS', 'Handling', 'Fra dato', 'Sagsnummer'].
+            pd.DataFrame: A DataFrame containing authorizations with columns ['Navn', 'CPR', 'LOS', 'Handling', 'Fra dato', 'Sagsnummer', 'lederemail'].
         """
         endpoint = f'{self._url}/usr/ShowDocument'
 
@@ -72,12 +72,12 @@ class LogivaSignflowClient:
             names=column_names,
             header=None,
             index_col=False,
-            usecols=[0, 1, 4, 5, 6, 8],
+            usecols=[0, 1, 4, 5, 6, 8, 18],
             dtype={'CPR': str, 'Fra dato': str},
             on_bad_lines='warn'
-        )[['Navn', 'CPR', 'LOS', 'Handling', 'Fra dato', 'Sagsnummer']]
+        )[['Navn', 'CPR', 'LOS', 'Handling', 'Fra dato', 'Sagsnummer', 'lederemail']]
 
-        df = df[df['Handling'].isin(['Genopret', 'Nyansat'])].copy()
+        df = df[df['Handling'].isin(['Modtag', 'Genopret', 'Nyansat'])].copy()
 
         def parse_fra_dato(value: str) -> date | None:
             """
