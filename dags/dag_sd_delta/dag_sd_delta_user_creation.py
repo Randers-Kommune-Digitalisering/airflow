@@ -32,7 +32,7 @@ dag_args["retry_delay"] = timedelta(minutes=5)
 logger = logging.getLogger(__name__)
 
 
-def extract_transform() -> dict[str, str | bool]:
+def extract_transform() -> dict[str, str | bool | None]:
     """Extracts authorizations from Signflow, checks them against Delta, and prepares a DataFrame with data from SD for user creation."""
     insts_to_import_raw = Variable.get("delta_sd_insts_to_import", default_var="{}")
     insts_to_import = json.loads(insts_to_import_raw)
@@ -195,7 +195,15 @@ def extract_transform() -> dict[str, str | bool]:
             out_file = str(output_file)
             logger.info(f"Saved user creation data with {len(out_df)} rows to file {output_file}")
 
-    result = {"file_path": out_file}
+    upload_result = upload_excel_file_to_delta(
+        delta_client=delta_client,
+        file_path=out_file
+    )
+
+    result = {
+        "file_path": out_file,
+        **upload_result,
+    }
 
     root_logger.removeHandler(log_collector)
 
@@ -226,24 +234,14 @@ with DAG(
         python_callable=extract_transform
     )
 
-    upload_file = PythonOperator(
-        task_id="upload_excel_to_delta",
-        python_callable=upload_excel_file_to_delta,
-        op_kwargs={
-            "delta_client": DeltaClient(BaseHook.get_connection("delta_prod")),
-            "file_path": "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['file_path'] }}"
-        }
-    )
-
     send_email = EmailOperator(
         task_id="send_email",
-        to=["delta@randers.dk", "D-It-Supporten@randers.dk"],
+        to=["delta@randers.dk"],
         subject=("SD Delta user creation - {{ macros.datetime.utcnow().replace(tzinfo=macros.dateutil.tz.tzutc()).astimezone(macros.dateutil.tz.gettz('Europe/Copenhagen')).strftime('%Y-%m-%d %H:%M:%S') }}"),
         html_content=(
-            "{{ ti.xcom_pull(task_ids='upload_excel_to_delta')['upload_html'] }}"
+            "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['upload_html'] }}"
             "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['log_html'] }}"
         ),
-        files="{{ [ti.xcom_pull(task_ids='get_and_handle_authorizations')['file_path']] if ti.xcom_pull(task_ids='get_and_handle_authorizations')['file_path'] is not none else [] }}",
     )
 
-    get_and_handle_authorizations >> upload_file >> send_email
+    get_and_handle_authorizations >> send_email
