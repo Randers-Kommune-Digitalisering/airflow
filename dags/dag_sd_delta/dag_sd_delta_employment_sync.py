@@ -29,7 +29,7 @@ dag_args["email"].append("delta@randers.dk")
 logger = logging.getLogger(__name__)
 
 
-def extract_transform(**context: dict) -> dict[str, str | bool]:
+def extract_transform(**context: dict) -> dict[str, str | bool | None]:
     """Fetches and validates configuration from Airflow Variables and DAG params, then starts the main flow."""
 
     # set up internal log collector to capture logs for email report
@@ -76,6 +76,13 @@ def extract_transform(**context: dict) -> dict[str, str | bool]:
             start_time=start_time,
             end_time=end_time
         )
+
+        # Upload in the same task that creates the file to avoid cross-pod file path issues on Kubernetes.
+        upload_result = upload_excel_file_to_delta(
+            delta_client=DeltaClient(BaseHook.get_connection("delta_prod")),
+            file_path=result.get("report_path")
+        )
+        result.update(upload_result)
     finally:
         root_logger.removeHandler(log_collector)
 
@@ -135,15 +142,6 @@ with DAG(
         }
     )
 
-    upload_file = PythonOperator(
-        task_id="upload_excel_to_delta",
-        python_callable=upload_excel_file_to_delta,
-        op_kwargs={
-            "delta_client": DeltaClient(BaseHook.get_connection("delta_prod")),
-            "file_path": "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['report_path'] }}"
-        }
-    )
-
     send_email = EmailOperator(
         task_id="send_email",
         to=["delta@randers.dk"],
@@ -154,11 +152,10 @@ with DAG(
             "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['end_time'] }}"
         ),
         html_content=(
-            "{{ ti.xcom_pull(task_ids='upload_excel_to_delta')['upload_html'] }}"
+            "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['upload_html'] }}"
             "{{ ti.xcom_pull(task_ids='handle_deleted_employment')['log_html'] }}"
             "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['log_html'] }}"
         ),
-        files="{{ [ti.xcom_pull(task_ids='get_and_transform_changes')['report_path']] if ti.xcom_pull(task_ids='get_and_transform_changes')['report_path'] is not none else [] }}",
     )
 
-    get_changes >> [upload_file, handle_deleted] >> send_email
+    get_changes >> handle_deleted >> send_email
