@@ -236,7 +236,7 @@ with DAG(
 
     send_email = EmailOperator(
         task_id="send_email",
-        to=["delta@randers.dk", "D-It-Supporten@randers.dk"],
+        to=["delta@randers.dk"],
         subject=("SD Delta user creation - {{ macros.datetime.utcnow().replace(tzinfo=macros.dateutil.tz.tzutc()).astimezone(macros.dateutil.tz.gettz('Europe/Copenhagen')).strftime('%Y-%m-%d %H:%M:%S') }}"),
         html_content=(
             "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['upload_html'] }}"
