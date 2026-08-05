@@ -2,7 +2,7 @@ import logging
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from itertools import product
-from datetime import datetime
+from datetime import date, datetime
 
 import pandas as pd
 from requests import Response
@@ -76,7 +76,7 @@ def _xml_to_df_with_exploded_elements(
 
     df = pd.DataFrame(rows)
 
-    def parse_date_value(value: object) -> datetime.date | None:
+    def parse_date_value(value: object) -> date | None:
         """
         Parse a date value from a string in the format 'YYYY-MM-DD' and return a datetime.date object.
 
@@ -84,7 +84,7 @@ def _xml_to_df_with_exploded_elements(
             value (object): The value to be parsed.
 
         Returns:
-            datetime.date | None: The parsed date value or None if parsing fails.
+            date | None: The parsed date value or None if parsing fails.
         """
         if pd.isna(value):
             return None
