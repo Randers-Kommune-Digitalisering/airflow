@@ -10,8 +10,8 @@ import pendulum
 from pendulum import timezone
 from airflow import DAG
 from airflow.hooks.base import BaseHook
-from airflow.operators.email import EmailOperator
 from airflow.operators.python import PythonOperator
+from airflow.utils.email import send_email
 
 from dag_sd_delta.delta_client import DeltaClient
 from dag_sd_delta.signflow import LogivaSignflowClient
@@ -154,6 +154,15 @@ def extract_transform() -> dict[str, str]:
 
     output_file_path = str(output_file)
     logger.info("Saved IT support list with %s rows to %s", len(out_df), output_file_path)
+
+    timestamp = pendulum.now("Europe/Copenhagen").strftime("%Y-%m-%d %H:%M:%S")
+    send_email(
+        to=["D-It-Supporten@randers.dk"],
+        subject=f"Signflow Autorisationer - {timestamp}",
+        html_content="Liste af autorisationer er vedh\u00e6ftet.",
+        files=[output_file_path],
+    )
+
     return {"file_path": output_file_path}
 
 
@@ -171,18 +180,5 @@ with DAG(
     get_and_handle_authorizations = PythonOperator(
         task_id="get_and_handle_authorizations",
         python_callable=extract_transform,
+        do_xcom_push=False
     )
-
-    send_email = EmailOperator(
-        task_id="send_email",
-        to=["D-It-Supporten@randers.dk"],
-        subject=(
-            "Signflow Autorisationer - "
-            "{{ macros.datetime.utcnow().replace(tzinfo=macros.dateutil.tz.tzutc())."
-            "astimezone(macros.dateutil.tz.gettz('Europe/Copenhagen')).strftime('%Y-%m-%d %H:%M:%S') }}"
-        ),
-        html_content="Liste af autorisationer er vedhæftet.",
-        files="{{ [ti.xcom_pull(task_ids='get_and_handle_authorizations')['file_path']] if ti.xcom_pull(task_ids='get_and_handle_authorizations')['file_path'] is not none else [] }}",
-    )
-
-    get_and_handle_authorizations >> send_email
