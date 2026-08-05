@@ -180,5 +180,5 @@ with DAG(
     get_and_handle_authorizations = PythonOperator(
         task_id="get_and_handle_authorizations",
         python_callable=extract_transform,
-        do_push_xcom=False
+        do_xcom_push=False
     )
