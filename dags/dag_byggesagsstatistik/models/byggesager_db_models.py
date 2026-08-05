@@ -1,6 +1,4 @@
 # This file declares models for "byggesager" postgres database on kubernetes
-import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, Unicode
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base, declared_attr

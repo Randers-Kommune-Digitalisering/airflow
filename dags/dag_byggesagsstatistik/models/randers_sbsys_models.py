@@ -1,6 +1,4 @@
 # This file declares partial classes for "SbsysNetDrift" and "SbsysNetDrift_Byggesag" databases
-import datetime
-
 from sqlalchemy import Column, DateTime, ForeignKeyConstraint, Identity, Index, Integer, PrimaryKeyConstraint, Unicode
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base

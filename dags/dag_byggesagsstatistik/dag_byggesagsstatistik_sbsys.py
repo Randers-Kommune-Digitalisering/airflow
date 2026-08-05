@@ -1,3 +1,8 @@
+import logging
+from datetime import datetime as dt, timedelta
+from typing import Dict, List
+from sqlalchemy.orm import Session
+
 from airflow import DAG
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
@@ -6,11 +11,8 @@ from airflow.operators.python import PythonOperator, get_current_context
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from pendulum import datetime, timezone
-from sqlalchemy.orm import Session
-import logging
-from datetime import datetime as dt, timedelta
-from typing import Dict, List
 
+from utils.config import DEFAULT_DAG_ARGS
 from dag_byggesagsstatistik.models.byggesager_db_models import (
     ByggesagByg,
     ByggesagSag,
@@ -27,7 +29,6 @@ from dag_byggesagsstatistik.models.randers_sbsys_models import (
     SagSkabelon,
 )
 
-from utils.config import DEFAULT_DAG_ARGS
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 2
@@ -76,7 +77,8 @@ def sync_sbsys_to_byggesager() -> None:
                 kubernetes_session.flush()
             new_groupings[dist.id] = code_ids
 
-        def get_grouping_id(code_id: int):
+        def get_grouping_id(code_id: int) -> int | None:
+            """Returns the byggesagsgruppe ID for a given byggesagskode ID, or None if not found."""
             return next((group_id for group_id, code_list in new_groupings.items() if code_id in code_list), None)
 
         logger.info("Syncing metadata tables from SBSYS")
@@ -143,7 +145,6 @@ with DAG(
         "sync_start_date": Param(
             "2020-01-01",
             type="string",
-            format="date",
             description="Lower bound date for SBSYS records to sync (YYYY-MM-DD).",
         )
     },
