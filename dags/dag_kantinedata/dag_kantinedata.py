@@ -32,5 +32,6 @@ with DAG(
     run_kantinedata = PythonOperator(
         task_id="process_kantinedata",
         python_callable=get_config_start_main_flow,
+        do_xcom_push=False,
         max_active_tis_per_dag=1,
     )

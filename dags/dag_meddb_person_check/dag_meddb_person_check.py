@@ -23,5 +23,6 @@ with DAG(
 
     task = PythonOperator(
         task_id="check_and_update_persons_task",
-        python_callable=check_and_update_persons
+        python_callable=check_and_update_persons,
+        do_xcom_push=False
     )

@@ -20,5 +20,6 @@ with DAG(
 
     run_affald = PythonOperator(
         task_id="process_affald_task",
-        python_callable=process_affald
+        python_callable=process_affald,
+        do_xcom_push=False
     )

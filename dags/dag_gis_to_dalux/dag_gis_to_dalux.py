@@ -21,4 +21,5 @@ with DAG(
     run_prod = PythonOperator(
         task_id="process_gis_to_dalux_task_full",
         python_callable=process_gis_to_dalux,
+        do_xcom_push=False
     )

@@ -20,5 +20,6 @@ with DAG(
 
     run_zylinc = PythonOperator(
         task_id="process_zylinc_task",
-        python_callable=process_zylinc
+        python_callable=process_zylinc,
+        do_xcom_push=False
     )

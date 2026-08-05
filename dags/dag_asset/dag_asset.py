@@ -31,56 +31,67 @@ with DAG(
     t_create_tables = PythonOperator(
         task_id="create_asset_tables",
         python_callable=task_create_asset_tables,
+        do_xcom_push=False
     )
 
     t_departments = PythonOperator(
         task_id="insert_departments",
         python_callable=task_insert_departments_data,
+        do_xcom_push=False
     )
 
     t_delta_ean = PythonOperator(
         task_id="insert_department_ean_from_delta",
         python_callable=task_insert_department_ean_from_delta,
+        do_xcom_push=False
     )
 
     t_users = PythonOperator(
         task_id="insert_users",
         python_callable=task_insert_users_data,
+        do_xcom_push=False
     )
 
     t_email = PythonOperator(
         task_id="insert_email_and_username_from_delta",
         python_callable=task_insert_email_from_delta,
+        do_xcom_push=False
     )
 
     t_fetch_ivanti_devices = PythonOperator(
         task_id="insert_ivanti_data",
         python_callable=task_insert_ivanti_data,
+        do_xcom_push=False
     )
 
     t_computers = PythonOperator(
         task_id="insert_computers",
         python_callable=task_insert_computers_data,
+        do_xcom_push=False
     )
 
     t_atea = PythonOperator(
         task_id="insert_atea",
         python_callable=task_insert_atea_data,
+        do_xcom_push=False
     )
 
     t_device_license = PythonOperator(
         task_id="insert_device_license_and_historical",
         python_callable=task_insert_device_license_and_historical_data,
+        do_xcom_push=False
     )
 
     t_upload_pc_assets_to_topdesk = PythonOperator(
         task_id="upload_pc_assets_to_topdesk",
         python_callable=task_upload_pc_assets_to_topdesk,
+        do_xcom_push=False
     )
 
     t_upload_mobile_assets_to_topdesk = PythonOperator(
         task_id="upload_mobile_assets_to_topdesk",
         python_callable=task_upload_mobile_assets_to_topdesk,
+        do_xcom_push=False
     )
 
     t_create_tables >> t_departments

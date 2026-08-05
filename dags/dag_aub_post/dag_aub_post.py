@@ -23,4 +23,5 @@ with DAG(
     run_aub_post = PythonOperator(
         task_id="process_aub_post_task",
         python_callable=process_aub_post,
+        do_xcom_push=False
     )

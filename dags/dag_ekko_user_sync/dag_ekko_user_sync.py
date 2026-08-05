@@ -47,6 +47,7 @@ with DAG(
     uploaded = PythonOperator(
         task_id="upload_ekko_users",
         python_callable=upload_ekko_users,
+        do_xcom_push=False,
         op_kwargs={
             "sd_user_data_task_id": "get_ekko_sd_user_data",
             "ekko_ftps_hook": ekko_ftps_hook
