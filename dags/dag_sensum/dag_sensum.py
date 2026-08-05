@@ -18,5 +18,5 @@ with DAG(
     tags=["sensum", "sftp", "postgres"],
 ) as dag:
     run_sensum = PythonOperator(
-        task_id="process_sensum_task", python_callable=process_sensum
+        task_id="process_sensum_task", python_callable=process_sensum, do_xcom_push=False
     )

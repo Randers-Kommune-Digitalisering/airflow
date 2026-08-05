@@ -23,4 +23,5 @@ with DAG(
     run_vognpark_insubiz_data_to_db = PythonOperator(
         task_id="process_vognpark_insubiz_data_to_db_task",
         python_callable=process_vognpark_insubiz_data_to_db,
+        do_xcom_push=False
     )

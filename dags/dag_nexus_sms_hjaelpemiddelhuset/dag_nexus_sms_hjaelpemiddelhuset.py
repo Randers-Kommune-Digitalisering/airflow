@@ -33,5 +33,6 @@ with DAG(
 
     run_affald = PythonOperator(
         task_id="send_sms_for_hjaelpemiddelhuset_orders",
-        python_callable=get_config_and_and_call_main_function
+        python_callable=get_config_and_and_call_main_function,
+        do_xcom_push=False
     )

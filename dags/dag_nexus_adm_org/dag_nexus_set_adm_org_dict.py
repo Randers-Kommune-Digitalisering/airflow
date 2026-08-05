@@ -42,5 +42,6 @@ with DAG(
 
     task = PythonOperator(
         task_id="set_adm_org_dict_var",
-        python_callable=set_adm_org_var
+        python_callable=set_adm_org_var,
+        do_xcom_push=False
     )

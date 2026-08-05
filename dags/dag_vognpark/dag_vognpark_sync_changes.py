@@ -23,4 +23,5 @@ with DAG(
     run_vognpark_sync_changes = PythonOperator(
         task_id="process_vognpark_sync_changes_task",
         python_callable=process_vognpark_sync_changes,
+        do_xcom_push=False
     )

@@ -25,4 +25,5 @@ with DAG(
     run_sd_fleksjobrefusion = PythonOperator(
         task_id="process_sd_fleksjobrefusion_task",
         python_callable=process_sd_fleksjobrefusion,
+        do_xcom_push=False
     )

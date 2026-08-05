@@ -24,4 +24,5 @@ with DAG(
     run_vognpark_compare_and_report = PythonOperator(
         task_id="process_vognpark_compare_and_report_task",
         python_callable=process_vognpark_compare_and_report,
+        do_xcom_push=False
     )

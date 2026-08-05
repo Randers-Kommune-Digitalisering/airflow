@@ -98,5 +98,6 @@ with DAG(
 ) as dag:
     task = PythonOperator(
         task_id="check_and_update_users_task",
-        python_callable=get_config_start_main_flow
+        python_callable=get_config_start_main_flow,
+        do_xcom_push=False
     )
