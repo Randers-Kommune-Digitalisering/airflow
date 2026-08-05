@@ -36,4 +36,5 @@ with DAG(
     run_modregning = PythonOperator(
         task_id="process_modregning_task",
         python_callable=process_modregning,
+        do_xcom_push=False
     )

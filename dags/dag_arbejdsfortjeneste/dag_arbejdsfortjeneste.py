@@ -38,4 +38,5 @@ with DAG(
     run_arbejdsfortjeneste = PythonOperator(
         task_id="process_arbejdsfortjeneste_task",
         python_callable=process_arbejdsfortjeneste,
+        do_xcom_push=False
     )

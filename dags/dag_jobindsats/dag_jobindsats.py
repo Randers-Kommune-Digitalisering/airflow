@@ -20,5 +20,6 @@ with DAG(
 
     run_jobindsats = PythonOperator(
         task_id="process_jobindsats_task",
-        python_callable=process_jobindsats
+        python_callable=process_jobindsats,
+        do_xcom_push=False
     )
