@@ -221,7 +221,7 @@ def extract_transform() -> dict[str, str | bool | None]:
 with DAG(
     dag_id="sd_delta_user_creation",
     start_date=datetime(year=2026, month=8, day=3, tz=timezone("Europe/Copenhagen")),
-    schedule="30 7,12,15 * * *",
+    schedule="15 6,12,16 * * *",
     render_template_as_native_obj=True,
     default_args=dag_args,
     catchup=False,

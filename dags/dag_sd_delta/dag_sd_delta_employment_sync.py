@@ -99,7 +99,7 @@ def extract_transform(**context: dict) -> dict[str, str | bool | None]:
 with DAG(
     dag_id="sd_delta_employment_sync",
     start_date=datetime(year=2026, month=8, day=3, tz=timezone("Europe/Copenhagen")),
-    schedule="0 7,12,15 * * *",
+    schedule="0 6,12,16 * * *",
     render_template_as_native_obj=True,
     default_args=dag_args,
     catchup=False,

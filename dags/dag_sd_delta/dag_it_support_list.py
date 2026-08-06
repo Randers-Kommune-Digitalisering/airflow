@@ -169,7 +169,7 @@ def extract_transform() -> dict[str, str]:
 with DAG(
     dag_id="it_support_list",
     start_date=pendulum.datetime(year=2026, month=8, day=3, tz=timezone("Europe/Copenhagen")),
-    schedule="0 8 * * 1-5",
+    schedule="30 6 * * 1-5",
     render_template_as_native_obj=True,
     default_args=dag_args,
     catchup=False,
