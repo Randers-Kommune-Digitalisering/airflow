@@ -163,8 +163,6 @@ def extract_transform() -> dict[str, str]:
         files=[output_file_path],
     )
 
-    return {"file_path": output_file_path}
-
 
 with DAG(
     dag_id="it_support_list",

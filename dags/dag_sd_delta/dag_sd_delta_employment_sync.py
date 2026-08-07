@@ -7,10 +7,9 @@ from pendulum import datetime, timezone
 from airflow import DAG
 from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
-from airflow.operators.email import EmailOperator
 from airflow.models import Variable
 from airflow.hooks.base import BaseHook
-from airflow.providers.http.hooks.http import HttpHook
+from airflow.utils.email import send_email
 
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
@@ -29,7 +28,7 @@ dag_args["email"].append("delta@randers.dk")
 logger = logging.getLogger(__name__)
 
 
-def extract_transform(**context: dict) -> dict[str, str | bool | None]:
+def extract_transform(**context: dict) -> None:
     """Fetches and validates configuration from Airflow Variables and DAG params, then starts the main flow."""
 
     # set up internal log collector to capture logs for email report
@@ -83,6 +82,12 @@ def extract_transform(**context: dict) -> dict[str, str | bool | None]:
             file_path=result.get("report_path")
         )
         result.update(upload_result)
+
+        deleted_result = handle_deleted_employments(
+            delta_client=DeltaClient(BaseHook.get_connection("delta_prod")),
+            deleted_employments=result.get("deleted_employments")
+        )
+        result["deleted_log_html"] = deleted_result.get("log_html")
     finally:
         root_logger.removeHandler(log_collector)
 
@@ -93,7 +98,27 @@ def extract_transform(**context: dict) -> dict[str, str | bool | None]:
     ])
     styled_log_lines = get_styled_log_html(log_collector)
     result["log_html"] = html_prefix + styled_log_lines + "</pre>"
-    return result
+
+    email_subject = (
+        "SD Delta sync report: "
+        f"{result['start_time']} - {result['end_time']}"
+    )
+    email_html = "".join([
+        result.get("upload_html") or "",
+        result.get("deleted_log_html") or "",
+        result.get("log_html") or "",
+    ])
+    email_kwargs = {
+        "to": ["delta@randers.dk"],
+        "subject": email_subject,
+        "html_content": email_html,
+    }
+    report_path = result.get("report_path")
+    if report_path:
+        email_kwargs["files"] = [report_path]
+    send_email(**email_kwargs)
+
+    return None
 
 
 with DAG(
@@ -129,33 +154,6 @@ with DAG(
 ) as dag:
     get_changes = PythonOperator(
         task_id="get_and_transform_changes",
-        python_callable=extract_transform
+        python_callable=extract_transform,
+        do_xcom_push=False
     )
-
-    handle_deleted = PythonOperator(
-        task_id="handle_deleted_employment",
-        python_callable=handle_deleted_employments,
-        op_kwargs={
-            "sd_http_hook": HttpHook(method="POST", http_conn_id="sd_silkeborgdata"),
-            "delta_client": DeltaClient(BaseHook.get_connection("delta_prod")),
-            "deleted_employments": "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['deleted_employments'] }}"
-        }
-    )
-
-    send_email = EmailOperator(
-        task_id="send_email",
-        to=["delta@randers.dk"],
-        subject=(
-            "SD Delta sync report: "
-            "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['start_time'] }}"
-            " - "
-            "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['end_time'] }}"
-        ),
-        html_content=(
-            "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['upload_html'] }}"
-            "{{ ti.xcom_pull(task_ids='handle_deleted_employment')['log_html'] }}"
-            "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['log_html'] }}"
-        ),
-    )
-
-    get_changes >> handle_deleted >> send_email

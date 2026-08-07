@@ -858,6 +858,6 @@ def get_and_transform_changes(
     return {
         "start_time": start_time.astimezone(ZoneInfo("Europe/Copenhagen")).strftime("%Y-%m-%dT%H:%M:%S"),
         "end_time": end_time.astimezone(ZoneInfo("Europe/Copenhagen")).strftime("%Y-%m-%dT%H:%M:%S"),
-        "report_path": str(output_file),
+        "report_path": str(output_file) if output_file else None,
         "deleted_employments": deleted_list
     }
