@@ -9,10 +9,10 @@ from pathlib import Path
 from datetime import timedelta
 from pendulum import datetime, timezone
 from airflow import DAG
-from airflow.operators.email import EmailOperator
 from airflow.operators.python import PythonOperator
 from airflow.models import Variable
 from airflow.hooks.base import BaseHook
+from airflow.utils.email import send_email
 
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
@@ -32,7 +32,7 @@ dag_args["retry_delay"] = timedelta(minutes=5)
 logger = logging.getLogger(__name__)
 
 
-def extract_transform() -> dict[str, str | bool | None]:
+def extract_transform() -> None:
     """Extracts authorizations from Signflow, checks them against Delta, and prepares a DataFrame with data from SD for user creation."""
     insts_to_import_raw = Variable.get("delta_sd_insts_to_import", default_var="{}")
     insts_to_import = json.loads(insts_to_import_raw)
@@ -104,6 +104,7 @@ def extract_transform() -> dict[str, str | bool | None]:
     prof_name_mapping_xml = get_professions_xml(inst_id="RG")
 
     out_df = pd.DataFrame()
+    out_file = None
     if not emp_df.empty:
         emp_column_map = {
             "EmploymentStatus_EmploymentStatusCode": "EmploymentStatusCode",
@@ -176,7 +177,6 @@ def extract_transform() -> dict[str, str | bool | None]:
                 )
             )
 
-        out_file = None
         if out_dfs:
             out_df = pd.concat(out_dfs, ignore_index=True)
             out_df['Handling'] = 'x'
@@ -215,7 +215,18 @@ def extract_transform() -> dict[str, str | bool | None]:
     styled_log_lines = get_styled_log_html(log_collector=log_collector)
 
     result["log_html"] = html_prefix + styled_log_lines + "</pre>"
-    return result
+
+    timestamp = pendulum.now("Europe/Copenhagen").strftime("%Y-%m-%d %H:%M:%S")
+    email_kwargs = {
+        "to": ["delta@randers.dk"],
+        "subject": f"SD Delta user creation - {timestamp}",
+        "html_content": f"{result['upload_html']}{result['log_html']}",
+    }
+    if out_file:
+        email_kwargs["files"] = [out_file]
+    send_email(**email_kwargs)
+
+    return None
 
 
 with DAG(
@@ -231,17 +242,6 @@ with DAG(
 ) as dag:
     get_and_handle_authorizations = PythonOperator(
         task_id="get_and_handle_authorizations",
-        python_callable=extract_transform
+        python_callable=extract_transform,
+        do_xcom_push=False
     )
-
-    send_email = EmailOperator(
-        task_id="send_email",
-        to=["delta@randers.dk"],
-        subject=("SD Delta user creation - {{ macros.datetime.utcnow().replace(tzinfo=macros.dateutil.tz.tzutc()).astimezone(macros.dateutil.tz.gettz('Europe/Copenhagen')).strftime('%Y-%m-%d %H:%M:%S') }}"),
-        html_content=(
-            "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['upload_html'] }}"
-            "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['log_html'] }}"
-        ),
-    )
-
-    get_and_handle_authorizations >> send_email
