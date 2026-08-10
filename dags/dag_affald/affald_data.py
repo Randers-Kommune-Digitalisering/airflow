@@ -560,7 +560,7 @@ def _write_sheet(
     current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
 
     if table is None or table.empty:
-        ws.column_dimensions["A"].width = 67
+        ws.column_dimensions["A"].width = 75
         for col in range(2, 17):  # B..P
             ws.column_dimensions[get_column_letter(col)].width = 20
         return
@@ -838,7 +838,7 @@ def _write_sheet(
             prev_year = year_int
             r += 1
 
-    ws.column_dimensions["A"].width = 67
+    ws.column_dimensions["A"].width = 75
     for col in range(2, 17):  # B..P
         ws.column_dimensions[get_column_letter(col)].width = 20
 
