@@ -17,12 +17,12 @@ from airflow.models import Variable
 logger = logging.getLogger(__name__)
 
 
-def process_affald() -> None:
+def _get_report_dates() -> tuple[str, str, str]:
     """
-    Fetches waste data from Marius Pedersen API + Scanvægt DB, processes it, and sends an email report with the data.
-    """
+    Builds date strings used by both reports from DAG logical date.
 
-    mp_http_hook = HttpHook(http_conn_id="marius_pedersen_api")
+    :return: Tuple of (mp_from_date, mp_to_date, report_date)
+    """
 
     ctx = get_current_context()
     logical_date = ctx["logical_date"]
@@ -32,14 +32,37 @@ def process_affald() -> None:
     to_p = logical_date.in_timezone(dag_tz).date()
     to_p = pendulum.date(to_p.year, to_p.month, to_p.day)
 
-    # from date - (to_date -1 year) and set to 1. january of that year
+    # from_date = jan 1 in the previous year relative to run date
     from_p = to_p.subtract(years=1).replace(month=1, day=1)
 
     mp_from_date = from_p.to_date_string()  # "YYYY-MM-DD"
     mp_to_date = to_p.to_date_string()
+    report_date = logical_date.in_timezone(dag_tz).date().isoformat()
+
+    return mp_from_date, mp_to_date, report_date
+
+
+def _get_email_config() -> tuple[str, list[str], str]:
+    """
+    Read email runtime configuration from Airflow Variable affald_runtime_config.
+
+    :return: Tuple of (sender, recipients, smtp_server).
+    """
+    affald_config = Variable.get("affald_runtime_config", deserialize_json=True)
+    sender = affald_config["sender_email"]
+    recipients = affald_config["recipient_emails"]
+    smtp_server = affald_config["smtp_server"]
+    return sender, recipients, smtp_server
+
+
+def process_mp_affald() -> None:
+    """Fetches and reports Marius Pedersen API data."""
+
+    mp_from_date, mp_to_date, report_date = _get_report_dates()
 
     logger.info(f"MP data will be fetched for period: {mp_from_date} to {mp_to_date}")
 
+    mp_http_hook = HttpHook(http_conn_id="marius_pedersen_api")
     rows = mp_waste_amount_data(
         http_hook=mp_http_hook,
         customer_numbers=[80067523, 80070490, 80070170],
@@ -52,12 +75,29 @@ def process_affald() -> None:
     logger.info(f"Aggregated MP data by month: {monthly_data}")
 
     mp_excel_bytes = build_mp_monthly_excel_bytes(monthly_data=monthly_data)
+    filename_mp = f"Marius_Pedersen_Data_Udregning_{report_date}.xlsx"
 
-    affald_config = Variable.get("affald_runtime_config", deserialize_json=True)
+    sender, recipients, smtp_server = _get_email_config()
+    email_sender = EmailSender(smtp_server=smtp_server)
+    email_sender.send_email(
+        sender=sender,
+        recipients=recipients,
+        subject=f"Affald mængdeopdatering (MP): {report_date}",
+        body=(
+            f"Seneste opdatering af mængder for "
+            f"Marius Pedersen: {report_date}."
+        ),
+        attachments=[(filename_mp, mp_excel_bytes)],
+    )
 
-    sender = affald_config["sender_email"]
-    recipients = affald_config["recipient_emails"]
-    smtp_server = affald_config["smtp_server"]
+    logger.info("MP affald data processing completed successfully (email sent).")
+
+
+def process_scanvaegt_affald() -> None:
+    """Fetches and reports Scanvægt Affaldsterminal data."""
+
+    _, _, report_date = _get_report_dates()
+    sender, recipients, smtp_server = _get_email_config()
 
     affald_db = DatabaseManager(
         profile_name="scanvaegt_db",
@@ -75,18 +115,18 @@ def process_affald() -> None:
     )
 
     excel_bytes = build_affald_excel_bytes(df=affald_df)
-    report_date = logical_date.in_timezone(dag_tz).date().isoformat()
-
     filename_affald = f"Affaldsterminalen_Udregning_{report_date}.xlsx"
-    filename_mp = f"Marius_Pedersen_Data_Udregning_{report_date}.xlsx"
 
     email_sender = EmailSender(smtp_server=smtp_server)
     email_sender.send_email(
         sender=sender,
         recipients=recipients,
-        subject=f"Affald mængdeopdatering: {report_date}",
-        body=f"Seneste opdatering af mængder for Genbrugspladsen, Affaldsterminalen, Indsamlingsmængder og Marius Pedersen: {report_date}.",
-        attachments=[(filename_affald, excel_bytes),(filename_mp, mp_excel_bytes)],
+        subject=f"Affald mængdeopdatering (Scanvægt): {report_date}",
+        body=(
+            f"Seneste opdatering af mængder for Genbrugspladsen, "
+            f"Affaldsterminalen og Indsamlingsmængder: {report_date}."
+        ),
+        attachments=[(filename_affald, excel_bytes)],
     )
 
-    logger.info("Affald data processing completed successfully (email sent).")
+    logger.info("Scanvaegt affald data processing completed successfully (email sent).")
