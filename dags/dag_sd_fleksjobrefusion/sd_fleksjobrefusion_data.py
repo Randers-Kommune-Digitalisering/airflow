@@ -1,6 +1,8 @@
 import logging
 import time
+from typing import Iterable
 
+import pandas as pd
 from playwright.sync_api import (
     BrowserContext,
     Error as PlaywrightError,
@@ -8,6 +10,7 @@ from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
     sync_playwright,
 )
+from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,97 @@ PERSONALEWEB_TILE_SELECTOR = (
     "#product-cf662da2-9d3c-0108-e043-0a10f6400108 "
     "div[role='button'][aria-label='Personaleweb']"
 )
+
+
+def excel_to_sd_fleksjobrefusion_config(
+    df: pd.DataFrame,
+) -> list[dict[str, str]]:
+    """
+    Parse SD Fleksjobrefusion rows from Excel into browser-process config.
+
+    :param df: DataFrame loaded from attached Excel.
+    :return: List of person rows with keys:
+        tjenestenummer, institution, beloeb, loenart.
+    """
+    df.columns = df.columns.str.strip()
+    config: list[dict[str, str]] = []
+
+    for _, row in df.iterrows():
+        tjnr = str(row["TJNR."]).zfill(5)
+
+        if pd.notna(row["Lønart 684"]):
+            beloeb = round(float(row["Lønart 684"]), 2)
+            config.append(
+                {
+                    "tjenestenummer": tjnr,
+                    "institution": str(row["Int."]),
+                    "beloeb": f"-{beloeb:.2f}".replace(".", ","),
+                    "loenart": "684",
+                }
+            )
+        elif pd.notna(row["Lønart 685"]):
+            beloeb = round(float(row["Lønart 685"]), 2)
+            config.append(
+                {
+                    "tjenestenummer": tjnr,
+                    "institution": str(row["Int."]),
+                    "beloeb": f"-{beloeb:.2f}".replace(".", ","),
+                    "loenart": "685",
+                }
+            )
+
+    logger.info("Parsed %s SD Fleksjobrefusion row(s) from Excel", len(config))
+    return config
+
+
+def find_latest_fleksjobrefusion_excel_attachment(
+    email_reader: EmailReader,
+    mailbox: str = "INBOX",
+    criteria: str = "UNSEEN",
+    filename_prefixes: Iterable[str] = ("Fleksjobrefusion"),
+    max_emails: int = 50,
+) -> tuple[bytes, str, bytes] | None:
+    """
+    Find the newest matching Excel attachment in an IMAP mailbox.
+
+    :param email_reader: EmailReader used to fetch emails.
+    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
+    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
+    :param filename_prefixes: Allowed attachment filename prefixes.
+    :param max_emails: Maximum number of emails to fetch and scan.
+    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
+    """
+    emails, failed = email_reader.get_emails(
+        mailbox=mailbox,
+        criteria=criteria,
+        set_flags=None,
+        max=max_emails,
+        low_to_high=False,  # start with newest emails first
+    )
+
+    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
+
+    for msg in emails:
+        uid: bytes = getattr(msg, "uid", None)
+        subject = msg.get("Subject", "")
+        logger.info(f"Email UID: {uid}, Subject: {subject}")
+
+        for part in msg.iter_attachments():
+            filename = part.get_filename() or ""
+            filename_lc = filename.lower()
+            if not filename_lc.endswith(".xlsx"):
+                continue
+
+            if not any(filename_lc.startswith(p.lower()) for p in filename_prefixes):
+                continue
+
+            content = part.get_payload(decode=True)  # bytes
+            if not content:
+                continue
+
+            return uid, filename, content
+
+    return None
 
 
 def _find_page_with_selector(
@@ -240,6 +334,181 @@ def login_to_sd(
     except Exception:
         logger.exception("SD login failed")
         return None
+
+
+def process_person_playwright(
+    page: Page,
+    tjenestenummer: str,
+    institution: str,
+    beloeb: str,
+    loenart: str,
+) -> bool:
+    """
+    Process one person row in SD Personaleweb.
+
+    :param page: Active Personaleweb page.
+    :param tjenestenummer: Employee service number.
+    :param institution: Institution identifier.
+    :param beloeb: Amount value.
+    :param loenart: Wage type value.
+    :return: True when flow succeeds, otherwise False.
+    """
+    try:
+        logger.info("Entering SD Personaleweb...")
+
+        logger.info("Clicking on the search field...")
+        search_field = page.locator(
+            "xpath=/html/body/div[3]/div/div/div/div/div[2]/div[2]/input"
+        )
+        search_field.wait_for(state="visible", timeout=20000)
+        search_field.fill("")
+        search_field.fill(f"{tjenestenummer} {institution}")
+        page.wait_for_timeout(1500)  # Wait for search suggestions to appear
+        search_field.click()
+        logger.info(f"Searching for person with tjenestenummer: {tjenestenummer} and institution: {institution} and loenart: {loenart}")
+
+        logger.info("Clicking on the first name in the search results...")
+        page.locator("xpath=/html/body/ul/li[1]").click(timeout=20000)
+
+        logger.info("Switching to frame under 'jbFrameset'...")
+        nav_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//*[@id='jbFrameset']/frame"
+        )
+
+        logger.info("Clicking on Indberetning...")
+        nav_frame.locator("#fe20").click(timeout=20000)
+
+        logger.info("Clicking on Merarbejde...")
+        nav_frame.locator("#tab_2737").click(timeout=20000)
+
+        logger.info("Switching to 'merarbejde' frame...")
+        merarbejde_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//frameset[@id='innerFrameset']/frame[@name='insidemain']"
+        ).frame_locator("frame[name='merarbejde']")
+
+        logger.info("Waiting for the amount input field...")
+        beloeb_input = merarbejde_frame.locator("#pageForm\\:beloeb")
+        beloeb_input.wait_for(state="visible", timeout=20000)
+        beloeb_input.fill(str(beloeb))
+        logger.info(f"Amount input set to: {beloeb} kr.")
+
+        logger.info("Waiting for the wage type input field...")
+        loenart_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
+        loenart_input.wait_for(state="visible", timeout=20000)
+        loenart_value = str(loenart)
+
+        # Type slowly so dropdown suggestions have time to load.
+        loenart_input.click(timeout=20000)
+        loenart_input.fill("")
+        loenart_input.type(loenart_value, delay=140)
+
+        # Ensure full value is present before confirming with Enter.
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            current_value = loenart_input.input_value()
+            if current_value.strip() == loenart_value:
+                break
+            page.wait_for_timeout(150)
+        else:
+            raise PlaywrightTimeoutError(
+                "Wage type input did not contain the expected value before Enter"
+            )
+
+        page.wait_for_timeout(400)
+        loenart_input.press("Enter")
+        logger.info(f"Wage type input set to: {loenart_value}")
+
+        page.wait_for_timeout(2000)
+
+        logger.info("Waiting for the approved input field...")
+        godkendt_input = merarbejde_frame.locator("#pageForm\\:godkendt")
+        godkendt_input.wait_for(state="visible", timeout=20000)
+        godkendt_input.click(timeout=20000)
+        logger.info("Approved input clicked.")
+        page.wait_for_timeout(2500)
+
+        logger.info(f"✅ {tjenestenummer} ({institution}) behandlet med beløb {beloeb} og lønart {loenart}.")
+        return True
+    except PlaywrightTimeoutError:
+        logger.exception(f"Timeout while processing {tjenestenummer} {institution}")
+        return False
+
+
+def run_sd_fleksjobrefusion_job(
+    username: str,
+    password: str,
+    persons: list[dict[str, str]],
+    sd_url: str = "https://www.silkeborgdata.dk",
+    headless: bool = True,
+) -> tuple[bool, list[dict[str, str]]]:
+    """
+    Run the full SD Fleksjobrefusion Playwright flow for all persons.
+
+    :param username: ADFS username.
+    :param password: ADFS password.
+    :param persons: Person rows to process.
+    :param sd_url: SD landing page URL.
+    :param headless: Whether to run browser headless.
+    :return: Tuple containing success flag and list of failed rows.
+    """
+    logger.info("Starting SD Fleksjobrefusion browser flow")
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            headless=headless,
+            args=[
+                "--incognito",
+                (
+                    "--disable-features=msImplicitSignIn,"
+                    "EnableWindowsGSAutoSignIn"
+                ),
+            ],
+        )
+        context = browser.new_context()
+        page = context.new_page()
+
+        try:
+            active_page = login_to_sd(
+                page=page,
+                sd_url=sd_url,
+                username=username,
+                password=password,
+            )
+            if active_page is None:
+                return False, persons
+
+            failures: list[dict[str, str]] = []
+
+            for person in persons:
+                processed = process_person_playwright(
+                    page=active_page,
+                    tjenestenummer=person["tjenestenummer"],
+                    institution=person["institution"],
+                    beloeb=person["beloeb"],
+                    loenart=person["loenart"],
+                )
+
+                if not processed:
+                    failures.append(person)
+
+            if failures:
+                logger.error(f"The following persons failed for {len(failures)} persons:")
+                for failed in failures:
+                    logger.error(
+                        "- %s (%s): %s - %s",
+                        failed["tjenestenummer"],
+                        failed["institution"],
+                        failed["beloeb"],
+                        failed["loenart"],
+                    )
+                return False, failures
+
+            active_page.wait_for_timeout(10000)
+            logger.info("SD Fleksjobrefusion browser flow completed")
+            return True, []
+        finally:
+            context.close()
+            browser.close()
 
 
 def run_sd_fleksjobrefusion_login(
