@@ -3,14 +3,14 @@ apache-airflow-providers-microsoft-mssql==4.3.0
 lxml==6.1.0
 msgraph-sdk==1.49.0
 openpyxl==3.1.5
-pandas==2.1.4
+pandas==3.0.5
 PyMuPDF==1.24.14
 pycurl==7.45.7
 requests==2.33.0
 regex==2024.11.6
 pyproj==3.7.2
 geoalchemy2==0.18.1
-shapely==2.1.0
+shapely==2.1.2
 xlsxwriter==3.2.9
 rk-digi==2.2.0
 kombit-client==1.1.3
