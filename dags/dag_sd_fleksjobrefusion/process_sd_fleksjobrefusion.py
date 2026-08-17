@@ -9,9 +9,9 @@ from rkdigi.email_handling import EmailReader, EmailSender
 
 from dag_sd_fleksjobrefusion.sd_fleksjobrefusion_data import (
     excel_to_sd_fleksjobrefusion_config,
-    find_latest_fleksjobrefusion_excel_attachment,
     run_sd_fleksjobrefusion_job,
 )
+from utils.mail_attachments import find_latest_attachment
 
 logger = logging.getLogger(__name__)
 
@@ -123,9 +123,10 @@ def process_sd_fleksjobrefusion() -> None:
     )
 
     try:
-        found = find_latest_fleksjobrefusion_excel_attachment(
+        found = find_latest_attachment(
             email_reader=email_reader,
             criteria="ALL",
+            filename_prefixes="Fleksjobrefusion",
         )
         if not found:
             raise AirflowFailException("No matching Fleksjobrefusion Excel attachment found in mailbox")
