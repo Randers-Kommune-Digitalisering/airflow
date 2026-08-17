@@ -26,7 +26,7 @@ def excel_to_sd_fleksjobrefusion_config(
 
     :param df: DataFrame loaded from attached Excel.
     :return: List of person rows with keys:
-        tjenestenummer, institution, beloeb, loenart.
+        employee_number, institution, amount, wage_type.
     """
     df.columns = df.columns.str.strip()
     config: list[dict[str, str]] = []
@@ -35,23 +35,23 @@ def excel_to_sd_fleksjobrefusion_config(
         tjnr = str(row["TJNR."]).zfill(5)
 
         if pd.notna(row["Lønart 684"]):
-            beloeb = round(float(row["Lønart 684"]), 2)
+            amount = round(float(row["Lønart 684"]), 2)
             config.append(
                 {
-                    "tjenestenummer": tjnr,
+                    "employee_number": tjnr,
                     "institution": str(row["Int."]),
-                    "beloeb": f"-{beloeb:.2f}".replace(".", ","),
-                    "loenart": "684",
+                    "amount": f"-{amount:.2f}".replace(".", ","),
+                    "wage_type": "684",
                 }
             )
         elif pd.notna(row["Lønart 685"]):
-            beloeb = round(float(row["Lønart 685"]), 2)
+            amount = round(float(row["Lønart 685"]), 2)
             config.append(
                 {
-                    "tjenestenummer": tjnr,
+                    "employee_number": tjnr,
                     "institution": str(row["Int."]),
-                    "beloeb": f"-{beloeb:.2f}".replace(".", ","),
-                    "loenart": "685",
+                    "amount": f"-{amount:.2f}".replace(".", ","),
+                    "wage_type": "685",
                 }
             )
 
@@ -318,26 +318,26 @@ def open_merarbejde_context(page: Page) -> bool:
         return False
 
 
-def _set_loenart_stable(
+def _set_wage_type_stable(
     page: Page,
     merarbejde_frame,
-    loenart_value: str,
+    wage_type_value: str,
     retries: int = 3,
 ) -> None:
-    loenart_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
-    loenart_hidden = merarbejde_frame.locator("#pageForm\\:loenart_hinput")
+    wage_type_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
+    wage_type_hidden = merarbejde_frame.locator("#pageForm\\:loenart_hinput")
 
     last_visible = ""
     last_hidden = ""
 
     for attempt in range(1, retries + 1):
-        logger.info("Setting loenart attempt %s/%s", attempt, retries)
+        logger.info(f"Setting wage type attempt {attempt}/{retries}")
 
-        loenart_input.wait_for(state="visible", timeout=20000)
-        loenart_input.click(timeout=10000)
-        loenart_input.press("ControlOrMeta+A")
-        loenart_input.press("Backspace")
-        loenart_input.type(loenart_value, delay=180)
+        wage_type_input.wait_for(state="visible", timeout=20000)
+        wage_type_input.click(timeout=10000)
+        wage_type_input.press("ControlOrMeta+A")
+        wage_type_input.press("Backspace")
+        wage_type_input.type(wage_type_value, delay=180)
 
         try:
             first_option = merarbejde_frame.locator(
@@ -346,32 +346,29 @@ def _set_loenart_stable(
             first_option.wait_for(state="visible", timeout=3000)
             first_option.click(timeout=2000)
         except PlaywrightTimeoutError:
-            loenart_input.press("ArrowDown")
-            loenart_input.press("Enter")
+            wage_type_input.press("ArrowDown")
+            wage_type_input.press("Enter")
 
         deadline = time.time() + 8
         while time.time() < deadline:
             try:
-                last_visible = loenart_input.input_value().strip()
+                last_visible = wage_type_input.input_value().strip()
             except PlaywrightError:
                 last_visible = ""
 
             try:
-                last_hidden = loenart_hidden.input_value().strip()
+                last_hidden = wage_type_hidden.input_value().strip()
             except PlaywrightError:
                 last_hidden = ""
 
             if (
-                last_visible == loenart_value
-                or last_visible.startswith(loenart_value)
-                or last_hidden == loenart_value
-                or last_hidden.startswith(loenart_value)
+                last_visible == wage_type_value
+                or last_visible.startswith(wage_type_value)
+                or last_hidden == wage_type_value
+                or last_hidden.startswith(wage_type_value)
             ):
                 logger.info(
-                    "Wage type input set to: %s (visible=%r hidden=%r)",
-                    loenart_value,
-                    last_visible,
-                    last_hidden,
+                    f"Wage type input set to: {wage_type_value} (visible={last_visible!r} hidden={last_hidden!r})",
                 )
                 return
 
@@ -380,26 +377,26 @@ def _set_loenart_stable(
         page.wait_for_timeout(500)
 
     raise PlaywrightTimeoutError(
-        "Loenart felt matcher ikke forventning efter retries. "
-        f"forventet={loenart_value!r}, visible={last_visible!r}, hidden={last_hidden!r}"
+        "Wage type input field did not stabilize to expected value after retries. "
+        f"expected={wage_type_value!r}, visible={last_visible!r}, hidden={last_hidden!r}"
     )
 
 
 def process_person_playwright(
     page: Page,
-    tjenestenummer: str,
+    employee_number: str,
     institution: str,
-    beloeb: str,
-    loenart: str,
+    amount: str,
+    wage_type: str,
 ) -> bool:
     """
     Process one person row in SD Personaleweb.
 
     :param page: Active Personaleweb page.
-    :param tjenestenummer: Employee service number.
+    :param employee_number: Employee service number.
     :param institution: Institution identifier.
-    :param beloeb: Amount value.
-    :param loenart: Wage type value.
+    :param amount: Amount value.
+    :param wage_type: Wage type value.
     :return: True when flow succeeds, otherwise False.
     """
     try:
@@ -411,10 +408,10 @@ def process_person_playwright(
         )
         search_field.wait_for(state="visible", timeout=20000)
         search_field.fill("")
-        search_field.fill(f"{tjenestenummer} {institution}")
+        search_field.fill(f"{employee_number} {institution}")
         page.wait_for_timeout(1500)  # Wait for search suggestions to appear
         search_field.click()
-        logger.info(f"Searching for person with tjenestenummer: {tjenestenummer} and institution: {institution} and loenart: {loenart}")
+        logger.info(f"Searching for person with employee number: {employee_number} and institution: {institution} and wage type: {wage_type}")
 
         logger.info("Clicking on the first name in the search results...")
         page.locator("xpath=/html/body/ul/li[1]").click(timeout=20000)
@@ -438,24 +435,24 @@ def process_person_playwright(
                 return False
 
         logger.info("Waiting for the amount input field...")
-        beloeb_input = merarbejde_frame.locator("#pageForm\\:beloeb")
-        beloeb_input.wait_for(state="visible", timeout=20000)
-        beloeb_input.fill(str(beloeb))
-        logger.info(f"Amount input set to: {beloeb} kr.")
+        amount_input = merarbejde_frame.locator("#pageForm\\:beloeb")
+        amount_input.wait_for(state="visible", timeout=20000)
+        amount_input.fill(str(amount))
+        logger.info(f"Amount input set to: {amount} kr.")
 
         logger.info("Waiting for the wage type input field...")
-        loenart_value = str(loenart)
-        _set_loenart_stable(
+        wage_type_value = str(wage_type)
+        _set_wage_type_stable(
             page=page,
             merarbejde_frame=merarbejde_frame,
-            loenart_value=loenart_value,
+            wage_type_value=wage_type_value,
         )
         page.wait_for_timeout(2000)
 
         logger.info("Waiting for the approved input field...")
-        godkendt_input = merarbejde_frame.locator("#pageForm\\:godkendt")
-        godkendt_input.wait_for(state="visible", timeout=20000)
-        godkendt_input.click(timeout=20000)
+        approved_input = merarbejde_frame.locator("#pageForm\\:godkendt")
+        approved_input.wait_for(state="visible", timeout=20000)
+        approved_input.click(timeout=20000)
         logger.info("Approved input clicked.")
         page.wait_for_timeout(2500)
 
@@ -467,10 +464,10 @@ def process_person_playwright(
         # logger.info("Save button clicked.")
         # page.wait_for_timeout(2500)
 
-        logger.info(f"✅ {tjenestenummer} ({institution}) behandlet med beløb {beloeb} og lønart {loenart}.")
+        logger.info(f"✅ {employee_number} ({institution}) processed with amount {amount} and wage type {wage_type}.")
         return True
     except PlaywrightTimeoutError:
-        logger.exception(f"Timeout while processing {tjenestenummer} {institution}")
+        logger.exception(f"Timeout while processing {employee_number} {institution}")
         return False
 
 
@@ -525,10 +522,10 @@ def run_sd_fleksjobrefusion_job(
             for person in persons:
                 processed = process_person_playwright(
                     page=active_page,
-                    tjenestenummer=person["tjenestenummer"],
+                    employee_number=person["employee_number"],
                     institution=person["institution"],
-                    beloeb=person["beloeb"],
-                    loenart=person["loenart"],
+                    amount=person["amount"],
+                    wage_type=person["wage_type"],
                 )
 
                 if not processed:
@@ -539,10 +536,10 @@ def run_sd_fleksjobrefusion_job(
                 for failed in failures:
                     logger.error(
                         "- %s (%s): %s - %s",
-                        failed["tjenestenummer"],
+                        failed["employee_number"],
                         failed["institution"],
-                        failed["beloeb"],
-                        failed["loenart"],
+                        failed["amount"],
+                        failed["wage_type"],
                     )
                 return False, failures
 
