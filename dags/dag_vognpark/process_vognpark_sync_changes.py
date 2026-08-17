@@ -7,9 +7,9 @@ from dag_vognpark.vognpark_data import (
     create_insubiz_vehicles_by_payloads,
     read_vehicle_ids_to_update_from_excel_bytes,
     close_insubiz_vehicles_by_ids,
-    find_latest_attachment,
     read_vehicles_to_add_from_excel_bytes,
 )
+from utils.mail_attachments import find_latest_attachment
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,6 @@ def process_vognpark_sync_changes() -> None:
     # Find the latest Vognpark Excel attachment in the email inbox(UNSEEN)
     found = find_latest_attachment(
         email_reader=email_reader,
-        extensions=(".xlsx",),
         filename_prefixes=("uoverensstemmelser",),
     )
 
