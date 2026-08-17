@@ -56,10 +56,7 @@ def _send_failure_email(
         subject=subject,
         body=body,
     )
-    logger.info(
-        "Sent SD Fleksjobrefusion failure summary email for %s person(s)",
-        len(failed_persons),
-    )
+    logger.info(f"Sent SD Fleksjobrefusion failure summary email for {len(failed_persons)} person(s)")
 
 
 def _send_success_email(
@@ -92,10 +89,7 @@ def _send_success_email(
         subject=subject,
         body=body,
     )
-    logger.info(
-        "Sent SD Fleksjobrefusion success email for %s processed person(s)",
-        total_persons,
-    )
+    logger.info(f"Sent SD Fleksjobrefusion success email for {total_persons} processed person(s)")
 
 
 def process_sd_fleksjobrefusion() -> None:
@@ -104,12 +98,12 @@ def process_sd_fleksjobrefusion() -> None:
     """
     logger.info("Starting SD Fleksjobrefusion processing")
 
-    sd_fleksjobrefusion = BaseHook.get_connection("sd_fleksjobrefusion")
-    username = sd_fleksjobrefusion.login
-    password = sd_fleksjobrefusion.password
+    sd_fleksjobrefusion_personaleweb = BaseHook.get_connection("sd_fleksjobrefusion_personaleweb")
+    username = sd_fleksjobrefusion_personaleweb.login
+    password = sd_fleksjobrefusion_personaleweb.password
     if not username or not password:
         raise AirflowFailException(
-            "Connection 'sd_fleksjobrefusion' is missing username and password"
+            "Connection 'sd_fleksjobrefusion_personaleweb' is missing username and password"
         )
 
     fleksjobrefusion_runtime_config = Variable.get("fleksjobrefusion_runtime_config", deserialize_json=True,)
@@ -190,5 +184,5 @@ def process_sd_fleksjobrefusion() -> None:
     except Exception as e:
         raise AirflowFailException("Error processing SD Fleksjobrefusion") from e
     finally:
-        # email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)  # Disable when testing
+        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)  # Disable when testing
         logger.info(f"Deleted input email {attachment_name} with UID {uid!r} from INBOX")
