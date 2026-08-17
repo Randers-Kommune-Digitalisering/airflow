@@ -427,6 +427,14 @@ def process_person_playwright(
         logger.info("Approved input clicked.")
         page.wait_for_timeout(2500)
 
+        # Commented out while testing so it does not actually submit the form during development.
+        # logger.info("Waiting for the save button...")
+        # gem_button = merarbejde_frame.locator("#pageForm\\:j_idt108")
+        # gem_button.wait_for(state="visible", timeout=20000)
+        # gem_button.click(timeout=20000)
+        # logger.info("Save button clicked.")
+        # page.wait_for_timeout(2500)
+
         logger.info(f"✅ {tjenestenummer} ({institution}) behandlet med beløb {beloeb} og lønart {loenart}.")
         return True
     except PlaywrightTimeoutError:
