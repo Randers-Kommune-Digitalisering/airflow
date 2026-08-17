@@ -19,5 +19,5 @@ with DAG(
 ) as dag:
 
     run_sharepoint = PythonOperator(
-        task_id="process_sharepoint_task", python_callable=process_sharepoint_list_items
+        task_id="process_sharepoint_task", python_callable=process_sharepoint_list_items, do_xcom_push=False
     )

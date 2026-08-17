@@ -130,7 +130,7 @@ def fetch_affald_registration_monthly_df(
     Fetch monthly aggregated registration weights from ScanXNET.
 
     :param affald_engine: SQLAlchemy Engine for ScanXNET.
-    :param from_date: Lower bound for r.DateFirst (YYYY-MM-DD).
+    :param from_date: Lower bound for r.DateSecond (YYYY-MM-DD).
     :param customer_names: None=default list, []=no filter, otherwise IN-filter.
     :param article_numbers: None=default list, []=no filter, otherwise IN-filter.
     :param include_carrier: If True, include CarrierName in grouping/output.
@@ -163,7 +163,7 @@ def fetch_affald_registration_monthly_df(
         if tmp:
             carrier_names_list = tmp
 
-    where_clauses = ["r.DateFirst >= :from_date"]
+    where_clauses = ["r.DateSecond >= :from_date"]
     bind_params: list[Any] = []
     params: dict[str, Any] = {"from_date": from_date}
 
@@ -193,9 +193,9 @@ def fetch_affald_registration_monthly_df(
         group_cols.append(carrier_expr)
         order_cols.append("CarrierName")
 
-    select_cols.append("CONVERT(char(7), r.DateFirst, 120) AS year_month")
+    select_cols.append("CONVERT(char(7), r.DateSecond, 120) AS year_month")
     select_cols.append("SUM(CAST(r.WeightNet AS float)) AS weightnet_sum")
-    group_cols.append("CONVERT(char(7), r.DateFirst, 120)")
+    group_cols.append("CONVERT(char(7), r.DateSecond, 120)")
     order_cols.append("year_month")
 
     stmt = text(
@@ -560,7 +560,7 @@ def _write_sheet(
     current_year_fill = PatternFill(fill_type="solid", start_color="FFD9E1F2", end_color="FFD9E1F2")
 
     if table is None or table.empty:
-        ws.column_dimensions["A"].width = 67
+        ws.column_dimensions["A"].width = 75
         for col in range(2, 17):  # B..P
             ws.column_dimensions[get_column_letter(col)].width = 20
         return
@@ -838,7 +838,7 @@ def _write_sheet(
             prev_year = year_int
             r += 1
 
-    ws.column_dimensions["A"].width = 67
+    ws.column_dimensions["A"].width = 75
     for col in range(2, 17):  # B..P
         ws.column_dimensions[get_column_letter(col)].width = 20
 

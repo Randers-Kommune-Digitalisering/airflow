@@ -28,6 +28,7 @@ with DAG(
     task = PythonOperator(
         task_id="check_and_update_district_task",
         python_callable=check_and_update_district,
+        do_xcom_push=False,
         op_kwargs={
             "dry_run": DRY_RUN,
             "ignore_cprs": IGNORE_CPRS
