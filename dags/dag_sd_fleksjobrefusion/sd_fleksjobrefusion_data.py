@@ -1,8 +1,7 @@
 import logging
 import time
-from typing import Iterable
-
 import pandas as pd
+
 from playwright.sync_api import (
     BrowserContext,
     Error as PlaywrightError,
@@ -10,7 +9,6 @@ from playwright.sync_api import (
     TimeoutError as PlaywrightTimeoutError,
     sync_playwright,
 )
-from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
@@ -59,56 +57,6 @@ def excel_to_sd_fleksjobrefusion_config(
 
     logger.info("Parsed %s SD Fleksjobrefusion row(s) from Excel", len(config))
     return config
-
-
-def find_latest_fleksjobrefusion_excel_attachment(
-    email_reader: EmailReader,
-    mailbox: str = "INBOX",
-    criteria: str = "UNSEEN",
-    filename_prefixes: Iterable[str] = ("Fleksjobrefusion"),
-    max_emails: int = 50,
-) -> tuple[bytes, str, bytes] | None:
-    """
-    Find the newest matching Excel attachment in an IMAP mailbox.
-
-    :param email_reader: EmailReader used to fetch emails.
-    :param mailbox: Mailbox/folder to search in (e.g. "INBOX").
-    :param criteria: IMAP search criteria (e.g. "ALL", "UNSEEN").
-    :param filename_prefixes: Allowed attachment filename prefixes.
-    :param max_emails: Maximum number of emails to fetch and scan.
-    :return: (uid, filename, content_bytes) for the first matching attachment, or None.
-    """
-    emails, failed = email_reader.get_emails(
-        mailbox=mailbox,
-        criteria=criteria,
-        set_flags=None,
-        max=max_emails,
-        low_to_high=False,  # start with newest emails first
-    )
-
-    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
-
-    for msg in emails:
-        uid: bytes = getattr(msg, "uid", None)
-        subject = msg.get("Subject", "")
-        logger.info(f"Email UID: {uid}, Subject: {subject}")
-
-        for part in msg.iter_attachments():
-            filename = part.get_filename() or ""
-            filename_lc = filename.lower()
-            if not filename_lc.endswith(".xlsx"):
-                continue
-
-            if not any(filename_lc.startswith(p.lower()) for p in filename_prefixes):
-                continue
-
-            content = part.get_payload(decode=True)  # bytes
-            if not content:
-                continue
-
-            return uid, filename, content
-
-    return None
 
 
 def _find_page_with_selector(
@@ -336,6 +284,107 @@ def login_to_sd(
         return None
 
 
+def open_merarbejde_context(page: Page) -> bool:
+    """
+    Open the shared Indberetning -> Merarbejde context once.
+
+    :param page: Active Personaleweb page.
+    :return: True when context is open and amount field is visible.
+    """
+    try:
+        logger.info("Opening Indberetning and Merarbejde context")
+        nav_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//*[@id='jbFrameset']/frame"
+        )
+
+        nav_frame.locator("#fe20").click(timeout=20000)
+        nav_frame.locator("#tab_2737").click(timeout=20000)
+
+        merarbejde_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//frameset[@id='innerFrameset']/frame[@name='insidemain']"
+        ).frame_locator("frame[name='merarbejde']")
+        merarbejde_frame.locator("#pageForm\\:beloeb").wait_for(
+            state="visible",
+            timeout=20000,
+        )
+
+        logger.info("Merarbejde context is ready")
+        return True
+    except PlaywrightTimeoutError:
+        logger.exception("Timeout while opening Merarbejde context")
+        return False
+    except Exception:
+        logger.exception("Failed to open Merarbejde context")
+        return False
+
+
+def _set_loenart_stable(
+    page: Page,
+    merarbejde_frame,
+    loenart_value: str,
+    retries: int = 3,
+) -> None:
+    loenart_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
+    loenart_hidden = merarbejde_frame.locator("#pageForm\\:loenart_hinput")
+
+    last_visible = ""
+    last_hidden = ""
+
+    for attempt in range(1, retries + 1):
+        logger.info("Setting loenart attempt %s/%s", attempt, retries)
+
+        loenart_input.wait_for(state="visible", timeout=20000)
+        loenart_input.click(timeout=10000)
+        loenart_input.press("ControlOrMeta+A")
+        loenart_input.press("Backspace")
+        loenart_input.type(loenart_value, delay=180)
+
+        try:
+            first_option = merarbejde_frame.locator(
+                "li.ui-autocomplete-item:visible"
+            ).first
+            first_option.wait_for(state="visible", timeout=3000)
+            first_option.click(timeout=2000)
+        except PlaywrightTimeoutError:
+            loenart_input.press("ArrowDown")
+            loenart_input.press("Enter")
+
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            try:
+                last_visible = loenart_input.input_value().strip()
+            except PlaywrightError:
+                last_visible = ""
+
+            try:
+                last_hidden = loenart_hidden.input_value().strip()
+            except PlaywrightError:
+                last_hidden = ""
+
+            if (
+                last_visible == loenart_value
+                or last_visible.startswith(loenart_value)
+                or last_hidden == loenart_value
+                or last_hidden.startswith(loenart_value)
+            ):
+                logger.info(
+                    "Wage type input set to: %s (visible=%r hidden=%r)",
+                    loenart_value,
+                    last_visible,
+                    last_hidden,
+                )
+                return
+
+            page.wait_for_timeout(200)
+
+        page.wait_for_timeout(500)
+
+    raise PlaywrightTimeoutError(
+        "Loenart felt matcher ikke forventning efter retries. "
+        f"forventet={loenart_value!r}, visible={last_visible!r}, hidden={last_hidden!r}"
+    )
+
+
 def process_person_playwright(
     page: Page,
     tjenestenummer: str,
@@ -370,21 +419,23 @@ def process_person_playwright(
         logger.info("Clicking on the first name in the search results...")
         page.locator("xpath=/html/body/ul/li[1]").click(timeout=20000)
 
-        logger.info("Switching to frame under 'jbFrameset'...")
-        nav_frame = page.frame_locator("#insideiframe").frame_locator(
-            "xpath=//*[@id='jbFrameset']/frame"
-        )
-
-        logger.info("Clicking on Indberetning...")
-        nav_frame.locator("#fe20").click(timeout=20000)
-
-        logger.info("Clicking on Merarbejde...")
-        nav_frame.locator("#tab_2737").click(timeout=20000)
-
         logger.info("Switching to 'merarbejde' frame...")
         merarbejde_frame = page.frame_locator("#insideiframe").frame_locator(
             "xpath=//frameset[@id='innerFrameset']/frame[@name='insidemain']"
         ).frame_locator("frame[name='merarbejde']")
+
+        # If SD has navigated away from the expected tab, reopen context once.
+        try:
+            merarbejde_frame.locator("#pageForm\\:beloeb").wait_for(
+                state="visible",
+                timeout=5000,
+            )
+        except PlaywrightTimeoutError:
+            logger.info(
+                "Merarbejde context was not active. Reopening context..."
+            )
+            if not open_merarbejde_context(page=page):
+                return False
 
         logger.info("Waiting for the amount input field...")
         beloeb_input = merarbejde_frame.locator("#pageForm\\:beloeb")
@@ -393,31 +444,12 @@ def process_person_playwright(
         logger.info(f"Amount input set to: {beloeb} kr.")
 
         logger.info("Waiting for the wage type input field...")
-        loenart_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
-        loenart_input.wait_for(state="visible", timeout=20000)
         loenart_value = str(loenart)
-
-        # Type slowly so dropdown suggestions have time to load.
-        loenart_input.click(timeout=20000)
-        loenart_input.fill("")
-        loenart_input.type(loenart_value, delay=140)
-
-        # Ensure full value is present before confirming with Enter.
-        deadline = time.time() + 8
-        while time.time() < deadline:
-            current_value = loenart_input.input_value()
-            if current_value.strip() == loenart_value:
-                break
-            page.wait_for_timeout(150)
-        else:
-            raise PlaywrightTimeoutError(
-                "Wage type input did not contain the expected value before Enter"
-            )
-
-        page.wait_for_timeout(400)
-        loenart_input.press("Enter")
-        logger.info(f"Wage type input set to: {loenart_value}")
-
+        _set_loenart_stable(
+            page=page,
+            merarbejde_frame=merarbejde_frame,
+            loenart_value=loenart_value,
+        )
         page.wait_for_timeout(2000)
 
         logger.info("Waiting for the approved input field...")
@@ -483,6 +515,9 @@ def run_sd_fleksjobrefusion_job(
                 password=password,
             )
             if active_page is None:
+                return False, persons
+
+            if not open_merarbejde_context(page=active_page):
                 return False, persons
 
             failures: list[dict[str, str]] = []
