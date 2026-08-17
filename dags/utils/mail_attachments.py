@@ -10,7 +10,7 @@ def find_latest_attachment(
     mailbox: str = "INBOX",
     criteria: str = "UNSEEN",
     extensions: Sequence[str] = (".xlsx",),
-    filename_prefixes: Iterable[str] | None = None,
+    filename_prefixes: Iterable[str] | str | None = None,
     max_emails: int = 50,
 ) -> tuple[bytes, str, bytes] | None:
     """
