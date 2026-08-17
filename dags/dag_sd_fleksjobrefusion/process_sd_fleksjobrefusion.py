@@ -62,6 +62,42 @@ def _send_failure_email(
     )
 
 
+def _send_success_email(
+    runtime_config: dict,
+    total_persons: int,
+    attachment_name: str,
+) -> None:
+    """
+    Send success email when all persons are processed without failures.
+
+    :param runtime_config: Runtime config containing sender/recipients/smtp.
+    :param total_persons: Number of persons processed.
+    :param attachment_name: Name of source attachment used for processing.
+    """
+    sender = runtime_config.get("sender_email")
+    recipients = runtime_config.get("recipient_emails")
+    smtp_server = runtime_config.get("smtp_server")
+
+    subject = "SD Fleksjobrefusion: Kørsel gennemført uden fejl"
+    body = (
+        "SD Fleksjobrefusion er gennemført uden fejl.\n\n"
+        f"Antal behandlede personer: {total_persons}\n"
+        f"Kilde-fil: {attachment_name}"
+    )
+
+    email_sender = EmailSender(smtp_server=smtp_server)
+    email_sender.send_email(
+        sender=sender,
+        recipients=recipients,
+        subject=subject,
+        body=body,
+    )
+    logger.info(
+        "Sent SD Fleksjobrefusion success email for %s processed person(s)",
+        total_persons,
+    )
+
+
 def process_sd_fleksjobrefusion() -> None:
     """
     Process SD Fleksjobrefusion rows from mailbox attachment.
@@ -134,11 +170,22 @@ def process_sd_fleksjobrefusion() -> None:
                     runtime_config=fleksjobrefusion_runtime_config,
                     failed_persons=failed_persons,
                 )
-            except Exception:
-                logger.exception("Failed to send SD Fleksjobrefusion failure email")
+            except Exception as e:
+                raise AirflowFailException("Failed to send SD Fleksjobrefusion failure email") from e
+        else:
+            try:
+                _send_success_email(
+                    runtime_config=fleksjobrefusion_runtime_config,
+                    total_persons=len(persons),
+                    attachment_name=attachment_name,
+                )
+            except Exception as e:
+                raise AirflowFailException("Failed to send SD Fleksjobrefusion success email") from e
 
         logger.info("SD Fleksjobrefusion processing completed successfully")
 
+    except AirflowFailException:
+        raise
     except Exception as e:
         raise AirflowFailException("Error processing SD Fleksjobrefusion") from e
     finally:
