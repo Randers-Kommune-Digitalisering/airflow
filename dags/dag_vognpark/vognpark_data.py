@@ -4,9 +4,8 @@ import fitz
 import pandas as pd
 import logging
 from openpyxl.utils import get_column_letter
-from typing import Any, Iterable, Sequence
+from typing import Any
 from airflow.providers.http.hooks.http import HttpHook
-from rkdigi.email_handling import EmailReader
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)

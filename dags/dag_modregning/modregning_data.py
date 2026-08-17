@@ -1,10 +1,9 @@
 import io
 import logging
 import pandas as pd
-from typing import Any, Iterable
+from typing import Any
 from openpyxl.utils import get_column_letter
 from airflow.models import Variable
-from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
