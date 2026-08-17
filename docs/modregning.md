@@ -41,7 +41,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 **Forudsætning(manuel proces):**
 
-Betalingskontoret en ny CPR-liste sender (Excel) til Modregning Postkassen. CPR-listen bruges som input til modregningsopslag.
+Betalingskontoret sender en ny CPR-liste (Excel) til Modregning Postkassen. CPR-listen bruges som input til modregningsopslag.
 Excel-filen skal indeholde kolonnen `ID-nummer` (CPR). 
 Jobbet bruger den nyeste matchende vedhæftning i postkassen, hvis der ikke ligger en relevant mail med vedhæftet Excel, kan jobbet ikke gennemføre rapporten som forventet. Betalingskontoret vedligeholder desuden listen `modregning_excluded_ydelse_list` (tilføj/fjern ydelser efter behov). 
 
