@@ -31,6 +31,7 @@ AUTH_ROLES_MAPPING = {
     "Vognpark": ["Vognpark"],
     "Modregning": ["Modregning"],
     "Arbejdsfortjeneste": ["Arbejdsfortjeneste"],
+    "Fleksjobrefusion": ["Fleksjobrefusion"],
 }
 
 PROVIDER_NAME = "keycloak"
