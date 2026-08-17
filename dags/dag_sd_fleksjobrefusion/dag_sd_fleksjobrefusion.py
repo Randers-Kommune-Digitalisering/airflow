@@ -1,6 +1,5 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
 from dag_sd_fleksjobrefusion.process_sd_fleksjobrefusion import (
@@ -12,9 +11,8 @@ dag_args["retries"] = 0
 
 
 with DAG(
-    dag_id="dag_sd_fleksjobrefusion",
-    start_date=datetime(year=2026, month=7, day=28, tz=timezone("Europe/Copenhagen")),
-    schedule="@monthly",
+    dag_id="fleksjobrefusion_registration_sd_personaleweb",
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
