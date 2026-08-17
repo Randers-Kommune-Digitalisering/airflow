@@ -119,7 +119,6 @@ def process_sd_fleksjobrefusion() -> None:
     try:
         found = find_latest_attachment(
             email_reader=email_reader,
-            criteria="ALL",
             filename_prefixes="Fleksjobrefusion",
         )
         if not found:
