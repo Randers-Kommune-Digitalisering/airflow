@@ -188,13 +188,14 @@ def process_aub_post() -> None:
                 body=body,
                 attachments=[(_TARGET_ATTACHMENT_NAME, attachment_bytes)],
             )
+            logger.info("Successfully forwarded email uid=%s to contact %s", uid_text, contact_email)
 
-            # email_reader.delete_email_by_uid(
-            #     uid=uid,
-            #     mailbox=mailbox.strip(),
-            #     expunge=True,
-            # )
-            # logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
+            email_reader.delete_email_by_uid(
+                uid=uid,
+                mailbox=mailbox.strip(),
+                expunge=True,
+            )
+            logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
         except Exception as exc:
             logger.error("Failed to process email uid=%s: %s", uid_text, exc)
