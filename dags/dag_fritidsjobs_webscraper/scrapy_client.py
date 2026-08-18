@@ -28,6 +28,9 @@ SCRAPY_PLAYWRIGHT_SETTINGS = {
     "LOG_ENABLED": False,
 }
 
+# Allow a small number of transient Playwright transport failures per crawl.
+_MAX_TOLERATED_PLAYWRIGHT_EXCEPTION_RATE = 0.20
+
 
 def scrape_sites(site_configs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
@@ -285,15 +288,72 @@ def _raise_for_crawl_errors(stats: Mapping[str, Any]) -> None:
     :param stats: Scrapy crawler stats collected after the crawl finished
     :return: None
     """
-    download_exception_count = stats.get("downloader/exception_count", 0)
-    spider_exception_count = stats.get("spider_exceptions/count", 0)
+    download_exception_count = _to_non_negative_int(stats.get("downloader/exception_count", 0))
+    spider_exception_count = _to_non_negative_int(stats.get("spider_exceptions/count", 0))
 
-    if download_exception_count or spider_exception_count:
+    if spider_exception_count:
         raise RuntimeError(
             "fritidsjobs_webscraper failed during crawl: "
             f"{download_exception_count} downloader exceptions, "
             f"{spider_exception_count} spider exceptions."
         )
+
+    if not download_exception_count:
+        return
+
+    request_count = _to_non_negative_int(stats.get("downloader/request_count", 0))
+    response_count = _to_non_negative_int(stats.get("downloader/response_count", 0))
+
+    playwright_exception_count = sum(
+        _to_non_negative_int(value)
+        for key, value in stats.items()
+        if key.startswith("downloader/exception_type_count/playwright._impl._errors.")
+    )
+
+    non_playwright_exception_count = max(download_exception_count - playwright_exception_count, 0)
+
+    if non_playwright_exception_count:
+        raise RuntimeError(
+            "fritidsjobs_webscraper failed during crawl: "
+            f"{download_exception_count} downloader exceptions, "
+            f"{spider_exception_count} spider exceptions."
+        )
+
+    if request_count <= 0 or response_count <= 0:
+        raise RuntimeError(
+            "fritidsjobs_webscraper failed during crawl: "
+            f"{download_exception_count} downloader exceptions, "
+            f"{spider_exception_count} spider exceptions."
+        )
+
+    exception_rate = playwright_exception_count / request_count
+    if exception_rate > _MAX_TOLERATED_PLAYWRIGHT_EXCEPTION_RATE:
+        raise RuntimeError(
+            "fritidsjobs_webscraper failed during crawl: "
+            f"{download_exception_count} downloader exceptions, "
+            f"{spider_exception_count} spider exceptions."
+        )
+
+    logger.warning(
+        "Continuing crawl despite %d transient Playwright downloader exception(s) "
+        "(%.1f%% of requests, threshold %.1f%%).",
+        playwright_exception_count,
+        exception_rate * 100,
+        _MAX_TOLERATED_PLAYWRIGHT_EXCEPTION_RATE * 100,
+    )
+
+
+def _to_non_negative_int(value: Any) -> int:
+    """
+    Convert crawler stats values to non-negative integers.
+
+    :param value: Raw stats value
+    :return: Non-negative integer value
+    """
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _store_list_results(

@@ -47,7 +47,7 @@ def test_process_fritidsjobs_webscraper_accepts_all_supported_recipient_formats(
 
     result = process_module.process_fritidsjobs_webscraper()
 
-    assert result == []
+    assert result is None
 
 
 def test_process_fritidsjobs_webscraper_raises_for_invalid_recipient_format(monkeypatch) -> None:
