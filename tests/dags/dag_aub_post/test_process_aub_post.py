@@ -57,6 +57,20 @@ def _make_email(uid: bytes, filename: str = "maindoc.pdf") -> EmailMessage:
     return message
 
 
+def _make_email_with_subject(uid: bytes, subject: str, filename: str = "maindoc.pdf") -> EmailMessage:
+    message = EmailMessage()
+    message["Subject"] = subject
+    message.set_content("Mail body")
+    message.add_attachment(
+        b"pdf-bytes",
+        maintype="application",
+        subtype="pdf",
+        filename=filename,
+    )
+    message.uid = uid
+    return message
+
+
 def _runtime_config() -> dict:
     return {
         "smtp_server": "smtp.example.com",
@@ -105,6 +119,25 @@ def test_process_aub_post_success_deletes_email(monkeypatch) -> None:
             "imap_port": 143,
         }
     ]
+
+
+def test_process_aub_post_non_ascii_subject_is_encoded_for_smtp(monkeypatch) -> None:
+    _set_defaults()
+    FakeEmailReader.emails = [_make_email_with_subject(uid=b"subject-1", subject="Ansøgning om læreplads")]
+
+    monkeypatch.setattr(process_module.Variable, "get", lambda *args, **kwargs: _runtime_config())
+    monkeypatch.setattr(process_module.BaseHook, "get_connection", lambda _id: FakeConnection())
+    monkeypatch.setattr(process_module, "EmailReader", FakeEmailReader)
+    monkeypatch.setattr(process_module, "EmailSender", FakeEmailSender)
+    monkeypatch.setattr(process_module, "extract_education_from_pdf", lambda _bytes: "Pædagog")
+
+    process_module.process_aub_post()
+
+    assert len(FakeEmailSender.sent_messages) == 1
+    sent_subject = FakeEmailSender.sent_messages[0]["subject"]
+    assert isinstance(sent_subject, str)
+    assert sent_subject.isascii()
+    assert FakeEmailReader.deleted == [(b"subject-1", "INBOX", True)]
 
 
 def test_process_aub_post_omits_imap_host_and_port_when_not_set(monkeypatch) -> None:
