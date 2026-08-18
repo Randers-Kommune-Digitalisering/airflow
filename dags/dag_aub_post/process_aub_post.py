@@ -1,4 +1,5 @@
 import logging
+from email.header import Header, decode_header, make_header
 
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
@@ -18,6 +19,31 @@ _AUB_POST_CONFIG_VAR = "aub_post_config"
 _DEFAULT_MAILBOX = "INBOX"
 _DEFAULT_SEARCH_CRITERIA = "ALL"
 _TARGET_ATTACHMENT_NAME = "maindoc.pdf"
+
+
+def _build_safe_subject_header(raw_subject: object) -> str:
+    """
+    Build an ASCII-safe RFC 2047 subject header.
+
+    Some incoming subjects are already decoded to Unicode by the IMAP parser.
+    Re-encoding here prevents downstream MIME serialization from failing on
+    characters like "æ".
+    """
+    if raw_subject is None:
+        return ""
+
+    try:
+        subject_text = str(make_header(decode_header(str(raw_subject)))).strip()
+    except Exception:
+        subject_text = str(raw_subject).strip()
+
+    if not subject_text:
+        return ""
+
+    if subject_text.isascii():
+        return subject_text
+
+    return Header(subject_text, "utf-8").encode()
 
 
 def process_aub_post() -> None:
@@ -141,7 +167,7 @@ def process_aub_post() -> None:
                 education=education,
                 education_contact_map=education_contact_map,
             )
-            subject = (message.get("Subject") or "").strip()
+            subject = _build_safe_subject_header(message.get("Subject"))
             body = ""
 
             if message.is_multipart():
@@ -163,12 +189,12 @@ def process_aub_post() -> None:
                 attachments=[(_TARGET_ATTACHMENT_NAME, attachment_bytes)],
             )
 
-            email_reader.delete_email_by_uid(
-                uid=uid,
-                mailbox=mailbox.strip(),
-                expunge=True,
-            )
-            logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
+            # email_reader.delete_email_by_uid(
+            #     uid=uid,
+            #     mailbox=mailbox.strip(),
+            #     expunge=True,
+            # )
+            # logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
         except Exception as exc:
             logger.error("Failed to process email uid=%s: %s", uid_text, exc)
