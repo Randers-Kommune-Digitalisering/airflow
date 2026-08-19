@@ -130,11 +130,15 @@ except Exception:
 
 
 try:
-    from airflow.exceptions import AirflowFailException as _AirflowFailException  # noqa: F401
+    from airflow.exceptions import AirflowException as _AirflowException, AirflowFailException as _AirflowFailException  # noqa: F401
 except Exception:
     exceptions_mod = _ensure_module("airflow.exceptions")
+
+    class AirflowException(Exception):
+        pass
 
     class AirflowFailException(Exception):
         pass
 
+    exceptions_mod.AirflowException = AirflowException
     exceptions_mod.AirflowFailException = AirflowFailException

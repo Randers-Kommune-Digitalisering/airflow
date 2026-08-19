@@ -102,3 +102,28 @@ def test_raise_for_crawl_errors_raises_on_non_playwright_downloader_exception() 
 
     with pytest.raises(RuntimeError, match="failed during crawl"):
         scrapy_client._raise_for_crawl_errors(stats)
+
+
+class _PlaywrightLikeError(Exception):
+    pass
+
+
+_PlaywrightLikeError.__module__ = "playwright._impl._errors"
+
+
+def test_is_retryable_playwright_navigation_error_accepts_http2_protocol_error() -> None:
+    error = _PlaywrightLikeError("Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at https://example.com")
+
+    assert scrapy_client._is_retryable_playwright_navigation_error(error) is True
+
+
+def test_is_retryable_playwright_navigation_error_rejects_non_playwright_errors() -> None:
+    error = RuntimeError("Page.goto: net::ERR_HTTP2_PROTOCOL_ERROR at https://example.com")
+
+    assert scrapy_client._is_retryable_playwright_navigation_error(error) is False
+
+
+def test_is_retryable_playwright_navigation_error_rejects_other_playwright_errors() -> None:
+    error = _PlaywrightLikeError("Page.goto: net::ERR_ABORTED at https://example.com")
+
+    assert scrapy_client._is_retryable_playwright_navigation_error(error) is False

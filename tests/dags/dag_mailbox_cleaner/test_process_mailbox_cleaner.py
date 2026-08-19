@@ -25,6 +25,7 @@ class _FakeImapClient:
         self.moved_uids: list[tuple[bytes, str]] = []
         self.deleted_uids: list[bytes] = []
         self.expunge_called = False
+        self.search_uids_calls: list[dict[str, object]] = []
 
     def __enter__(self) -> "_FakeImapClient":
         return self
@@ -37,9 +38,13 @@ class _FakeImapClient:
         self.mailbox = mailbox
 
     def search_uids(self, criteria: str = "ALL", max_results: int | None = None, newest_first: bool = True) -> list[bytes]:
-        _ = criteria
-        _ = max_results
-        _ = newest_first
+        self.search_uids_calls.append(
+            {
+                "criteria": criteria,
+                "max_results": max_results,
+                "newest_first": newest_first,
+            }
+        )
         return [b"101"]
 
     def fetch_message(self, uid: bytes) -> ImapFetchedMessage:
@@ -130,3 +135,25 @@ def test_process_mailbox_cleaner_delete_executes_write(monkeypatch) -> None:
     fake_client = created["client"]
     assert fake_client.deleted_uids == [b"101"]
     assert fake_client.expunge_called is True
+
+
+def test_process_mailbox_cleaner_uses_desc_sort_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
+    created = _patch_fake_imap_client(monkeypatch)
+
+    process_module.process_mailbox_cleaner(config=_config(dry_run=True))
+
+    fake_client = created["client"]
+    assert fake_client.search_uids_calls[0]["newest_first"] is True
+
+
+def test_process_mailbox_cleaner_uses_asc_sort_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr(BaseHook, "get_connection", lambda *_args, **_kwargs: _FakeConnection())
+    created = _patch_fake_imap_client(monkeypatch)
+    config = _config(dry_run=True)
+    config["safety"]["sort"] = "asc"
+
+    process_module.process_mailbox_cleaner(config=config)
+
+    fake_client = created["client"]
+    assert fake_client.search_uids_calls[0]["newest_first"] is False
