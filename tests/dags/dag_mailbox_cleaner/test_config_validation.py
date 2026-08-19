@@ -78,3 +78,27 @@ def test_validate_config_rejects_archive_action_type(monkeypatch) -> None:
 
     assert valid is False
     assert "Invalid value for config.action.type" in msg
+
+
+def test_validate_config_accepts_safety_sort_asc(monkeypatch) -> None:
+    monkeypatch.setattr(validation, "_validate_airflow_imap_config", lambda _: (True, "OK"))
+
+    config = _base_config()
+    config["safety"]["sort"] = "asc"
+
+    valid, msg = validation.validate_config(config)
+
+    assert valid is True
+    assert msg == "OK"
+
+
+def test_validate_config_rejects_invalid_safety_sort(monkeypatch) -> None:
+    monkeypatch.setattr(validation, "_validate_airflow_imap_config", lambda _: (True, "OK"))
+
+    config = _base_config()
+    config["safety"]["sort"] = "middle"
+
+    valid, msg = validation.validate_config(config)
+
+    assert valid is False
+    assert "Invalid value for config.safety.sort" in msg

@@ -146,11 +146,15 @@ SCHEMA_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "safety": {
         "required": [],
-        "optional": ["dry_run", "max_messages_per_run", "min_age_for_delete_days"],
+        "optional": ["dry_run", "max_messages_per_run", "min_age_for_delete_days", "sort"],
         "types": {
             "dry_run": "bool",
             "max_messages_per_run": "int",
             "min_age_for_delete_days": "int",
+            "sort": "str",
+        },
+        "enum": {
+            "sort": ["asc", "desc"],
         },
     },
 }

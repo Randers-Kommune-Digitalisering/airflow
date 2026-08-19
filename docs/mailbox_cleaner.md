@@ -97,6 +97,9 @@ At least one requirement must be configured.
 
 - `safety.dry_run` (boolean, optional, default `true`): Log what would happen, but do not change emails.
 - `safety.max_messages_per_run` (int, optional): Hard cap per run.
+- `safety.sort` (string, optional, default `desc`): Candidate processing order when applying `max_messages_per_run`.
+  - `desc`: Newest-first (highest UID first).
+  - `asc`: Oldest-first (lowest UID first).
 - `safety.min_age_for_delete_days` (int, optional): Extra protection for delete action.
 
 ## Validation Rules
@@ -136,7 +139,8 @@ Use these rules when implementing validation:
   },
   "safety": {
     "dry_run": true,
-    "max_messages_per_run": 100
+    "max_messages_per_run": 100,
+    "sort": "desc"
   }
 }
 ```
@@ -181,6 +185,7 @@ Use these rules when implementing validation:
   "safety": {
     "dry_run": true,
     "max_messages_per_run": 200,
+    "sort": "desc",
     "min_age_for_delete_days": 14
   }
 }

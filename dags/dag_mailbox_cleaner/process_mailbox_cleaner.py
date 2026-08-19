@@ -36,6 +36,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
     safety = job_config.get("safety", {})
     action = job_config.get("action", {})
     dry_run = bool(safety.get("dry_run", True))
+    sort = str(safety.get("sort", "desc"))
     max_messages = safety.get("max_messages_per_run")
 
     if max_messages is not None:
@@ -77,7 +78,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
         candidate_uids = imap_client.search_uids(
             criteria=DEFAULT_SEARCH_CRITERIA,
             max_results=max_messages,
-            newest_first=True,
+            newest_first=(sort != "asc"),
         )
 
         logger.info(
