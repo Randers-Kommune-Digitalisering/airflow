@@ -107,14 +107,27 @@ def extract_transform() -> None:
     out_file = None
     if not emp_df.empty:
         emp_column_map = {
+            "Department_ActivationDate": "DepartmentActivationDate",
+            "Profession_ActivationDate": "ProfessionActivationDate",
+            "EmploymentStatus_ActivationDate": "EmploymentStatusActivationDate",
             "EmploymentStatus_EmploymentStatusCode": "EmploymentStatusCode",
             "Department_DepartmentIdentifier": "DepartmentIdentifier",
             "Profession_JobPositionIdentifier": "JobPositionIdentifier",
             "Profession_EmploymentName": "EmploymentName",
-            "EmploymentStatus_ActivationDate": "ActivationDate",
             "EmploymentStatus_DeactivationDate": "DeactivationDate",
         }
         normalized_emp_df = emp_df.rename(columns=emp_column_map)
+
+        activation_date_columns = [
+            column_name
+            for column_name in [
+                "DepartmentActivationDate",
+                "ProfessionActivationDate",
+                "EmploymentStatusActivationDate",
+            ]
+            if column_name in normalized_emp_df.columns
+        ]
+        normalized_emp_df["ActivationDate"] = normalized_emp_df[activation_date_columns].max(axis=1)
 
         required_emp_columns = [
             "InstitutionIdentifier",
