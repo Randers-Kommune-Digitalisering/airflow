@@ -36,7 +36,7 @@ def process_mailbox_cleaner(config: dict[str, Any] | None = None) -> None:
     safety = job_config.get("safety", {})
     action = job_config.get("action", {})
     dry_run = bool(safety.get("dry_run", True))
-    sort = str(safety.get("sort", "desc")).lower()
+    sort = str(safety.get("sort", "desc"))
     max_messages = safety.get("max_messages_per_run")
 
     if max_messages is not None:
