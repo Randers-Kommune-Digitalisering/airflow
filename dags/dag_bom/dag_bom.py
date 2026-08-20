@@ -12,7 +12,7 @@ dag_args["retries"] = 1
 with DAG(
     dag_id="dag_bom",
     start_date=datetime(year=2026, month=8, day=18, tz=timezone("Europe/Copenhagen")),
-    schedule="@monthly",
+    schedule="0 0 1 * *",
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
