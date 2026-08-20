@@ -19,9 +19,7 @@ def process_bom() -> None:
     username = bom_conn.login
     password = bom_conn.password
     if not username or not password:
-        raise AirflowFailException(
-            "Connection 'bom' is missing host, username or password"
-        )
+        raise AirflowFailException("Connection 'bom_login' is missing login and/or password")
 
     df_monthly, df_glidende = run_bom_job(
         username=username,
