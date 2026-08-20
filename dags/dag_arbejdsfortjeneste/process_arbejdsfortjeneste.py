@@ -12,11 +12,11 @@ from dag_arbejdsfortjeneste.arbejdsfortjeneste_data import (
     get_change_report_key_columns,
     build_diff_table,
     extract_cprs,
-    find_latest_attachment,
     extract_rows_from_serviceplatform_response,
     iter_months,
     write_arbejdsfortjeneste_report_excel_bytes,
 )
+from utils.mail_attachments import find_latest_attachment
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,8 @@ def process_arbejdsfortjeneste() -> None:
 
     # Find the newest matching Excel attachment in the mailbox
     found = find_latest_attachment(
-        email_reader=email_reader
+        email_reader=email_reader,
+        filename_prefixes="Liste",
     )
 
     if not found:

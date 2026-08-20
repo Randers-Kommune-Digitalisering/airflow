@@ -14,8 +14,8 @@ from dag_vognpark.vognpark_data import (
     normalize_insubiz_df,
     read_motorstyrelsen_pdf_bytes,
     enrich_vehicles_with_customer_levels,
-    find_latest_attachment,
 )
+from utils.mail_attachments import find_latest_attachment
 from rkdigi.email_handling import EmailSender, EmailReader
 
 

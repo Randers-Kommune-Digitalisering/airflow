@@ -1,5 +1,6 @@
 import logging
 import time
+import pandas as pd
 
 from playwright.sync_api import (
     BrowserContext,
@@ -15,6 +16,47 @@ PERSONALEWEB_TILE_SELECTOR = (
     "#product-cf662da2-9d3c-0108-e043-0a10f6400108 "
     "div[role='button'][aria-label='Personaleweb']"
 )
+
+
+def excel_to_sd_fleksjobrefusion_config(
+    df: pd.DataFrame,
+) -> list[dict[str, str]]:
+    """
+    Parse SD Fleksjobrefusion rows from Excel into browser-process config.
+
+    :param df: DataFrame loaded from attached Excel.
+    :return: List of person rows with keys:
+        employee_number, institution, amount, wage_type.
+    """
+    df.columns = df.columns.str.strip()
+    config: list[dict[str, str]] = []
+
+    for _, row in df.iterrows():
+        tjnr = str(row["TJNR."]).zfill(5)
+
+        if pd.notna(row["Lønart 684"]):
+            amount = round(float(row["Lønart 684"]), 2)
+            config.append(
+                {
+                    "employee_number": tjnr,
+                    "institution": str(row["Int."]),
+                    "amount": f"-{amount:.2f}".replace(".", ","),
+                    "wage_type": "684",
+                }
+            )
+        elif pd.notna(row["Lønart 685"]):
+            amount = round(float(row["Lønart 685"]), 2)
+            config.append(
+                {
+                    "employee_number": tjnr,
+                    "institution": str(row["Int."]),
+                    "amount": f"-{amount:.2f}".replace(".", ","),
+                    "wage_type": "685",
+                }
+            )
+
+    logger.info("Parsed %s SD Fleksjobrefusion row(s) from Excel", len(config))
+    return config
 
 
 def _find_page_with_selector(
@@ -239,27 +281,226 @@ def login_to_sd(
         return None
     except Exception:
         logger.exception("SD login failed")
-        return None
+        raise
 
 
-def run_sd_fleksjobrefusion_login(
-    username: str,
-    password: str,
-    sd_url: str = "https://www.silkeborgdata.dk",
+def open_merarbejde_context(page: Page) -> bool:
+    """
+    Open the shared Indberetning -> Merarbejde context once.
+
+    :param page: Active Personaleweb page.
+    :return: True when context is open and amount field is visible.
+    """
+    try:
+        logger.info("Opening Indberetning and Merarbejde context")
+        nav_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//*[@id='jbFrameset']/frame"
+        )
+
+        nav_frame.locator("#fe20").click(timeout=20000)
+        nav_frame.locator("#tab_2737").click(timeout=20000)
+
+        merarbejde_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//frameset[@id='innerFrameset']/frame[@name='insidemain']"
+        ).frame_locator("frame[name='merarbejde']")
+        merarbejde_frame.locator("#pageForm\\:beloeb").wait_for(
+            state="visible",
+            timeout=20000,
+        )
+
+        logger.info("Merarbejde context is ready")
+        return True
+    except PlaywrightTimeoutError:
+        logger.exception("Timeout while opening Merarbejde context")
+        return False
+
+
+def _set_wage_type_stable(
+    page: Page,
+    merarbejde_frame,
+    wage_type_value: str,
+    retries: int = 3,
+) -> None:
+    """
+    Set and validate the wage type in the Merarbejde form.
+
+    :param page: Active Personaleweb page used for short waits.
+    :param merarbejde_frame: Playwright frame containing the Merarbejde form.
+    :param wage_type_value: Wage type value to select.
+    :param retries: Maximum number of attempts to stabilize the wage type.
+    :raises PlaywrightTimeoutError: If the wage type does not stabilize.
+    :return: None when the wage type is set successfully.
+    """
+    wage_type_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
+    wage_type_hidden = merarbejde_frame.locator("#pageForm\\:loenart_hinput")
+
+    last_visible = ""
+    last_hidden = ""
+
+    for attempt in range(1, retries + 1):
+        logger.info(f"Setting wage type attempt {attempt}/{retries}")
+
+        wage_type_input.wait_for(state="visible", timeout=20000)
+        wage_type_input.click(timeout=10000)
+        wage_type_input.press("ControlOrMeta+A")
+        wage_type_input.press("Backspace")
+        wage_type_input.type(wage_type_value, delay=180)
+
+        try:
+            first_option = merarbejde_frame.locator(
+                "li.ui-autocomplete-item:visible"
+            ).first
+            first_option.wait_for(state="visible", timeout=3000)
+            first_option.click(timeout=2000)
+        except PlaywrightTimeoutError:
+            wage_type_input.press("ArrowDown")
+            wage_type_input.press("Enter")
+
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            try:
+                last_visible = wage_type_input.input_value().strip()
+            except PlaywrightError:
+                last_visible = ""
+
+            try:
+                last_hidden = wage_type_hidden.input_value().strip()
+            except PlaywrightError:
+                last_hidden = ""
+
+            if (
+                last_visible == wage_type_value
+                or last_visible.startswith(wage_type_value)
+                or last_hidden == wage_type_value
+                or last_hidden.startswith(wage_type_value)
+            ):
+                logger.info(
+                    f"Wage type input set to: {wage_type_value} (visible={last_visible!r} hidden={last_hidden!r})",
+                )
+                return
+
+            page.wait_for_timeout(200)
+
+        page.wait_for_timeout(500)
+
+    raise PlaywrightTimeoutError(
+        "Wage type input field did not stabilize to expected value after retries. "
+        f"expected={wage_type_value!r}, visible={last_visible!r}, hidden={last_hidden!r}"
+    )
+
+
+def process_person_playwright(
+    page: Page,
+    employee_number: str,
+    institution: str,
+    amount: str,
+    wage_type: str,
 ) -> bool:
     """
-    Run SD Fleksjobrefusion login test flow in headless incognito mode.
+    Process one person row in SD Personaleweb.
+
+    :param page: Active Personaleweb page.
+    :param employee_number: Employee service number.
+    :param institution: Institution identifier.
+    :param amount: Amount value.
+    :param wage_type: Wage type value.
+    :return: True when flow succeeds, or False after a timeout.
+    :raises Exception: If processing fails for a reason other than timeout.
+    """
+    try:
+        logger.info("Entering SD Personaleweb...")
+
+        logger.info("Clicking on the search field...")
+        search_field = page.locator(
+            "xpath=/html/body/div[3]/div/div/div/div/div[2]/div[2]/input"
+        )
+        search_field.wait_for(state="visible", timeout=20000)
+        search_field.fill("")
+        search_field.fill(f"{employee_number} {institution}")
+        page.wait_for_timeout(1500)  # Wait for search suggestions to appear
+        search_field.click()
+        logger.info(f"Searching for person with employee number: {employee_number} and institution: {institution} and wage type: {wage_type}")
+
+        logger.info("Clicking on the first name in the search results...")
+        page.locator("xpath=/html/body/ul/li[1]").click(timeout=20000)
+
+        logger.info("Switching to 'merarbejde' frame...")
+        merarbejde_frame = page.frame_locator("#insideiframe").frame_locator(
+            "xpath=//frameset[@id='innerFrameset']/frame[@name='insidemain']"
+        ).frame_locator("frame[name='merarbejde']")
+
+        # If SD has navigated away from the expected tab, reopen context once.
+        try:
+            merarbejde_frame.locator("#pageForm\\:beloeb").wait_for(
+                state="visible",
+                timeout=5000,
+            )
+        except PlaywrightTimeoutError:
+            logger.info(
+                "Merarbejde context was not active. Reopening context..."
+            )
+            if not open_merarbejde_context(page=page):
+                return False
+
+        logger.info("Waiting for the amount input field...")
+        amount_input = merarbejde_frame.locator("#pageForm\\:beloeb")
+        amount_input.wait_for(state="visible", timeout=20000)
+        amount_input.fill(str(amount))
+        logger.info(f"Amount input set to: {amount} kr.")
+
+        logger.info("Waiting for the wage type input field...")
+        wage_type_value = str(wage_type)
+        _set_wage_type_stable(
+            page=page,
+            merarbejde_frame=merarbejde_frame,
+            wage_type_value=wage_type_value,
+        )
+        page.wait_for_timeout(2000)
+
+        logger.info("Waiting for the approved input field...")
+        approved_input = merarbejde_frame.locator("#pageForm\\:godkendt")
+        approved_input.wait_for(state="visible", timeout=20000)
+        approved_input.click(timeout=20000)
+        logger.info("Approved input clicked.")
+        page.wait_for_timeout(2500)
+
+        # Commented out while testing so it does not actually submit the form during development.
+        logger.info("Waiting for the save button...")
+        gem_button = merarbejde_frame.locator("#pageForm\\:j_idt108")
+        gem_button.wait_for(state="visible", timeout=20000)
+        gem_button.click(timeout=20000)
+        logger.info("Save button clicked.")
+        page.wait_for_timeout(2500)
+
+        logger.info(f"✅ {employee_number} ({institution}) processed with amount {amount} and wage type {wage_type}.")
+        return True
+    except PlaywrightTimeoutError:
+        logger.exception(f"Timeout while processing {employee_number} {institution}")
+        return False
+
+
+def run_sd_fleksjobrefusion_job(
+    username: str,
+    password: str,
+    persons: list[dict[str, str]],
+    sd_url: str = "https://www.silkeborgdata.dk",
+    headless: bool = True,
+) -> tuple[bool, list[dict[str, str]]]:
+    """
+    Run the full SD Fleksjobrefusion Playwright flow for all persons.
 
     :param username: ADFS username.
     :param password: ADFS password.
+    :param persons: Person rows to process.
     :param sd_url: SD landing page URL.
-    :return: True when login flow succeeds, otherwise False.
+    :param headless: Whether to run browser headless.
+    :return: Tuple containing success flag and list of failed rows.
     """
-    logger.info("Starting SD Fleksjobrefusion login flow")
+    logger.info("Starting SD Fleksjobrefusion browser flow")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
-            headless=True,
+            headless=headless,
             args=[
                 "--incognito",
                 (
@@ -279,11 +520,40 @@ def run_sd_fleksjobrefusion_login(
                 password=password,
             )
             if active_page is None:
-                return False
+                return False, persons
+
+            if not open_merarbejde_context(page=active_page):
+                return False, persons
+
+            failures: list[dict[str, str]] = []
+
+            for person in persons:
+                processed = process_person_playwright(
+                    page=active_page,
+                    employee_number=person["employee_number"],
+                    institution=person["institution"],
+                    amount=person["amount"],
+                    wage_type=person["wage_type"],
+                )
+
+                if not processed:
+                    failures.append(person)
+
+            if failures:
+                logger.error(f"The following persons failed for {len(failures)} persons:")
+                for failed in failures:
+                    logger.error(
+                        "- %s (%s): %s - %s",
+                        failed["employee_number"],
+                        failed["institution"],
+                        failed["amount"],
+                        failed["wage_type"],
+                    )
+                return False, failures
 
             active_page.wait_for_timeout(10000)
-            logger.info("SD Fleksjobrefusion login flow completed")
-            return True
+            logger.info("SD Fleksjobrefusion browser flow completed")
+            return True, []
         finally:
             context.close()
             browser.close()

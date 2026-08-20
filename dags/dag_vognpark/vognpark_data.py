@@ -4,9 +4,8 @@ import fitz
 import pandas as pd
 import logging
 from openpyxl.utils import get_column_letter
-from typing import Any, Iterable, Sequence
+from typing import Any
 from airflow.providers.http.hooks.http import HttpHook
-from rkdigi.email_handling import EmailReader
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -724,65 +723,6 @@ def enrich_vehicles_with_customer_levels(
             df[f"Level{i}"] = ""
 
     return df
-
-
-def find_latest_attachment(
-    email_reader: EmailReader,
-    mailbox: str = "INBOX",
-    criteria: str = "UNSEEN",
-    extensions: Sequence[str] = (".pdf",),
-    filename_prefixes: Iterable[str] | None = None,
-    max_emails: int = 50,
-) -> tuple[bytes, str, bytes] | None:
-    """
-    Find newest attachment matching extension and filename prefixes.
-
-    :param email_reader: EmailReader instance used to fetch emails.
-    :param mailbox: Mailbox/folder name to search in.
-    :param criteria: IMAP search criteria (for example ``UNSEEN`` or ``ALL``).
-    :param extensions: Allowed file extensions (case-insensitive).
-    :param filename_prefixes: Optional allowed filename prefixes.
-    :param max_emails: Maximum number of emails to inspect.
-    :return: Tuple ``(uid, filename, content_bytes)`` or ``None`` if no match.
-    """
-    emails, failed = email_reader.get_emails(
-        mailbox=mailbox,
-        criteria=criteria,
-        set_flags=None,
-        max=max_emails,
-        low_to_high=False,
-    )
-
-    logger.info(f"Fetched {len(emails)} email(s), {len(failed)} failed to fetch.")
-
-    extensions = tuple(ext.lower() for ext in extensions)
-    prefixes = (
-        tuple(p.lower() for p in filename_prefixes)
-        if filename_prefixes
-        else None
-    )
-
-    for msg in emails:
-        uid: bytes = getattr(msg, "uid", None)
-
-        for part in msg.iter_attachments():
-            filename = part.get_filename() or ""
-            filename_lc = filename.lower()
-
-            if not filename_lc.endswith(extensions):
-                continue
-
-            if prefixes and not any(
-                filename_lc.startswith(prefix)
-                for prefix in prefixes
-            ):
-                continue
-
-            content = part.get_payload(decode=True)
-            if content:
-                return uid, filename, content
-
-    return None
 
 
 def create_insubiz_vehicle(

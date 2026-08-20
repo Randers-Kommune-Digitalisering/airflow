@@ -12,8 +12,8 @@ from dag_modregning.modregning_data import (
     df_to_excel_bytes,
     extract_unique_cprs,
     extract_ydelser_from_serviceplatform_response,
-    find_latest_modregning_excel_attachment,
 )
+from utils.mail_attachments import find_latest_attachment
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +71,9 @@ def process_modregning() -> None:
         imap_server=imap_server,
     )
 
-    found = find_latest_modregning_excel_attachment(
+    found = find_latest_attachment(
         email_reader=email_reader,
+        filename_prefixes="Modregning",
     )
 
     if not found:
