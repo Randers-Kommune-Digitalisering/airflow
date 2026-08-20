@@ -80,6 +80,17 @@ def extract_transform() -> None:
                             employment_id=res[0]['employment_id'],
                             effective_date=date
                         )
+                        fra_dato = pd.Timestamp(date)
+                        sd_activation_date = pd.to_datetime(emp.filter(regex="_ActivationDate$").stack()).max()
+
+                        if fra_dato < sd_activation_date:
+                            logger.warning(
+                                f"{log_template}Fra dato ({date}) er tidligere end SD-aktiveringsdato "
+                                f"({sd_activation_date}). Bruger udeladt fra import"
+                            )
+                            continue
+
+                        emp["ActivationDate"] = fra_dato
                         emp["InstitutionIdentifier"] = res[0]['institution_id']
                         per = get_person_on_date_df(
                             inst_id=res[0]['institution_id'],
@@ -117,17 +128,6 @@ def extract_transform() -> None:
             "EmploymentStatus_DeactivationDate": "DeactivationDate",
         }
         normalized_emp_df = emp_df.rename(columns=emp_column_map)
-
-        activation_date_columns = [
-            column_name
-            for column_name in [
-                "DepartmentActivationDate",
-                "ProfessionActivationDate",
-                "EmploymentStatusActivationDate",
-            ]
-            if column_name in normalized_emp_df.columns
-        ]
-        normalized_emp_df["ActivationDate"] = normalized_emp_df[activation_date_columns].max(axis=1)
 
         required_emp_columns = [
             "InstitutionIdentifier",
