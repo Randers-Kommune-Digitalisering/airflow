@@ -27,6 +27,8 @@ def process_bom() -> None:
         username=username,
         password=password,
     )
+    if df_monthly is None or df_glidende is None:
+        raise AirflowFailException("BOM job failed to extract data")
 
     engine = PostgresHook(postgres_conn_id="byggesager").get_sqlalchemy_engine()
     with engine.begin() as connection:
