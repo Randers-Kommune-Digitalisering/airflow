@@ -37,10 +37,10 @@ def _send_failure_email(
     for person in failed_persons:
         lines.append(
             "- "
-            f"{person.get('tjenestenummer', '')} "
+            f"{person.get('employee_number', '')} "
             f"({person.get('institution', '')}) | "
-            f"Beløb={person.get('beloeb', '')} | "
-            f"Lønart={person.get('loenart', '')}"
+            f"Beløb={person.get('amount', '')} | "
+            f"Lønart={person.get('wage_type', '')}"
         )
 
     body = "\n".join(lines)

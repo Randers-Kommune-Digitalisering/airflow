@@ -281,7 +281,7 @@ def login_to_sd(
         return None
     except Exception:
         logger.exception("SD login failed")
-        return None
+        raise
 
 
 def open_merarbejde_context(page: Page) -> bool:
@@ -313,9 +313,6 @@ def open_merarbejde_context(page: Page) -> bool:
     except PlaywrightTimeoutError:
         logger.exception("Timeout while opening Merarbejde context")
         return False
-    except Exception:
-        logger.exception("Failed to open Merarbejde context")
-        return False
 
 
 def _set_wage_type_stable(
@@ -324,6 +321,16 @@ def _set_wage_type_stable(
     wage_type_value: str,
     retries: int = 3,
 ) -> None:
+    """
+    Set and validate the wage type in the Merarbejde form.
+
+    :param page: Active Personaleweb page used for short waits.
+    :param merarbejde_frame: Playwright frame containing the Merarbejde form.
+    :param wage_type_value: Wage type value to select.
+    :param retries: Maximum number of attempts to stabilize the wage type.
+    :raises PlaywrightTimeoutError: If the wage type does not stabilize.
+    :return: None when the wage type is set successfully.
+    """
     wage_type_input = merarbejde_frame.locator("#pageForm\\:loenart_input")
     wage_type_hidden = merarbejde_frame.locator("#pageForm\\:loenart_hinput")
 
@@ -397,7 +404,8 @@ def process_person_playwright(
     :param institution: Institution identifier.
     :param amount: Amount value.
     :param wage_type: Wage type value.
-    :return: True when flow succeeds, otherwise False.
+    :return: True when flow succeeds, or False after a timeout.
+    :raises Exception: If processing fails for a reason other than timeout.
     """
     try:
         logger.info("Entering SD Personaleweb...")

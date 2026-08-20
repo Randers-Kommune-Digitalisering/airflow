@@ -35,8 +35,9 @@ Koden består af et DAG-job, der udfører følgende trin:
   - Går til `Indberetning` → `Merarbejde`
 - Finder hver medarbejder ved hjælp af tjenestenummer og institution.
 - Indtaster beløb og lønart for hver medarbejder.
-- Marker medarbejderen som godkendt.
-- Fortsætter med næste medarbejder, hvis en medarbejder ikke kan behandles.
+- Markerer medarbejderen som godkendt.
+- Hvis behandlingen af en medarbejder får en timeout-fejl, registreres medarbejderen som fejlet, og jobbet fortsætter med den næste medarbejder.
+- Ved alle andre fejl afbrydes behandlingen, og kørslen markeres som fejlet.
 - Sender en email med resultatet:
   - Ved succes sendes antal behandlede medarbejdere og navnet på Excel-filen
   - Ved fejl sendes en liste over de medarbejdere, der ikke kunne behandles
@@ -101,7 +102,7 @@ Bruges til at hente login/password til SD Fleksjobrefusion Personaleweb
 	- Connection id, Username (Login) og Password
 
 **IMAP (Postkasse til Fleksjobrefusion):**
-- **`Fleksjobrefusion_imap`**
+- **`fleksjobrefusion_imap`**
 - **Bitwarden navn: `Postkasse - Fleksjobrefusion`**
 
 Bruges til at hente login/password til Fleksjobrefusion postkassen, som DAG'en læser input fra.
