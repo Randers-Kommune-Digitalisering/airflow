@@ -17,10 +17,11 @@ with DAG(
     max_active_runs=1,
     default_args=dag_args,
     description="Placeholder description for bom",
-    tags=["bom", "<tag1>", "<tag2>"],
+    tags=["bom", "rpa", "byggesager_db"],
 ) as dag:
 
     run_bom = PythonOperator(
         task_id="process_bom_task",
         python_callable=process_bom,
+        do_xcom_push=False
     )
