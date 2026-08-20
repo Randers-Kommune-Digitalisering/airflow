@@ -140,6 +140,34 @@ def test_process_aub_post_non_ascii_subject_is_encoded_for_smtp(monkeypatch) -> 
     assert FakeEmailReader.deleted == [(b"subject-1", "INBOX", True)]
 
 
+def test_process_aub_post_cp1252_body_decodes_danish_chars(monkeypatch) -> None:
+    _set_defaults()
+    message = EmailMessage()
+    message["Subject"] = "AUB"
+    message.set_payload("Hej med æøå".encode("cp1252"))
+    message.set_type("text/plain")
+    message.set_param("charset", "ascii")
+    message.add_attachment(
+        b"pdf-bytes",
+        maintype="application",
+        subtype="pdf",
+        filename="maindoc.pdf",
+    )
+    message.uid = b"cp1252-1"
+    FakeEmailReader.emails = [message]
+
+    monkeypatch.setattr(process_module.Variable, "get", lambda *args, **kwargs: _runtime_config())
+    monkeypatch.setattr(process_module.BaseHook, "get_connection", lambda _id: FakeConnection())
+    monkeypatch.setattr(process_module, "EmailReader", FakeEmailReader)
+    monkeypatch.setattr(process_module, "EmailSender", FakeEmailSender)
+    monkeypatch.setattr(process_module, "extract_education_from_pdf", lambda _bytes: "Pædagog")
+
+    process_module.process_aub_post()
+
+    assert len(FakeEmailSender.sent_messages) == 1
+    assert FakeEmailSender.sent_messages[0]["body"] == "Hej med æøå"
+
+
 def test_process_aub_post_omits_imap_host_and_port_when_not_set(monkeypatch) -> None:
     _set_defaults()
     FakeEmailReader.emails = [_make_email(uid=b"5")]

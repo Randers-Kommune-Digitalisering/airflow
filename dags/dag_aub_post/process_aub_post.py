@@ -46,6 +46,32 @@ def _build_safe_subject_header(raw_subject: object) -> str:
     return Header(subject_text, "utf-8").encode()
 
 
+def _decode_email_text(payload: bytes, declared_charset: str | None) -> str:
+    """
+    Decode message bytes using declared charset with fallbacks that handle
+    Danish characters commonly found in legacy encodings.
+    """
+    if not payload:
+        return ""
+
+    candidate_charsets = [declared_charset, "utf-8", "cp1252", "iso-8859-1"]
+    tried: set[str] = set()
+
+    for charset in candidate_charsets:
+        if not charset:
+            continue
+        normalized = charset.strip().lower()
+        if not normalized or normalized in tried:
+            continue
+        tried.add(normalized)
+        try:
+            return payload.decode(normalized)
+        except (LookupError, UnicodeDecodeError):
+            continue
+
+    return payload.decode("utf-8", errors="replace")
+
+
 def process_aub_post() -> None:
     """
     Main processing function for the AUB post DAG.
@@ -145,7 +171,7 @@ def process_aub_post() -> None:
                 target_filename=_TARGET_ATTACHMENT_NAME,
             )
         except Exception as exc:
-            logger.warning("Skipped email uid=%s due to missing/unreadable attachment '%s': %s", uid_text, _TARGET_ATTACHMENT_NAME, exc)
+            logger.warning("Skipped email uid=%s, subject=\"%s\" due to missing/unreadable attachment '%s': %s", uid_text, message.get("Subject"), _TARGET_ATTACHMENT_NAME, exc)
             warnings.append(f"uid={uid_text}: {exc}")
             # Do not raise exception here; some emails may not have the attachment.
             # Continue processing other emails.
@@ -155,7 +181,7 @@ def process_aub_post() -> None:
         try:
             education = extract_education_from_pdf(attachment_bytes)
         except Exception as exc:
-            logger.warning("Skipped email uid=%s due to missing education in '%s': %s", uid_text, _TARGET_ATTACHMENT_NAME, exc)
+            logger.warning("Skipped email uid=%s, subject=\"%s\" due to missing education in '%s': %s", uid_text, message.get("Subject"), _TARGET_ATTACHMENT_NAME, exc)
             warnings.append(f"uid={uid_text}: {exc}")
             # Do not raise exception here; some emails with maindoc.pdf attachments may be irrelevant.
             # Continue processing other emails.
@@ -163,24 +189,40 @@ def process_aub_post() -> None:
 
         # Resolve the contact email based on the extracted education and send the email
         try:
+            stage = "resolve_contact_email"
             contact_email = resolve_contact_email(
                 education=education,
                 education_contact_map=education_contact_map,
             )
+
+            stage = "build_subject"
             subject = _build_safe_subject_header(message.get("Subject"))
             body = ""
 
+            stage = "extract_body"
             if message.is_multipart():
                 body_part = message.get_body(preferencelist=("plain", "html"))
                 if body_part is not None:
-                    body = body_part.get_content()
+                    body_payload = body_part.get_payload(decode=True)
+                    if isinstance(body_payload, (bytes, bytearray, memoryview)):
+                        body = _decode_email_text(
+                            payload=bytes(body_payload),
+                            declared_charset=body_part.get_content_charset(),
+                        )
+                    else:
+                        body_content = body_part.get_content()
+                        body = str(body_content or "")
             else:
                 payload = message.get_payload(decode=True)
                 if isinstance(payload, bytes):
-                    body = payload.decode(message.get_content_charset() or "utf-8", errors="replace")
+                    body = _decode_email_text(
+                        payload=payload,
+                        declared_charset=message.get_content_charset(),
+                    )
                 else:
-                    body = payload or ""
+                    body = str(payload or "")
 
+            stage = "send_email"
             email_sender.send_email(
                 sender=sender_email.strip(),
                 recipients=[contact_email],
@@ -190,6 +232,7 @@ def process_aub_post() -> None:
             )
             logger.info("Successfully forwarded email uid=%s to contact %s", uid_text, contact_email)
 
+            stage = "delete_email"
             email_reader.delete_email_by_uid(
                 uid=uid,
                 mailbox=mailbox.strip(),
@@ -198,7 +241,7 @@ def process_aub_post() -> None:
             logger.info("Processed and deleted file %s mailbox email uid=%s", _TARGET_ATTACHMENT_NAME, uid_text)
 
         except Exception as exc:
-            logger.error("Failed to process email uid=%s: %s", uid_text, exc)
+            logger.exception("Failed to process email uid=%s at stage=%s: %s", uid_text, locals().get("stage", "unknown"), exc)
             failures.append(f"uid={uid_text}: {exc}")
 
     # Finalize processing: raise exception if there were failures
