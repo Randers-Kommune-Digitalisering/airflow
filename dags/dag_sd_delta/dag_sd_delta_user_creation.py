@@ -83,14 +83,14 @@ def extract_transform() -> None:
                         fra_dato = pd.Timestamp(date)
                         sd_activation_date = pd.to_datetime(emp.filter(regex="_ActivationDate$").stack()).max()
 
-                        if fra_dato < sd_activation_date:
+                        if fra_dato.date() < sd_activation_date.date():
                             logger.warning(
                                 f"{log_template}Fra dato ({date}) er tidligere end SD-aktiveringsdato "
                                 f"({sd_activation_date}). Bruger udeladt fra import"
                             )
                             continue
 
-                        emp["ActivationDate"] = fra_dato
+                        emp["ActivationDate"] = fra_dato.strftime("%Y-%m-%d")
                         emp["InstitutionIdentifier"] = res[0]['institution_id']
                         per = get_person_on_date_df(
                             inst_id=res[0]['institution_id'],
