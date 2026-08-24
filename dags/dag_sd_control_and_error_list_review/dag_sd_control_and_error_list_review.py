@@ -10,7 +10,7 @@ dag_args["retries"] = 1
 
 
 with DAG(
-    dag_id="dag_sd_control_and_error_list_review",
+    dag_id="sd_control_and_error_list_review",
     start_date=datetime(year=2026, month=8, day=24, tz=timezone("Europe/Copenhagen")),
     schedule="@weekly",
     catchup=False,
