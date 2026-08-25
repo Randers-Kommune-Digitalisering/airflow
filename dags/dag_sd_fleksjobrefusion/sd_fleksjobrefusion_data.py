@@ -1,5 +1,7 @@
 import logging
 import time
+from pathlib import Path
+
 import pandas as pd
 
 from playwright.sync_api import (
@@ -389,6 +391,50 @@ def _set_wage_type_stable(
     )
 
 
+def _set_amount_stable(
+    page: Page,
+    amount_input,
+    amount_value: str,
+) -> None:
+    expected_amount = str(amount_value)
+
+    logger.info(f"Setting amount to {expected_amount}")
+
+    amount_input.wait_for(
+        state="visible",
+        timeout=20000,
+    )
+
+    amount_input.click(timeout=10000)
+    amount_input.press("ControlOrMeta+A")
+    amount_input.press("Backspace")
+    amount_input.type(expected_amount, delay=100)
+
+    # Trigger normal browser field change/blur behaviour.
+    amount_input.press("Tab")
+
+    deadline = time.time() + 5
+    current_amount = ""
+
+    while time.time() < deadline:
+        try:
+            current_amount = amount_input.input_value().strip()
+        except PlaywrightError:
+            current_amount = ""
+
+        if current_amount == expected_amount:
+            logger.info(f"Amount stabilized correctly: {current_amount!r}")
+            return
+
+        page.wait_for_timeout(200)
+
+    raise PlaywrightTimeoutError(
+        "Amount input did not stabilize. "
+        f"expected={expected_amount!r}, "
+        f"actual={current_amount!r}"
+    )
+
+
 def process_person_playwright(
     page: Page,
     employee_number: str,
@@ -445,7 +491,11 @@ def process_person_playwright(
         logger.info("Waiting for the amount input field...")
         amount_input = merarbejde_frame.locator("#pageForm\\:beloeb")
         amount_input.wait_for(state="visible", timeout=20000)
-        amount_input.fill(str(amount))
+        _set_amount_stable(
+            page=page,
+            amount_input=amount_input,
+            amount_value=str(amount),
+        )
         logger.info(f"Amount input set to: {amount} kr.")
 
         logger.info("Waiting for the wage type input field...")
