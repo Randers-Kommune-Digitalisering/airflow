@@ -391,7 +391,7 @@ def _set_wage_type_stable(
     )
 
 
-def l (
+def _set_amount_stable(
     page: Page,
     amount_input: Locator,
     amount_value: str,
