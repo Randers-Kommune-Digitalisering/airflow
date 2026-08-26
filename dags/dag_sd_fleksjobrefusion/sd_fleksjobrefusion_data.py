@@ -6,6 +6,7 @@ import pandas as pd
 from playwright.sync_api import (
     BrowserContext,
     Error as PlaywrightError,
+    Locator,
     Page,
     TimeoutError as PlaywrightTimeoutError,
     sync_playwright,
@@ -390,42 +391,58 @@ def _set_wage_type_stable(
     )
 
 
-def _set_amount_stable(
+def l (
     page: Page,
-    amount_input,
+    amount_input: Locator,
     amount_value: str,
+    retries: int = 3,
 ) -> None:
+    """
+    Set and validate the amount in the Merarbejde form.
+
+    :param page: Active Personaleweb page used for short waits.
+    :param amount_input: Locator for the amount input field.
+    :param amount_value: Amount value to enter.
+    :param retries: Maximum number of attempts to stabilize the amount.
+    :raises PlaywrightTimeoutError: If the amount does not stabilize.
+    :return: None when the amount is set successfully.
+    """
     expected_amount = str(amount_value)
 
-    logger.info(f"Setting amount to {expected_amount}")
-
-    amount_input.wait_for(
-        state="visible",
-        timeout=20000,
-    )
-
-    amount_input.click(timeout=10000)
-    amount_input.press("ControlOrMeta+A")
-    amount_input.press("Backspace")
-    amount_input.type(expected_amount, delay=100)
-
-    # Trigger normal browser field change/blur behaviour.
-    amount_input.press("Tab")
-
-    deadline = time.time() + 5
     current_amount = ""
 
-    while time.time() < deadline:
-        try:
-            current_amount = amount_input.input_value().strip()
-        except PlaywrightError:
-            current_amount = ""
+    for attempt in range(1, retries + 1):
+        logger.info(f"Setting amount attempt {attempt}/{retries} to {expected_amount}")
 
-        if current_amount == expected_amount:
-            logger.info(f"Amount stabilized correctly: {current_amount!r}")
-            return
+        amount_input.wait_for(state="visible", timeout=20000)
+        amount_input.click(timeout=10000)
+        amount_input.press("ControlOrMeta+A")
+        amount_input.press("Backspace")
+        amount_input.type(expected_amount, delay=150)
 
-        page.wait_for_timeout(200)
+        # Trigger normal browser field change/blur behaviour.
+        amount_input.press("Tab")
+
+        deadline = time.time() + 8
+        while time.time() < deadline:
+            try:
+                current_amount = amount_input.input_value().strip()
+            except PlaywrightError:
+                current_amount = ""
+
+            if current_amount == expected_amount:
+                logger.info(
+                    "Amount stabilized correctly: %r",
+                    current_amount,
+                )
+                return
+
+            page.wait_for_timeout(200)
+
+        logger.warning(
+            f"Amount did not stabilize on attempt {attempt}/{retries}: expected={expected_amount!r} actual={current_amount!r}",
+        )
+        page.wait_for_timeout(500)
 
     raise PlaywrightTimeoutError(
         "Amount input did not stabilize. "
@@ -513,7 +530,7 @@ def process_person_playwright(
         logger.info("Approved input clicked.")
         page.wait_for_timeout(2500)
 
-        # Commented out while testing so it does not actually submit the form during development.
+        # Comment save button click to avoid accidental submission during testing
         logger.info("Waiting for the save button...")
         gem_button = merarbejde_frame.locator("#pageForm\\:j_idt108")
         gem_button.wait_for(state="visible", timeout=20000)
@@ -521,7 +538,30 @@ def process_person_playwright(
         logger.info("Save button clicked.")
         page.wait_for_timeout(2500)
 
-        logger.info(f"✅ {employee_number} ({institution}) processed with amount {amount} and wage type {wage_type}.")
+        success_message = merarbejde_frame.locator("#pageForm\\:j_idt115")
+        error_message = merarbejde_frame.locator(
+            "#pageForm\\:messages > div > ul > li"
+        )
+
+        try:
+            success_message.first.wait_for(state="visible", timeout=15000)
+            saved = True
+            logger.info(f"✅ {employee_number} ({institution}) processed with amount {amount} and wage type {wage_type}.")
+        except PlaywrightTimeoutError:
+            saved = False
+
+        if not saved:
+            try:
+                error_message.first.wait_for(state="visible", timeout=5000)
+                error_text = error_message.first.inner_text().strip()
+            except PlaywrightTimeoutError:
+                error_text = "No success or error message found after save"
+
+            logger.error(
+                f"❌ {employee_number} ({institution}) failed with amount {amount} and wage type {wage_type}: {error_text}"
+            )
+            return False
+
         return True
     except PlaywrightTimeoutError:
         logger.exception(f"Timeout while processing {employee_number} {institution}")
