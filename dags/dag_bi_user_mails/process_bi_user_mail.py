@@ -66,7 +66,10 @@ def process_bi_user_mail() -> None:
     for record in records:
 
         user_existing = get_user_by_email(db_session, record["email_adresse"])
-        user_notified = False
+
+        # Skip sending email if the user has already been notified
+        if user_existing and user_existing.email_sent:
+            continue
 
         if user_existing is None:
             user_data = {
@@ -76,18 +79,12 @@ def process_bi_user_mail() -> None:
                 "email": record.get("email_adresse"),
                 "user_group": record.get("bruger_gruppe_navn"),
                 "email_sent": False,
-                "email_sent_date": None
+                "email_sent_date": None,
             }
             add_user(db_session, user_data)
 
-        if user_notified or (user_existing and user_existing.email_sent):
-            continue  # Skip sending email if the user has already been notified
-
-        else:
-            send_mail(email_sender, record)
-            mark_email_sent(db_session, record["email_adresse"])
-
-            user_notified = True
+        send_mail(email_sender, record)
+        mark_email_sent(db_session, record["email_adresse"])
 
     db_session.close()
 
