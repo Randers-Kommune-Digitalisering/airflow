@@ -63,29 +63,29 @@ def process_bi_user_mail() -> None:
     smtp_server = bi_user_mail_runtime_config["smtp_server"]
     email_sender = EmailSender(smtp_server=smtp_server)
 
-    for record in records:
+    with db_manager.get_session() as db_session:
 
-        user_existing = get_user_by_email(db_session, record["email_adresse"])
+        for record in records:
 
-        # Skip sending email if the user has already been notified
-        if user_existing and user_existing.email_sent:
-            continue
+            user_existing = get_user_by_email(db_session, record["email_adresse"])
 
-        if user_existing is None:
-            user_data = {
-                "creation_date": record.get("oprettelsesdato"),
-                "name": record.get("bruger_navn"),
-                "dq": record.get("bruger_id"),
-                "email": record.get("email_adresse"),
-                "user_group": record.get("bruger_gruppe_navn"),
-                "email_sent": False,
-                "email_sent_date": None,
-            }
-            add_user(db_session, user_data)
+            # Skip sending email if the user has already been notified
+            if user_existing and user_existing.email_sent:
+                continue
 
-        send_mail(email_sender, record)
-        mark_email_sent(db_session, record["email_adresse"])
+            if user_existing is None:
+                user_data = {
+                    "creation_date": record.get("oprettelsesdato"),
+                    "name": record.get("bruger_navn"),
+                    "dq": record.get("bruger_id"),
+                    "email": record.get("email_adresse"),
+                    "user_group": record.get("bruger_gruppe_navn"),
+                    "email_sent": False,
+                    "email_sent_date": None,
+                }
+                add_user(db_session, user_data)
 
-    db_session.close()
+            send_mail(email_sender, record)
+            mark_email_sent(db_session, record["email_adresse"])
 
     logger.info("Finished processing bi_user_mail data.")
