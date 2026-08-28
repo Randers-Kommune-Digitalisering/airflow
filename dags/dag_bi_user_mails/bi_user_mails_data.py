@@ -4,13 +4,10 @@ import pandas as pd
 
 from airflow.models import Variable
 
-from dag_bi_user_mails.model import Base, BiMailUser
+from dag_bi_user_mails.model import BiMailUser
 from rkdigi.email_handling import EmailSender
 
 logger = logging.getLogger(__name__)
-
-bi_user_mail_runtime_config = Variable.get("bi_user_mail_runtime_config", deserialize_json=True)
-
 
 def _get_all_users(conn: Session) -> list[BiMailUser]:
     """
@@ -21,7 +18,7 @@ def _get_all_users(conn: Session) -> list[BiMailUser]:
     Returns:
         List[BiMailUser]: A list of all user records.
     """
-    return conn.query(BiMailUser).all() 
+    return conn.query(BiMailUser).all()
 
 def get_user_by_email(conn: Session, email: str):
     """
@@ -65,17 +62,18 @@ def mark_email_sent(conn: Session, email: str) -> None:
         user.email_sent_date = pd.Timestamp.now()
         conn.commit()
 
-def _build_welcome_email(user_data: dict) -> tuple[str, str]:
+def _build_welcome_email(runtime_config: dict, user_data: dict) -> tuple[str, str]:
     """
     Build the subject and body of the welcome email for a new user.
 
     Args:
         user_data (dict): A dictionary containing user data.
+        runtime_config (dict): A dictionary containing runtime configuration.
     Returns:
         tuple[str, str]: A tuple containing the email subject and body.
     """
 
-    bi_contacts = bi_user_mail_runtime_config.get("bi_contact_list", "").strip()
+    bi_contacts = runtime_config.get("bi_contact_list", "").strip()
     subject = "Velkommen til BI"
     body = f"""
 Hej {user_data['bruger_navn']},
@@ -94,11 +92,12 @@ Venlig hilsen IT
 
     return subject, body
 
-def _build_notification_email(user_data: dict) -> tuple[str, str]:
+def _build_notification_email(runtime_config: dict, user_data: dict) -> tuple[str, str]:
     """
     Build the subject and body of the notification email for a new user.
 
     Args:
+        runtime_config (dict): A dictionary containing runtime configuration.
         user_data (dict): A dictionary containing user data.
     Returns:
         tuple[str, str]: A tuple containing the email subject and body.
@@ -125,9 +124,11 @@ def send_mail(email_sender: EmailSender, user_data: dict) -> None:
         user_data (dict): A dictionary containing user data.
     """
 
-    user_email_subject, user_email_body = _build_welcome_email(user_data)
+    bi_user_mail_runtime_config = Variable.get("bi_user_mail_runtime_config", deserialize_json=True)
 
-    email_sender.send_email (
+    user_email_subject, user_email_body = _build_welcome_email(bi_user_mail_runtime_config, user_data)
+
+    email_sender.send_email(
         sender=bi_user_mail_runtime_config["sender_email"],
         recipients=["mikkel.bach.skaerris@randers.dk"],
         subject=user_email_subject,
@@ -139,8 +140,8 @@ def send_mail(email_sender: EmailSender, user_data: dict) -> None:
 
     if user_data.get("bruger_gruppe_navn") != bi_user_mail_runtime_config.get("default_user_group", "Web statistik bruger").strip():
 
-        notification_subject, notification_body = _build_notification_email(user_data)
-        
+        notification_subject, notification_body = _build_notification_email(bi_user_mail_runtime_config, user_data)
+
         email_sender.send_email(
             sender=bi_user_mail_runtime_config["sender_email"],
             recipients=["mikkel.bach.skaerris@randers.dk"],
