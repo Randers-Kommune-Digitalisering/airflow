@@ -136,7 +136,7 @@ def send_mail(email_sender: EmailSender, user_data: dict) -> None:
         attachments=[],
     )
 
-    logger.info(f"Sent welcome email to: {user_data['email_adresse']}")
+    logger.info("Sent welcome email")
 
     if user_data.get("bruger_gruppe_navn") != bi_user_mail_runtime_config.get("default_user_group", "Web statistik bruger").strip():
 
