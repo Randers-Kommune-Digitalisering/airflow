@@ -3,7 +3,7 @@
 
 ## Formål
 
-Formålet med jobbet er at hente Nøgletal for byggesager fra Byg og Miljø (BOM) og gemme resultatet i en Postgres DB. Data hentes for både den seneste afsluttede måned og et glidende gennemsnit for de seneste 12 måneder.
+Formålet med jobbet er at hente Nøgletal for byggesager fra Byg og Miljø (BOM) og gemme resultatet i en Postgres DB. Ved hver kørsel hentes hele historikken fra januar 2023 og frem til den seneste afsluttede måned.
 
 ## Beskrivelse
 
@@ -12,9 +12,11 @@ Koden består af et DAG-job, der udfører følgende trin:
 1. Logger ind på BOM med brugernavn og adgangskode fra Airflow Connection `bom_login`.
 2. Navigerer til **Statistik og Servicemål**.
 3. Vælger sagsområdet `Byg` og de relevante servicemål.
-4. Henter Nøgletal for perioden fra første dag i forrige måned til første dag i den aktuelle måned.
-5. Henter `Glidende gennemsnit` Nøgletal for perioden fra første dag 12 måneder tilbage til første dag i den aktuelle måned.
-6. Udtrækker følgende felter fra Nøgletal-tabellen:
+4. Beregner en liste af månedsgrænser (første dag i måneden) fra `HISTORY_START` (1. januar 2023) og frem til måneden for DAG-kørslens `data_interval_end` (Europe/Copenhagen).
+5. For hver månedsgrænse hentes Nøgletal to gange:
+	 - **Månedstal:** perioden fra første dag i den foregående måned til månedsgrænsen.
+	 - **Glidende gennemsnit:** perioden fra første dag 12 måneder tilbage til månedsgrænsen.
+6. Udtrækker følgende felter fra Nøgletal-tabellen (maks. 6 rækker pr. udtræk):
 	 - `Fra Dato`
 	 - `Til Dato`
 	 - `Kategori`
@@ -22,6 +24,7 @@ Koden består af et DAG-job, der udfører følgende trin:
 	 - `Servicemål i procent`
 7. Gemmer de månedlige data i tabellen `bom_data_monthly`.
 8. Gemmer data for det glidende gennemsnit i tabellen `bom_data_glidende`.
+
 
 **Dataflow:**
 - BOM -> Playwright-udtræk af Nøgletal -> Postgres DB.
@@ -36,10 +39,10 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 **Conn Type**: HTTP
 
-Bruges til at hente brugernavn og adgangskode til BOM/ADFS-login.
+Bruges til at hente URL (Host), brugernavn og adgangskode til BOM/ADFS-login.
 
 *Required felter*:
-- Connection id, Login og Password
+- Connection id, Host, Login og Password
 
 **Postgres database:**
 - **`byggesager`**
@@ -55,4 +58,4 @@ Bruges til at gemme de udtrukne Nøgletal i tabellerne `bom_data_monthly` og `bo
 
 Jobbet er sat op til at køre automatisk på følgende tidspunkt:
 
-- **Schedule:** `0 0 1 * *` (kl. 00:00 den første dag i hver måned)
+- **Schedule:** `@monthly` (kl. 00:00 den første dag i hver måned)
