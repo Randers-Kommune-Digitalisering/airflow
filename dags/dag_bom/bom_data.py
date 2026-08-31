@@ -14,41 +14,52 @@ logger = logging.getLogger(__name__)
 
 NoegletalPayload = dict[str, Any]
 
+# Oldest month that should be included in the full rebuild of the BOM tables.
+HISTORY_START = datetime.date(2023, 1, 1)
 
-def _date_range_prev_month_to_first_of_current() -> tuple[str, str]:
+
+def _shift_months(month_start: datetime.date, months: int) -> datetime.date:
     """
-    Build a date range from the first day of the previous month up to the first day of the current month.
+    Shift a first-of-month date by a number of months.
 
+    :param month_start: First day of a month.
+    :param months: Number of months to shift (may be negative).
+    :return: First day of the shifted month.
+    """
+    total_months = month_start.year * 12 + (month_start.month - 1) + months
+    return datetime.date(total_months // 12, total_months % 12 + 1, 1)
+
+
+def _month_boundaries(
+    run_date: datetime.date,
+    history_start: datetime.date = HISTORY_START,
+) -> list[datetime.date]:
+    """
+    Build the list of 'Til' boundaries (first day of month) for every completed month.
+
+    :param run_date: Date of the Airflow DAG run (Europe/Copenhagen).
+    :param history_start: First month that should be included.
+    :return: List of first-of-month dates from history_start+1 month up to run_date's month.
+    """
+    boundary = _shift_months(month_start=history_start.replace(day=1), months=1)
+    last_boundary = run_date.replace(day=1)
+
+    boundaries: list[datetime.date] = []
+    while boundary <= last_boundary:
+        boundaries.append(boundary)
+        boundary = _shift_months(month_start=boundary, months=1)
+    return boundaries
+
+
+def _format_range(fra: datetime.date, til: datetime.date) -> tuple[str, str]:
+    """
+    Format a date range the way the BOM datepicker expects it.
+
+    :param fra: Start date.
+    :param til: End date.
     :return: Tuple (fra, til) as strings in 'DD-MM-YYYY' format.
     """
-    today = datetime.date.today()
-    first_day_current_month = today.replace(day=1)
-    last_day_previous_month = first_day_current_month - datetime.timedelta(days=1)
-    first_day_previous_month = last_day_previous_month.replace(day=1)
-
-    return (
-        first_day_previous_month.strftime("%d-%m-%Y"),
-        first_day_current_month.strftime("%d-%m-%Y"),
-    )
-
-
-def _date_range_last_12_months_to_first_of_current() -> tuple[str, str]:
-    """
-    Build a date range from the first day 12 months back up to the first day of the current month.
-
-    :return: Tuple (fra, til) as strings in 'DD-MM-YYYY' format.
-    """
-    today = datetime.date.today()
-    til_date = today.replace(day=1)
-
-    year = til_date.year
-    month = til_date.month - 12
-    while month <= 0:
-        month += 12
-        year -= 1
-
-    fra_date = datetime.date(year, month, 1)
-    return fra_date.strftime("%d-%m-%Y"), til_date.strftime("%d-%m-%Y")
+    return fra.strftime("%d-%m-%Y"), til.strftime("%d-%m-%Y")
 
 
 def _close_open_multiselect_dropdowns(page: Page, timeout_ms: int = 10_000) -> None:
@@ -287,37 +298,54 @@ def open_servicemaal_context(page: Page) -> bool:
         return False
 
 
-def fetch_bom_data(page: Page) -> dict[str, NoegletalPayload] | None:
+def fetch_bom_data(
+    page: Page,
+    run_date: datetime.date,
+) -> tuple[list[NoegletalPayload], list[NoegletalPayload]] | None:
     """
-    Extract monthly and glidende gennemsnit 'Nøgletal' from BOM.
+    Extract monthly and glidende gennemsnit 'Nøgletal' for every completed month since HISTORY_START.
 
     :param page: Active Playwright page with Servicemål filters applied.
-    :return: Dict with keys {'monthly', 'glidende_gennemsnit'} on success, otherwise None.
+    :param run_date: Date of the Airflow DAG run (Europe/Copenhagen).
+    :return: Tuple (monthly_payloads, glidende_payloads) on success, otherwise None.
     """
+    boundaries = _month_boundaries(run_date=run_date)
+    if not boundaries:
+        logger.warning(f"No completed months to extract for run date {run_date}")
+        return None
+
+    monthly_payloads: list[NoegletalPayload] = []
+    glidende_payloads: list[NoegletalPayload] = []
+
     try:
-        from_monthly, to_monthly = _date_range_prev_month_to_first_of_current()
+        for boundary in boundaries:
+            from_monthly, to_monthly = _format_range(
+                fra=_shift_months(month_start=boundary, months=-1),
+                til=boundary,
+            )
+            logger.info(f"Setting date range (monthly) Fra={from_monthly}, Til={to_monthly}")
+            _set_date_range(page=page, fra=from_monthly, til=to_monthly)
+
+            logger.info("Clicking Nøgletal (monthly)...")
+            _click_noegletal_and_wait_refresh(page=page)
+            monthly_payloads.append(_extract_noegletal_payload(page=page))
+
+            fra_g, til_g = _format_range(
+                fra=_shift_months(month_start=boundary, months=-12),
+                til=boundary,
+            )
+            logger.info(f"Setting date range (glidende_gennemsnit) Fra={fra_g}, Til={til_g}")
+            _set_date_range(page=page, fra=fra_g, til=til_g)
+
+            logger.info("Clicking Nøgletal (glidende_gennemsnit)...")
+            _click_noegletal_and_wait_refresh(page=page)
+            glidende_payloads.append(_extract_noegletal_payload(page=page))
+
         logger.info(
-            f"Setting date range (monthly) Fra={from_monthly}, Til={to_monthly}"
+            f"BOM data extracted successfully for {len(boundaries)} month(s) "
+            f"(monthly + glidende_gennemsnit)."
         )
-        _set_date_range(page=page, fra=from_monthly, til=to_monthly)
-
-        logger.info("Clicking Nøgletal (monthly)...")
-        _click_noegletal_and_wait_refresh(page=page)
-        monthly_payload = _extract_noegletal_payload(page=page)
-
-        fra_g, til_g = _date_range_last_12_months_to_first_of_current()
-        logger.info(f"Setting date range (glidende_gennemsnit) Fra={fra_g}, Til={til_g}")
-        _set_date_range(page=page, fra=fra_g, til=til_g)
-
-        logger.info("Clicking Nøgletal (glidende_gennemsnit)...")
-        _click_noegletal_and_wait_refresh(page=page)
-        glidende_payload = _extract_noegletal_payload(page=page)
-
-        logger.info("BOM data extracted successfully (monthly + glidende_gennemsnit).")
-        return {
-            "monthly": monthly_payload,
-            "glidende_gennemsnit": glidende_payload,
-        }
+        return monthly_payloads, glidende_payloads
     except PlaywrightTimeoutError:
         logger.exception("Timeout while extracting BOM data")
         return None
@@ -345,26 +373,37 @@ def _payload_to_df(payload: NoegletalPayload) -> pd.DataFrame:
 
 
 def process_bom_payloads(
-    payloads: dict[str, NoegletalPayload] | None,
+    payloads: tuple[list[NoegletalPayload], list[NoegletalPayload]] | None,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """
     Transform extracted BOM payloads into pandas DataFrames.
 
-    :param payloads: Payload dict returned by fetch_bom_data().
+    :param payloads: Tuple (monthly_payloads, glidende_payloads) returned by fetch_bom_data().
     :return: Tuple (df_monthly, df_glidende), or (None, None) on empty input.
     """
     if not payloads:
         return None, None
 
-    df_monthly = _payload_to_df(payload=payloads.get("monthly") or {})
-    df_glidende = _payload_to_df(payload=payloads.get("glidende_gennemsnit") or {})
+    monthly_payloads, glidende_payloads = payloads
+    if not monthly_payloads or not glidende_payloads:
+        return None, None
+
+    df_monthly = pd.concat(
+        [_payload_to_df(payload=payload) for payload in monthly_payloads],
+        ignore_index=True,
+    )
+    df_glidende = pd.concat(
+        [_payload_to_df(payload=payload) for payload in glidende_payloads],
+        ignore_index=True,
+    )
     return df_monthly, df_glidende
 
 
 def run_bom_job(
     username: str,
     password: str,
-    bom_url: str = "https://sag.bygogmiljoe.dk/",
+    bom_url: str,
+    run_date: datetime.date,
     headless: bool = True,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """
@@ -373,10 +412,11 @@ def run_bom_job(
     :param username: ADFS username.
     :param password: ADFS password.
     :param bom_url: BOM login URL.
+    :param run_date: Date of the Airflow DAG run (Europe/Copenhagen).
     :param headless: Whether to run browser headless.
     :return: Tuple (df_monthly, df_glidende), or (None, None) when the flow fails.
     """
-    logger.info("Starting BOM browser flow")
+    logger.info(f"Starting BOM browser flow for run date {run_date}")
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(
@@ -400,7 +440,7 @@ def run_bom_job(
             if not open_servicemaal_context(page=page):
                 return None, None
 
-            payloads = fetch_bom_data(page=page)
+            payloads = fetch_bom_data(page=page, run_date=run_date)
             df_monthly, df_glidende = process_bom_payloads(payloads=payloads)
 
             logger.info("BOM browser flow completed")

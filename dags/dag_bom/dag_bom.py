@@ -10,13 +10,13 @@ dag_args["retries"] = 1
 
 
 with DAG(
-    dag_id="dag_bom",
+    dag_id="byggesagsstatistik_bom_data_to_db",
     start_date=datetime(year=2026, month=8, day=18, tz=timezone("Europe/Copenhagen")),
-    schedule="0 0 1 * *",
+    schedule="@monthly",
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
-    description="Placeholder description for bom",
+    description="Retrieve BOM data and store it in the Byggesager database",
     tags=["bom", "rpa", "byggesager_db"],
 ) as dag:
 
