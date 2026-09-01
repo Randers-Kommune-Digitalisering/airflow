@@ -73,7 +73,11 @@ def _build_welcome_email(runtime_config: dict, user_data: dict) -> tuple[str, st
         tuple[str, str]: A tuple containing the email subject and body.
     """
 
-    bi_contacts = runtime_config.get("bi_contact_list", "").strip()
+    bi_contacts = "\n".join(
+        contact.strip()
+        for contact in runtime_config.get("bi_contact_list", [])
+        if contact.strip()
+    )
     subject = "Velkommen til BI"
     body = f"""
 Hej {user_data['bruger_navn']},
