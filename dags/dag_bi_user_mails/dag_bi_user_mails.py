@@ -26,4 +26,5 @@ with DAG(
     run_bi_user_mail = PythonOperator(
         task_id="process_bi_user_mail",
         python_callable=process_bi_user_mail,
+        do_xcom_push=False
     )
