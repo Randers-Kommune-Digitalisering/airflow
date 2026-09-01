@@ -104,14 +104,12 @@ def _build_notification_email(runtime_config: dict, user_data: dict) -> tuple[st
     """
 
     subject = f"Ny BI-udviklerlicens til {user_data['bruger_navn']}"
-    body = f"""
-OBS:
-
-Der er netop oprettet en ny BI-udviklerlicens til {user_data['bruger_navn']} <{user_data['email_adresse']}>.
-
-Venlig hilsen IT
-    """
-    body = body.strip()
+    body = (
+        "<strong>OBS:</strong><br><br>"
+        f"Der er netop oprettet en ny BI-udviklerlicens til "
+        f"{user_data['bruger_navn']} &lt;{user_data['email_adresse']}&gt;.<br><br>"
+        "Venlig hilsen IT"
+    )
 
     return subject, body
 
