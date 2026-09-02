@@ -11,28 +11,41 @@ from dag_sd_control_and_error_list_review.sd_control_and_error_list_review_data 
 logger = logging.getLogger(__name__)
 
 
-def process_sd_control_and_error_list_review() -> None:
-    """
-    Review SD control and error messages for the configured departments.
-    """
-    logger.info("Starting to process sd_control_and_error_list_review data...")
-    sd_personaleweb = BaseHook.get_connection("sd_fleksjobrefusion_personaleweb")
-    host = sd_personaleweb.host
-    username = sd_personaleweb.login
-    password = sd_personaleweb.password
-    if not username or not password or not host:
+def _process_sd_control_and_error_list_review(
+    department_type: str,
+) -> None:
+    connection = BaseHook.get_connection("sd_fleksjobrefusion_personaleweb")
+
+    if not connection.host or not connection.login or not connection.password:
         raise AirflowFailException(
             "Connection 'sd_fleksjobrefusion_personaleweb' is missing host, username, or password"
         )
 
-    sd_control_error_list_config = Variable.get("sd_control_error_list_config", deserialize_json=True)
-    department_codes = sd_control_error_list_config["department_codes"]
-    allowed_codes = sd_control_error_list_config["allowed_codes"]
+    config = Variable.get(
+        "sd_control_error_list_config",
+        deserialize_json=True,
+    )
 
-    run_sd_control_and_error_list_review_job(
-        username=username,
-        password=password,
+    department_codes = config[f"{department_type}_department_codes"]
+    allowed_codes = config[f"{department_type}_allowed_codes"]
+
+    success, _ = run_sd_control_and_error_list_review_job(
+        username=connection.login,
+        password=connection.password,
+        sd_url=connection.host,
         department_codes=department_codes,
         allowed_codes=allowed_codes,
-        sd_url=host,
     )
+
+    if not success:
+        raise AirflowFailException(
+            f"SD control/error review failed for {department_type}"
+        )
+
+
+def process_sd_control_and_error_list_review_for_ejendomservice() -> None:
+    _process_sd_control_and_error_list_review("ejendomservice")
+
+
+def process_sd_control_and_error_list_review_for_personale() -> None:
+    _process_sd_control_and_error_list_review("personale")
