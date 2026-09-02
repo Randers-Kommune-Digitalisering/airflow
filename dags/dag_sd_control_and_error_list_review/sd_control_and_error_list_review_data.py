@@ -156,7 +156,11 @@ def read_message_codes(frame: Frame) -> list[str]:
         return []
 
     codes = [code for code in codes if code]
-    logger.info(f"Read {len(codes)} code(s) from {rows.count()} row(s)")
+    try:
+        row_count = rows.count()
+    except PlaywrightError:
+        row_count = 0
+    logger.info(f"Read {len(codes)} code(s) from {row_count} row(s)")
     logger.info(f"Codes in table: {dict(Counter(codes))}")
     return codes
 
