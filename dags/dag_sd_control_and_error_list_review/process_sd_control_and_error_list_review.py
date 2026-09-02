@@ -1,9 +1,13 @@
 import logging
 
+from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
-from dag_sd_control_and_error_list_review.sd_control_and_error_list_review_data import run_sd_control_and_error_list_review_job
-from airflow.exceptions import AirflowFailException
+
+from dag_sd_control_and_error_list_review.sd_control_and_error_list_review_data import (
+    run_sd_control_and_error_list_review_job,
+)
+
 logger = logging.getLogger(__name__)
 
 
