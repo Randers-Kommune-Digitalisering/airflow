@@ -23,4 +23,5 @@ with DAG(
     run_sd_control_and_error_list_review = PythonOperator(
         task_id="process_sd_control_and_error_list_review_task",
         python_callable=process_sd_control_and_error_list_review,
+        do_xcom_push=False,
     )
