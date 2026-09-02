@@ -25,8 +25,6 @@ def process_sd_control_and_error_list_review() -> None:
     department_codes = sd_control_error_list_config["department_codes"]
     allowed_codes = sd_control_error_list_config["allowed_codes"]
 
-    logger.info(f"Department codes: {department_codes}, Allowed codes: {allowed_codes}")
-
     run_sd_control_and_error_list_review_job(
         username=username,
         password=password,
