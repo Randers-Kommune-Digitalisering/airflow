@@ -227,7 +227,7 @@ def run_sd_control_and_error_list_review_job(
     :param username: ADFS username.
     :param password: ADFS password.
     :param department_codes: SD department codes (afdelingskoder) to review.
-    :param allowed_codes: Codes that should be logged when found.
+    :param allowed_codes: Codes that should be marked as "Set" when found.
     :param sd_url: SD landing page URL.
     :param headless: Whether to run browser headless.
     :return: Tuple of success flag and matched codes per department.
