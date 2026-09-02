@@ -14,6 +14,7 @@ from dag_bi_user_mails.bi_user_mails_data import (
     mark_email_sent,
     send_mail
 )
+from tests.conftest import AirflowFailException
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,9 @@ def process_bi_user_mail() -> None:
     logger.info("Starting to process bi_user_mail data...")
 
     try:
-        bi_user_mail_runtime_config = Variable.get("bi_user_mail_runtime_config", deserialize_json=True)
+        bi_user_mail_runtime_config = Variable.get("bi_user_mail_runtime_config", default_var=None, deserialize_json=True)
+        if not bi_user_mail_runtime_config:
+            raise AirflowFailException("Missing Airflow Variable: bi_user_mail_runtime_config")
     except Exception as e:
         logger.error("Error retrieving bi_user_mail_runtime_config: %s", e)
         raise
@@ -41,7 +44,7 @@ def process_bi_user_mail() -> None:
                 file_buffer = BytesIO(sftp_file.read())
 
                 # Map columns and parse into dict
-                data_frame = pd.read_excel(file_buffer, engine="openpyxl", header=2, usecols="B:H")
+                data_frame = pd.read_excel(file_buffer, engine="openpyxl", header=2, usecols="B:F")
                 data_frame = data_frame.dropna(how="all")
                 data_frame.columns = [col.strip().replace(' ', '_').replace('-', '_').lower() for col in data_frame.columns]  # Convert columns to snake_case
                 records = data_frame.to_dict(orient="records")
@@ -67,7 +70,7 @@ def process_bi_user_mail() -> None:
 
         for record in records:
 
-            user_existing = get_user_by_email(db_session, record["email_adresse"])
+            user_existing = get_user_by_email(conn=db_session, email=record["email_adresse"])
 
             # Skip sending email if the user has already been notified
             if user_existing and user_existing.email_sent:
@@ -83,9 +86,9 @@ def process_bi_user_mail() -> None:
                     "email_sent": False,
                     "email_sent_date": None,
                 }
-                add_user(db_session, user_data)
+                add_user(conn=db_session, user_data=user_data)
 
-            send_mail(email_sender, record)
-            mark_email_sent(db_session, record["email_adresse"])
+            send_mail(email_sender=email_sender, record=record)
+            mark_email_sent(conn=db_session, email=record["email_adresse"])
 
     logger.info("Finished processing bi_user_mail data.")

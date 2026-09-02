@@ -9,17 +9,6 @@ from rkdigi.email_handling import EmailSender
 
 logger = logging.getLogger(__name__)
 
-def _get_all_users(conn: Session) -> list[BiMailUser]:
-    """
-    Retrieve all BiMailUser records from the database.
-
-    Args:
-        conn: SQLAlchemy connection object.
-    Returns:
-        List[BiMailUser]: A list of all user records.
-    """
-    return conn.query(BiMailUser).all()
-
 def get_user_by_email(conn: Session, email: str):
     """
     Retrieve a BiMailUser record by email from the database.
@@ -56,7 +45,7 @@ def mark_email_sent(conn: Session, email: str) -> None:
         conn: SQLAlchemy connection object.
         email (str): The email address of the user to update.
     """
-    user = get_user_by_email(conn, email)
+    user = get_user_by_email(conn=conn, email=email)
     if user:
         user.email_sent = True
         user.email_sent_date = pd.Timestamp.now()
