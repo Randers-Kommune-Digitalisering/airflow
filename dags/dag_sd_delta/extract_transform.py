@@ -99,8 +99,13 @@ def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) 
 
     matched_id = _node_text(matched_profession_node.find("./{*}JobPositionIdentifier"))
     matched_name = _node_text(matched_profession_node.find("./{*}JobPositionName"))
-    level_2_id = _node_text(level_2_profession_node.find("./{*}JobPositionIdentifier")) if level_2_profession_node is not None else None
-    level_2_name = _node_text(level_2_profession_node.find("./{*}JobPositionName")) if level_2_profession_node is not None else None
+    
+    if level_2_profession_node is not None:
+        level_2_id = _node_text(level_2_profession_node.find("./{*}JobPositionIdentifier"))
+        level_2_name = _node_text(level_2_profession_node.find("./{*}JobPositionName"))
+    else:
+        level_2_name = "Basispersonale"
+        level_2_id = "0005"
 
     return matched_name, matched_id, level_2_name, level_2_id
 
