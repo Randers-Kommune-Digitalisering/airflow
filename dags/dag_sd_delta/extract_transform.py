@@ -96,7 +96,6 @@ def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) 
             level_2_profession_node = level_3_profession_node
         else:
             logger.error(f"No level 2 or level 3 profession found for position_id={position_id}")
-            level_2_profession_node = "Basispersonale (RG_0005)"
 
     matched_id = _node_text(matched_profession_node.find("./{*}JobPositionIdentifier"))
     matched_name = _node_text(matched_profession_node.find("./{*}JobPositionName"))
