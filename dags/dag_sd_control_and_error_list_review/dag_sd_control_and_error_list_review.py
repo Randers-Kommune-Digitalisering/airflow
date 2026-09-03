@@ -17,7 +17,7 @@ with DAG(
     max_active_runs=1,
     default_args=dag_args,
     description="Placeholder description for sd_control_and_error_list_review",
-    tags=["sd_control_and_error_list_review", "<tag1>", "<tag2>"],
+    tags=["sd_control_and_error_list_review", "sd", "rpa"],
 ) as dag:
 
     run_sd_control_and_error_list_review_for_ejendomservice = PythonOperator(
