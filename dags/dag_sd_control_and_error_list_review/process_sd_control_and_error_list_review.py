@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 def _process_sd_control_and_error_list_review(
     department_type: str,
 ) -> None:
-    connection = BaseHook.get_connection("sd_fleksjobrefusion_personaleweb")
+    connection = BaseHook.get_connection("sd_personaleweb")
 
     if not connection.host or not connection.login or not connection.password:
         raise AirflowFailException(
-            "Connection 'sd_fleksjobrefusion_personaleweb' is missing host, username, or password"
+            "Connection 'sd_personaleweb' is missing host, username, or password"
         )
 
     config = Variable.get(

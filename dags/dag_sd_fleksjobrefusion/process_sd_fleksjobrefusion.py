@@ -98,12 +98,12 @@ def process_sd_fleksjobrefusion() -> None:
     """
     logger.info("Starting SD Fleksjobrefusion processing")
 
-    sd_fleksjobrefusion_personaleweb = BaseHook.get_connection("sd_fleksjobrefusion_personaleweb")
-    username = sd_fleksjobrefusion_personaleweb.login
-    password = sd_fleksjobrefusion_personaleweb.password
+    sd_personaleweb = BaseHook.get_connection("sd_personaleweb")
+    username = sd_personaleweb.login
+    password = sd_personaleweb.password
     if not username or not password:
         raise AirflowFailException(
-            "Connection 'sd_fleksjobrefusion_personaleweb' is missing username and password"
+            "Connection 'sd_personaleweb' is missing username and password"
         )
 
     fleksjobrefusion_runtime_config = Variable.get("fleksjobrefusion_runtime_config", deserialize_json=True,)

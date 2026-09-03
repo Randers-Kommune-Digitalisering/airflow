@@ -93,7 +93,7 @@ Filnavnet skal starte med `Fleksjobrefusion` for at blive fundet af jobbet.
 :key: | **Airflow Connections**
 
 **Login oplysninger til SD PersonaleWeb:**
-- **`sd_fleksjobrefusion_personaleweb`**
+- **`sd_personaleweb`**
 - **Bitwarden navn: `Robot_Personaleweb`**
 
 Bruges til at hente login/password til SD Fleksjobrefusion Personaleweb
