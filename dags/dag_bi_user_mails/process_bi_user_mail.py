@@ -14,7 +14,7 @@ from dag_bi_user_mails.bi_user_mails_data import (
     mark_email_sent,
     send_mail
 )
-from tests.conftest import AirflowFailException
+from airflow.exceptions import AirflowFailException
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ def process_bi_user_mail() -> None:
                 }
                 add_user(conn=db_session, user_data=user_data)
 
-            send_mail(email_sender=email_sender, record=record)
+            send_mail(email_sender=email_sender, user_data=record)
             mark_email_sent(conn=db_session, email=record["email_adresse"])
 
     logger.info("Finished processing bi_user_mail data.")

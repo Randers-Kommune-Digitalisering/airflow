@@ -1,6 +1,7 @@
 import logging
 from sqlalchemy.orm import Session
 import pandas as pd
+import re
 
 from airflow.models import Variable
 
@@ -67,9 +68,9 @@ def _build_welcome_email(runtime_config: dict, user_data: dict) -> tuple[str, st
     """
 
     bi_contacts = "\n".join(
-        contact.strip()
+        re.search(r'<(.*?)>', contact).group(1)
         for contact in runtime_config.get("bi_contact_list", [])
-        if contact.strip()
+        if contact.strip() and re.search(r'<(.*?)>', contact)
     )
     subject = "Velkommen til BI"
     body = f"""
