@@ -99,7 +99,7 @@ Filnavnet skal starte med `Fleksjobrefusion` for at blive fundet af jobbet.
 Bruges til at hente login/password til SD Fleksjobrefusion Personaleweb
 
 *Required felter*:
-	- Connection id, Username (Login) og Password
+	- Connection id, Username (Login), Host og Password
 
 **IMAP (Postkasse til Fleksjobrefusion):**
 - **`fleksjobrefusion_imap`**
