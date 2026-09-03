@@ -9,6 +9,7 @@ from rkdigi.email_handling import EmailSender
 
 logger = logging.getLogger(__name__)
 
+
 def get_user_by_email(conn: Session, email: str):
     """
     Retrieve a BiMailUser record by email from the database.
@@ -20,6 +21,7 @@ def get_user_by_email(conn: Session, email: str):
         BiMailUser: The user record matching the email, or None if not found.
     """
     return conn.query(BiMailUser).filter(BiMailUser.email == email).first()
+
 
 def add_user(conn: Session, user_data: dict) -> BiMailUser:
     """
@@ -37,6 +39,7 @@ def add_user(conn: Session, user_data: dict) -> BiMailUser:
 
     return new_user
 
+
 def mark_email_sent(conn: Session, email: str) -> None:
     """
     Mark the email as sent for a BiMailUser record in the database.
@@ -51,13 +54,14 @@ def mark_email_sent(conn: Session, email: str) -> None:
         user.email_sent_date = pd.Timestamp.now()
         conn.commit()
 
+
 def _build_welcome_email(runtime_config: dict, user_data: dict) -> tuple[str, str]:
     """
     Build the subject and body of the welcome email for a new user.
 
     Args:
-        user_data (dict): A dictionary containing user data.
         runtime_config (dict): A dictionary containing runtime configuration.
+        user_data (dict): A dictionary containing user data.
     Returns:
         tuple[str, str]: A tuple containing the email subject and body.
     """
@@ -85,6 +89,7 @@ Venlig hilsen IT
 
     return subject, body
 
+
 def _build_notification_email(runtime_config: dict, user_data: dict) -> tuple[str, str]:
     """
     Build the subject and body of the notification email for a new user.
@@ -105,6 +110,7 @@ def _build_notification_email(runtime_config: dict, user_data: dict) -> tuple[st
     )
 
     return subject, body
+
 
 def send_mail(email_sender: EmailSender, user_data: dict) -> None:
     """
@@ -142,4 +148,3 @@ def send_mail(email_sender: EmailSender, user_data: dict) -> None:
         )
 
         logger.info(f"Sent notification email for new user: {user_data['email_adresse']}")
-

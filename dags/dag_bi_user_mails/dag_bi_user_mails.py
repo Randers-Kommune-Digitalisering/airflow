@@ -13,13 +13,13 @@ dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 
 with DAG(
-    dag_id="dag_bi_user_mail",
+    dag_id="bi_user_mail_onboarding",
     start_date=datetime(year=2026, month=8, day=6, tz=timezone("Europe/Copenhagen")),
     schedule="0 9 * * 1-5",
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
-    description="Fetch BI users from sftp and send welcome emails to new users",
+    description="Fetch BI users from sftp and send onboarding emails to new users",
     tags=["bi_user_mail", "email", "sftp", "xlsx"],
 ) as dag:
 

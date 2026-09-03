@@ -18,6 +18,7 @@ from tests.conftest import AirflowFailException
 
 logger = logging.getLogger(__name__)
 
+
 def process_bi_user_mail() -> None:
     """
     Process bi_user_mail data.
