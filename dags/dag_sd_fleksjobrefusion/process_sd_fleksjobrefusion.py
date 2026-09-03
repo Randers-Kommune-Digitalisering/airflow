@@ -99,11 +99,12 @@ def process_sd_fleksjobrefusion() -> None:
     logger.info("Starting SD Fleksjobrefusion processing")
 
     sd_personaleweb = BaseHook.get_connection("sd_personaleweb")
+    url = sd_personaleweb.host,
     username = sd_personaleweb.login
     password = sd_personaleweb.password
-    if not username or not password:
+    if not username or not password or not url:
         raise AirflowFailException(
-            "Connection 'sd_personaleweb' is missing username and password"
+            "Connection 'sd_personaleweb' is missing username, password, or host"
         )
 
     fleksjobrefusion_runtime_config = Variable.get("fleksjobrefusion_runtime_config", deserialize_json=True,)
@@ -152,6 +153,7 @@ def process_sd_fleksjobrefusion() -> None:
             username=username,
             password=password,
             persons=persons,
+            sd_url=url,
         )
 
         if not success:
