@@ -7,9 +7,10 @@ from pendulum import datetime, timezone
 from airflow import DAG
 from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
-from airflow.models import Variable
+from airflow.models import Variable, DagRun
 from airflow.hooks.base import BaseHook
 from airflow.utils.email import send_email
+from airflow.utils.state import DagRunState
 
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
@@ -26,6 +27,20 @@ dag_args["retry_delay"] = timedelta(minutes=5)
 dag_args["email"].append("delta@randers.dk")
 
 logger = logging.getLogger(__name__)
+
+
+def get_start_time_since_last_success(context: dict) -> pendulum.DateTime | None:
+    """Returns the data_interval_end of the last successful run for this DAG, so failed/skipped runs don't create gaps."""
+    dag_id = context["dag"].dag_id
+    current_run_id = context["dag_run"].run_id
+
+    past_runs = DagRun.find(dag_id=dag_id, state=DagRunState.SUCCESS)
+    past_runs = [run for run in past_runs if run.run_id != current_run_id and run.data_interval_end]
+    if not past_runs:
+        return None
+
+    last_success = max(past_runs, key=lambda run: run.data_interval_end)
+    return last_success.data_interval_end
 
 
 def extract_transform(**context: dict) -> None:
@@ -53,7 +68,7 @@ def extract_transform(**context: dict) -> None:
                 f"Received start_time={start_time}, end_time={end_time}"
             )
     else:
-        start_time = context.get('data_interval_start')
+        start_time = get_start_time_since_last_success(context) or context.get('data_interval_start')
         end_time = context.get('data_interval_end')
 
     if not start_time or not end_time:

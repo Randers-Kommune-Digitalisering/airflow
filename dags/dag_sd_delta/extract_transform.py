@@ -95,14 +95,17 @@ def _get_profession_with_level_2(professions_xml: ET.Element, position_id: str) 
             )
             level_2_profession_node = level_3_profession_node
         else:
-            raise ValueError(
-                f"No level 2 or level 3 profession found for position_id={position_id}"
-            )
+            logger.error(f"No level 2 or level 3 profession found for position_id={position_id}")
 
     matched_id = _node_text(matched_profession_node.find("./{*}JobPositionIdentifier"))
     matched_name = _node_text(matched_profession_node.find("./{*}JobPositionName"))
-    level_2_id = _node_text(level_2_profession_node.find("./{*}JobPositionIdentifier")) if level_2_profession_node is not None else None
-    level_2_name = _node_text(level_2_profession_node.find("./{*}JobPositionName")) if level_2_profession_node is not None else None
+    
+    if level_2_profession_node is not None:
+        level_2_id = _node_text(level_2_profession_node.find("./{*}JobPositionIdentifier"))
+        level_2_name = _node_text(level_2_profession_node.find("./{*}JobPositionName"))
+    else:
+        level_2_name = "Basispersonale"
+        level_2_id = "0005"
 
     return matched_name, matched_id, level_2_name, level_2_id
 
@@ -401,6 +404,50 @@ def _merge_contiguous_periods(employment_changes_df: pd.DataFrame) -> pd.DataFra
         subset=dedupe_columns,
         keep="first",
     ).reset_index(drop=True)
+
+
+def _filter_unchanged_department_periods(employment_changes_df: pd.DataFrame, inst_id: str) -> pd.DataFrame:
+    """
+    Drop periods whose department is identical to what was already active the day before the period started.
+
+    SD includes these alongside genuine changes because it splits/clips existing department history
+    around a real change, without that necessarily meaning the department itself changed.
+
+    Args:
+        employment_changes_df (pd.DataFrame): A pandas DataFrame containing merged employment change periods.
+        inst_id (str): The institution ID.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame with unchanged department periods removed.
+    """
+    rows_to_drop = []
+
+    for row_index, row in employment_changes_df.iterrows():
+        department_id = row.get("Department_DepartmentIdentifier")
+        activation_date = row.get("ActivationDate")
+        cpr = row.get("PersonCivilRegistrationIdentifier")
+        employment_id = row.get("EmploymentIdentifier")
+
+        if pd.isna(department_id) or pd.isna(activation_date) or pd.isna(cpr) or pd.isna(employment_id):
+            continue
+
+        previous_snapshot_df = get_employment_on_date_df(
+            inst_id=inst_id,
+            cpr=str(cpr),
+            employment_id=str(employment_id),
+            effective_date=activation_date - timedelta(days=1),
+        )
+        if previous_snapshot_df.empty:
+            continue
+
+        previous_department_id = previous_snapshot_df.iloc[0].get("Department_DepartmentIdentifier")
+        if pd.notna(previous_department_id) and previous_department_id == department_id:
+            rows_to_drop.append(row_index)
+
+    if rows_to_drop:
+        logger.info(f"Dropping {len(rows_to_drop)} period(s) with unchanged department compared to the day before.")
+
+    return employment_changes_df.drop(index=rows_to_drop)
 
 
 def _prepare_for_enrichment(employment_changes_df: pd.DataFrame, persons_df: pd.DataFrame) -> pd.DataFrame:
@@ -777,22 +824,24 @@ def _process_one_institution(
         employment_changes_df = _normalize_and_filter_status_periods(employment_changes_df=employment_changes_df)
         employment_changes_df = _compute_period_columns(employment_changes_df=employment_changes_df)
         employment_changes_df = _merge_contiguous_periods(employment_changes_df=employment_changes_df)
+        employment_changes_df = _filter_unchanged_department_periods(employment_changes_df=employment_changes_df, inst_id=inst_id)
 
-        # Rename flattened columns and enrich rows with snapshot-based fallbacks.
-        employment_changes_df = _prepare_for_enrichment(employment_changes_df=employment_changes_df, persons_df=persons_df)
-        employment_changes_df = _enrich_with_snapshots(
-            employment_changes_df=employment_changes_df,
-            inst_id=inst_id,
-        )
+        if not employment_changes_df.empty:
+            # Rename flattened columns and enrich rows with snapshot-based fallbacks.
+            employment_changes_df = _prepare_for_enrichment(employment_changes_df=employment_changes_df, persons_df=persons_df)
+            employment_changes_df = _enrich_with_snapshots(
+                employment_changes_df=employment_changes_df,
+                inst_id=inst_id,
+            )
 
-        # Build final output dataframe for this institution.
-        out_df = build_output_df(
-            employment_changes_df=employment_changes_df,
-            inst_id=inst_id,
-            inst_name_mapping_df=inst_name_mapping_df,
-            start_time=start_time,
-            prof_name_mapping_xml=prof_name_mapping_xml,
-        )
+            # Build final output dataframe for this institution.
+            out_df = build_output_df(
+                employment_changes_df=employment_changes_df,
+                inst_id=inst_id,
+                inst_name_mapping_df=inst_name_mapping_df,
+                start_time=start_time,
+                prof_name_mapping_xml=prof_name_mapping_xml,
+            )
 
         logger.info(f"{len(out_df)} employment changes found for institution {inst_id}")
     return out_df, deleted_list
