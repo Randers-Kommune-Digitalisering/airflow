@@ -9,7 +9,7 @@ dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 
 with DAG(
-    dag_id="dag_sharepoint",
+    dag_id="sharepoint_graph_data_to_db",
     start_date=datetime(year=2026, month=1, day=8, tz=timezone("Europe/Copenhagen")),
     schedule="0 0 * * *",
     catchup=False,

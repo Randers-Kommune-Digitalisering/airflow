@@ -12,7 +12,7 @@ dag_args["retries"] = 1
 
 
 with DAG(
-    dag_id="dag_affald",
+    dag_id="scanvaegt_mp_affald_data_sync",
     start_date=datetime(year=2026, month=3, day=9, tz=timezone("Europe/Copenhagen")),
     schedule="0 7 5 * *",
     catchup=False,

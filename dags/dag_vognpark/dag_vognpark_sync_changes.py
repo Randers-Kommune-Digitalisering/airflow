@@ -10,7 +10,7 @@ dag_args["retries"] = 1
 
 
 with DAG(
-    dag_id="dag_vognpark_sync_changes",
+    dag_id="vognpark_sync_changes",
     start_date=datetime(year=2026, month=6, day=25, tz=timezone("Europe/Copenhagen")),
     schedule=None,
     catchup=False,
