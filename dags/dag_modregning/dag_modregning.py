@@ -8,7 +8,7 @@ dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 0
 
 with DAG(
-    dag_id="dag_modregning",
+    dag_id="modregning_control_report",
     schedule=None,
     catchup=False,
     max_active_runs=1,

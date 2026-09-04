@@ -9,7 +9,7 @@ dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 
 with DAG(
-    dag_id="dag_gis_to_dalux",
+    dag_id="gis_data_sync_dalux",
     start_date=datetime(2025, 12, 17, tz=timezone("Europe/Copenhagen")),
     schedule="0 0 * * *",
     catchup=False,

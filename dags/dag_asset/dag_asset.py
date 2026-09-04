@@ -20,7 +20,7 @@ dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 
 with DAG(
-    dag_id="dag_asset",
+    dag_id="hardware_asset_management_data_sync_topdesk",
     start_date=datetime(year=2026, month=1, day=22, tz=timezone("Europe/Copenhagen")),
     schedule="@daily",
     catchup=False,

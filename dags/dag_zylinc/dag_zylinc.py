@@ -9,7 +9,7 @@ dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 
 with DAG(
-    dag_id="dag_zylinc",
+    dag_id="zylinc_data_to_db",
     start_date=datetime(year=2025, month=12, day=8, tz=timezone("Europe/Copenhagen")),
     schedule="0 0 * * *",
     catchup=False,
