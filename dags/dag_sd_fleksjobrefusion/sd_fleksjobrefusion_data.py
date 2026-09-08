@@ -572,7 +572,7 @@ def run_sd_fleksjobrefusion_job(
     username: str,
     password: str,
     persons: list[dict[str, str]],
-    sd_url: str = "https://www.silkeborgdata.dk",
+    sd_url: str,
     headless: bool = True,
 ) -> tuple[bool, list[dict[str, str]]]:
     """
