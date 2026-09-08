@@ -1,24 +1,24 @@
-# xFlow Nexyus Hjælpemidler Airflow DAG `README.md`
+# xFlow Nexus Hjælpemidler Airflow DAG `README.md`
 [**Formål**](#formål) | [**Beskrivelse**](#beskrivelse) | [**Afhængigheder**](#afh%C3%A6ngigheder) | [**Schedule**](#schedule)
 
 ## Formål
 
-Læser xFlow data fra database og indlæser det i Nexus.
+Læser xFlow-data fra databasen og indlæser dem i Nexus.
 
 ## Beskrivelse
 
-Del af integration igennem xFlow og Nexus for hjælpemidler. XFlow sender udfyldte skemaer til et API (med en API dataaflevering) som indlæser det i database, denne DAG læser så dataet og indsætter det i Nexus.
+En del af integrationen gennem xFlow og Nexus for hjælpemidler. xFlow sender udfyldte skemaer til et API (med en API-dataaflevering), som indlæser dem i databasen. Denne DAG læser derefter dataene og indsætter dem i Nexus.
 
 **Dataflow:**
-- Henter udbehandlede rækker (baset på status kolonne) fra databsaen for tabeller i variablen.
-- For hver række hentes data fra xFlow (hvis der er link til vedhæftelser)
-- Data indsættes i Nexus igennem API'et
+- Henter ubehandlede rækker (baseret på statuskolonnen) fra databasen for tabellerne i variablen.
+- Henter data fra xFlow for hver række, hvis der er et link til vedhæftninger.
+- Indsætter data i Nexus gennem API'et.
 
 
 **Bemærk:**
-- Frontend hvor skemaer indsendes er [her](https://www.randers.dk/borger/socialt/hjaelpemidler-og-hjaelp/hjaelpemidler/hjaelpemidler-du-kan-soege/)
-- xFlow dataaflevering er [her](https://randers.ditmerflex.dk/randers/Admin/DatabehandlerApi/Edit/69f4e5a8-6f7d-464e-9373-0193e7d9d056)
-- Data DAGen behandler kommer fra en database der får data fra xFlow igennem [external-api](https://github.com/Randers-Kommune-Digitalisering/external-api)
+- Frontendet, hvor skemaerne indsendes, findes [her](https://www.randers.dk/borger/socialt/hjaelpemidler-og-hjaelp/hjaelpemidler/hjaelpemidler-du-kan-soege/)
+- xFlow-dataafleveringen findes [her](https://randers.ditmerflex.dk/randers/Admin/DatabehandlerApi/Edit/69f4e5a8-6f7d-464e-9373-0193e7d9d056)
+- De data, som DAG'en behandler, kommer fra en database, der modtager data fra xFlow gennem [external-api](https://github.com/Randers-Kommune-Digitalisering/external-api).
 
 ## Afhængigheder
 
@@ -29,37 +29,37 @@ Del af integration igennem xFlow og Nexus for hjælpemidler. XFlow sender udfyld
 - **Bitwarden navn: `Meta postgres database prod`**
 - **Conn Type: `Postgres`**
 
- Bruges som `Connection id` i Airflow til at hente host, database, user, pass og port til Postgres DB'en. Schema `xflow_nexus` er hardcoded i models.py filen.
+Bruges som `Connection ID` i Airflow til at hente host, database, bruger, adgangskode og port til Postgres-databasen. Skemaet `xflow_nexus` er fastkodet i filen `models.py`.
 
- *Required felter*:
-  - Connection id, Host, Database, Login, Password and Port(5432)
+*Påkrævede felter*:
+  - Connection ID, Host, Database, Login, Password og Port (5432)
 
-**xFlow API :**
+**xFlow API:**
 - **Conn Id: `xflow`**
 - **Bitwarden navn: `xflow api key xFlow->Nexus`**
 - **Conn Type: `HTTP`**
 
-Bruges som Connection id i Airflow til at hente api_key til xFlow API'et
+Bruges som `Connection ID` i Airflow til at hente API-nøglen til xFlow-API'et.
 
-*Required felter*:
-  - password
+*Påkrævet felt*:
+  - Password
 
 **Nexus:**
 - **Conn Id: `nexus_prod`**
 - **Bitwarden navn: `Nexus Randers Drift (client credentials)`**
 - **Conn Type**: HTTP
 
-Bruges som Connection id i Airflow til at hente token url, base url fra host, client id (Login) og client secret (Password).
+Bruges som `Connection ID` i Airflow til at hente token-URL, base-URL fra host, client ID (Login) og client secret (Password).
 
-*Required felter*:
-  - Connection id, Host, Login, Password, extra med token url og logout url
+*Påkrævede felter*:
+  - Connection ID, Host, Login, Password samt ekstraoplysninger med token-URL og logout-URL
 
-### Airflow Variables 
+### Airflow Variables
 :key: | **Airflow Variables**
 
 **Tabeller der skal indlæses i Nexus:**
 - **Key**: `xflow_nexus_hjaelpemidler_tables`
-En liste af tabeller der skal indlæses i Nexus
+En liste over tabeller, der skal indlæses i Nexus.
 
 Eksempel:
 ```json
@@ -68,7 +68,7 @@ Eksempel:
 
 ## Schedule
 
-Schedule er sat op til at køre automatisk på følgende tidspunkter:
+Tidsplanen er sat op til at køre automatisk med følgende interval:
 
 - **Tidspunkt:** hver time
 - **Cron syntax:** `@hourly`
