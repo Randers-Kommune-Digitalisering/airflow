@@ -2,6 +2,7 @@ import base64
 import logging
 import requests
 
+from datetime import timedelta
 from sqlalchemy.engine import Row
 
 from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient, ASSISTIVE_DEVICES_ASSIGNMENT_NAME
@@ -41,6 +42,7 @@ def personligt_hjaelpemiddel(nexus_client: NexusClient, xflow_session: requests.
     try:
         created_doc = nexus_client.add_assistive_device_document(
             patient_data=patient_data,
+            date=row.form_date,
             name=row.form_doc_name,
             file_name=f"{row.form_doc_name}.pdf",
             file_bytes=decode_base64_pdf(row.form_pdf_base64),
@@ -51,6 +53,7 @@ def personligt_hjaelpemiddel(nexus_client: NexusClient, xflow_session: requests.
         for attachment in row.attachments or []:
             created_attachment = nexus_client.add_assistive_device_document(
                 patient_data=patient_data,
+                date=row.form_date,
                 name=row.attachment_doc_name,
                 file_name=attachment["title"],
                 file_bytes=get_xflow_attachment(session=xflow_session, url=attachment["url"]),
@@ -70,7 +73,13 @@ def personligt_hjaelpemiddel(nexus_client: NexusClient, xflow_session: requests.
         )
 
         assignment = nexus_client.get_auto_assignment(form=created_form, assignment_name=ASSISTIVE_DEVICES_ASSIGNMENT_NAME)
+
+        if assignment.get("startDate") != row.form_date.strftime("%Y-%m-%d"):
+            assignment["startDate"] = row.form_date.strftime("%Y-%m-%d")
+            assignment["dueDate"] = (row.form_date + timedelta(weeks=30)).strftime("%Y-%m-%d")
+
         assignment["title"] = f"{row.device_name.strip() or 'Personlig hjælpemiddel'} {row.renewal_or_new_text}"
+
         created_assignment = nexus_client.create_assignment(assignment=assignment)
     except Exception:
         nexus_client.rollback_objects(

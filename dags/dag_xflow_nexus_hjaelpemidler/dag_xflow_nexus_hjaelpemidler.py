@@ -18,25 +18,26 @@ dag_args["retries"] = 1
 dag_args["retry_delay"] = timedelta(minutes=30)
 
 logger = logging.getLogger(__name__)
+VAR_NAME = "xflow_nexus_hjaelpemidler_tables"
 
 
 def get_config_start_main_flow() -> None:
     """ Get configuration from Airflow variables and connections, and start the main flow of processing xFlow data to Nexus. """
-    var_str = Variable.get("xflow_nexus_hjaelpemidler_tables", default_var=None)
+    var_str = Variable.get(VAR_NAME, default_var=None)
     if var_str:
         try:
             tables = json.loads(var_str)
         except Exception as e:
-            raise ValueError(f"Failed to deserialize 'xflow_nexus_hjaelpemidler_tables' variable: {e}")
+            raise ValueError(f"Failed to deserialize '{VAR_NAME}' variable: {e}")
 
         meta_hook = PostgresHook(postgres_conn_id="meta_db")
         nexus_hook = BaseHook.get_hook("nexus_prod")
         xflow_hook = BaseHook.get_hook("xflow")
 
-        get_xflow_data_add_to_nexus(tables=tables, meta_hook=meta_hook, nexus_hook=nexus_hook, xflow_hook=xflow_hook)
+        get_xflow_data_add_to_nexus(tables=tables, meta_hook=meta_hook, nexus_hook=nexus_hook, xflow_hook=xflow_hook, var_name=VAR_NAME)
 
     else:
-        raise ValueError("Variable 'xflow_nexus_hjaelpemidler_tables' is not set or is empty")
+        raise ValueError(f"Variable '{VAR_NAME}' is not set or is empty")
 
 
 with DAG(

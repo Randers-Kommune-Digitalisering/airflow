@@ -85,19 +85,24 @@ class NexusClient:
             raise ValueError(f"Expected exactly one patient data entry, but found {len(patient_data_search)}")
         return self._follow(patient_data_search[0], "self")
 
-    def add_assistive_device_document(self, patient_data: dict, name: str, file_name: str, file_bytes: bytes, mime_type: str) -> dict:
-        """Add a document to the assistive devices dashboard for a specific patient."""
+    def add_assistive_device_document(self, patient_data: dict, date: date, name: str, file_name: str, file_bytes: bytes, mime_type: str) -> dict:
+        """Add a document to the assistive devices dashboard for a specific patient."""        
+        # Ensure the file name is valid
+        file_name = "_".join(file_name.strip().rstrip(".").split())
+        if not file_name:
+            raise ValueError("File name cannot be empty")
+
         dashboard = self._get_patient_dashboard(patient_data, ASSISTIVE_DEVICES_DASHBOARD_NAME)
         widget = self._get_widget(dashboard, ASSISTIVE_DEVICES_DASHBOARD_DOCS_WIDGET_NAME)
         new_document = self._follow(widget["creatableObjects"], "documentPrototype")
         new_document["name"] = name
         new_document["originalFileName"] = file_name
-        created_document = self._follow(new_document, "create", method="post", json=new_document)
 
-        # Ensure the file name is valid
-        file_name = "_".join(file_name.strip().rstrip(".").split())
-        if not file_name:
-            raise ValueError("File name cannot be empty")
+        if new_document.get("relevanceDate", "").split("T")[0] != date.strftime("%Y-%m-%d"):
+            local_midnight = datetime.combine(date, time.min, tzinfo=ZoneInfo("Europe/Copenhagen"))
+            new_document["relevanceDate"] = local_midnight.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+        created_document = self._follow(new_document, "create", method="post", json=new_document)
 
         return self._follow(created_document, "upload", method="post", files={"file": (file_name, file_bytes, mime_type)})
 
@@ -118,6 +123,7 @@ class NexusClient:
         APPLICATION_REASON_FIELD = "Henvendelses årsag"
         COMMUNICATION_SOURCE_FIELD = "Henvendelseskilde"
         PATIENT_UNDERSTANDS_FIELD = "Er borgeren indforstået med henvendelsen?"
+        PATIENT_INFORMED_FIELD = "Borger oplyst om ovenstående"
         INFORMATION_OBTAINED_FIELD = "Der er givet tilladelse til indhentning af oplysninger"
         DEVICE = "Hvad søges der om?"
         CONTACT_INFO_FIELD = "Uddyb med navn, telefonnummer m.m."
@@ -164,6 +170,9 @@ class NexusClient:
                 # NOTE: Hardcoded options
                 selected_name = "Uafklaret" if patient_understands is None else ("Ja" if patient_understands else "Nej")
                 item["value"] = _get_dropdown_value_or_raise(item, selected_name)
+            elif label == PATIENT_INFORMED_FIELD:
+                # NOTE: Hardcoded options
+                item["value"] = _get_dropdown_value_or_raise(item, "Skriftligt")
             elif label == INFORMATION_OBTAINED_FIELD:
                 # NOTE: Hardcoded options
                 selected_name = "Der er ikke taget stilling" if can_information_be_obtained is None else ("Ja" if can_information_be_obtained else "Nej")
@@ -230,20 +239,20 @@ class NexusClient:
                 if not delete_action:
                     raise ValueError(f"Could not find action '{DELETE_ACTION_NAME}' in assignment actions")
                 self._follow(obj=delete_action, rel="updateAssignment", method="put", json=created_assignment)
-                logger.warning("Rolled back assignment id=%s", created_assignment.get("id"))
+                logger.warning(f"Rolled back assignment id={created_assignment.get('id')}")
             except Exception:
-                logger.exception("Failed rolling back assignment id=%s", created_assignment.get("id"))
+                logger.exception(f"Failed rolling back assignment id={created_assignment.get('id')}")
 
         if created_form:
             try:
                 self._follow(obj=created_form, rel="delete", method="delete")
-                logger.warning("Rolled back form id=%s", created_form.get("id"))
+                logger.warning(f"Rolled back form id={created_form.get('id')}")
             except Exception:
-                logger.exception("Failed rolling back form id=%s", created_form.get("id"))
+                logger.exception(f"Failed rolling back form id={created_form.get('id')}")
 
         for document in reversed(created_docs):
             try:
                 self._follow(obj=document, rel="delete", method="delete")
-                logger.warning("Rolled back document id=%s", document.get("id"))
+                logger.warning(f"Rolled back document id={document.get('id')}")
             except Exception:
-                logger.exception("Failed rolling back document id=%s", document.get("id"))
+                logger.exception(f"Failed rolling back document id={document.get('id')}")
