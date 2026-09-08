@@ -41,10 +41,10 @@ def get_config_start_main_flow() -> None:
 
 with DAG(
     dag_id="xflow_nexus_hjaelpemidler",
-    start_date=datetime(year=2026, month=9, day=7, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=9, day=8, tz=timezone("Europe/Copenhagen")),
     schedule="@hourly",
     default_args=dag_args,
-    catchup=True,
+    catchup=False,
     max_active_runs=1,
     description="Check meta postgres db for new xFlow form data and send to Nexus",
     tags=["nexus", "xflow", "hjaelpemidler", "db", "database", "postgres"]
