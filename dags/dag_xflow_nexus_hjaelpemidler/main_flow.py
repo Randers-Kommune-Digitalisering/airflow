@@ -61,7 +61,12 @@ def process_table(engine: Engine, table: Table, handler, nexus_client: NexusClie
             )
 
         try:
-            handler(nexus_client=nexus_client, xflow_session=xflow_session, row=row)
+            handler(
+                nexus_client=nexus_client,
+                xflow_session=xflow_session,
+                row=row,
+                table_name=table.name,
+            )
         except Exception:
             logger.exception(f"Failed processing {table.name} id={row_id}")
             with engine.begin() as conn:

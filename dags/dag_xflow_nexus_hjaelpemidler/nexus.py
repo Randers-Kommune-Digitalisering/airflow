@@ -73,13 +73,14 @@ class NexusClient:
         return widget
 
     # Public methods
-    def get_patient_data(self, cpr: str) -> dict:
+    def get_patient_data(self, cpr: str) -> dict | None:
         """Get the patient data for a specific CPR number."""
         home = self._get()
         patient_search = self._follow(home, "patients", params={"query": cpr})
         pages = patient_search.get("pages", [])
         if not pages:
-            raise ValueError("No patient data found for CPR")
+            # raise ValueError("No patient data found for CPR")
+            return None
         patient_data_search = self._follow(pages[0], "patientData")
         if len(patient_data_search) != 1:
             raise ValueError(f"Expected exactly one patient data entry, but found {len(patient_data_search)}")
@@ -144,6 +145,28 @@ class NexusClient:
             )
 
         form = self._follow(selected_form, "formDataPrototype")
+
+        # If "forløb" 'Personlige hjælpemidler" is not already set, find it in the available pathway associations and set it.
+        if form.get("pathwayAssociation", {}).get("placement") is None:
+            available_pathway_associations = self._follow(
+                obj=form.get("pathwayAssociation", {}),
+                rel="availablePathwayAssociation",
+                params={"subjectId": form.get("formDefinition", {}).get("uid")}
+            )
+            # NOTE: Hardcoded name for pathway association 'Sundhed, Kultur og Omsorg'
+            sundhed_kultur_og_omsorg_association = next(
+                (assoc for assoc in available_pathway_associations if assoc.get("patientPathwayPlacement", {}).get("name") == "Sundhed, Kultur og Omsorg"),
+                None
+            )
+            # NOTE: Hardcoded name for pathway association 'Personlige hjælpemidler'
+            personlige_hjaelpemidler_association = next(
+                (assoc for assoc in sundhed_kultur_og_omsorg_association.get("children", []) if assoc.get("patientPathwayPlacement", {}).get("name") == "Personlige hjælpemidler"),
+                None
+            )
+            placement = personlige_hjaelpemidler_association.get("patientPathwayPlacement")
+            if placement is None:
+                raise ValueError("Could not find 'Personlige hjælpemidler' placement in available pathway associations")
+            form["pathwayAssociation"]["placement"] = placement
 
         def _get_dropdown_value_or_raise(field_item: dict, option_name: str) -> dict:
             option = next((v for v in field_item.get("possibleValues", []) if v.get("name") == option_name), None)

@@ -3,7 +3,10 @@ import logging
 import requests
 
 from datetime import timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from sqlalchemy.engine import Row
+from airflow.utils.email import send_email_smtp
 
 from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient, ASSISTIVE_DEVICES_ASSIGNMENT_NAME
 
@@ -11,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 # Helper functions
-def decode_base64_pdf(base64_string: str) -> bytes:
+def _decode_base64_pdf(base64_string: str) -> bytes:
     """ Decode a raw base64 string into file bytes, rejecting anything that is not a PDF. """
     try:
         file_bytes = base64.b64decode("".join(base64_string.split()), validate=True)
@@ -23,17 +26,58 @@ def decode_base64_pdf(base64_string: str) -> bytes:
     return file_bytes
 
 
-def get_xflow_attachment(session: requests.Session, url: str) -> bytes:
+def _get_xflow_attachment(session: requests.Session, url: str) -> bytes:
     """ Download an attachment from xFlow. """
     response = session.get(url, timeout=60)
     response.raise_for_status()
     return response.content
 
 
+def _not_found_email_sender(row: Row, xflow_session: requests.Session, table_name: str) -> None:
+    """ Send an email when a patient is not found in Nexus. """
+    with TemporaryDirectory(prefix="xflow-not-found-") as temp_dir:
+        attachment_paths = []
+
+        form_name = f"{table_name}.pdf"
+        form_path = Path(temp_dir) / form_name
+        form_path.write_bytes(_decode_base64_pdf(row.form_pdf_base64))
+        attachment_paths.append(str(form_path))
+
+        for attachment in row.attachments or []:
+            attachment_name = Path(attachment["title"]).name or "bilag"
+            attachment_path = Path(temp_dir) / attachment_name
+            attachment_path.write_bytes(
+                _get_xflow_attachment(session=xflow_session, url=attachment["url"])
+            )
+            attachment_paths.append(str(attachment_path))
+
+        send_email_smtp(
+            from_email="Digitalisering@randers.dk",
+            to=["personligehjaelpemidler@randers.dk"],
+            subject="Ikke fundet i Nexus",
+            html_content=(
+                "Person fra ansøgning ikke fundet i Nexus."
+            ),
+            files=attachment_paths,
+        )
+
+
 # Handlers for each xFlow table
-def personligt_hjaelpemiddel(nexus_client: NexusClient, xflow_session: requests.Session, row: Row) -> None:
+def personligt_hjaelpemiddel(
+    nexus_client: NexusClient,
+    xflow_session: requests.Session,
+    row: Row,
+    table_name: str,
+) -> None:
     """ Send a 'personligt_hjaelpemiddel' application with its attachments to Nexus. Raise to mark the row as failed. """
     patient_data = nexus_client.get_patient_data(cpr=row.cpr)
+    if patient_data is None:
+        _not_found_email_sender(
+            row=row,
+            xflow_session=xflow_session,
+            table_name=table_name,
+        )
+        return
 
     created_docs: list[dict] = []
     created_form = None
@@ -45,7 +89,7 @@ def personligt_hjaelpemiddel(nexus_client: NexusClient, xflow_session: requests.
             date=row.form_date,
             name=row.form_doc_name,
             file_name=f"{row.form_doc_name}.pdf",
-            file_bytes=decode_base64_pdf(row.form_pdf_base64),
+            file_bytes=_decode_base64_pdf(row.form_pdf_base64),
             mime_type="application/pdf"
         )
         created_docs.append(created_doc)
@@ -56,7 +100,7 @@ def personligt_hjaelpemiddel(nexus_client: NexusClient, xflow_session: requests.
                 date=row.form_date,
                 name=row.attachment_doc_name,
                 file_name=attachment["title"],
-                file_bytes=get_xflow_attachment(session=xflow_session, url=attachment["url"]),
+                file_bytes=_get_xflow_attachment(session=xflow_session, url=attachment["url"]),
                 mime_type=attachment["mimeType"]
             )
             created_docs.append(created_attachment)
