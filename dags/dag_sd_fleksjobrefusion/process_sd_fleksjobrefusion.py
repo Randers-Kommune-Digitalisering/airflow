@@ -99,7 +99,7 @@ def process_sd_fleksjobrefusion() -> None:
     logger.info("Starting SD Fleksjobrefusion processing")
 
     sd_personaleweb = BaseHook.get_connection("sd_personaleweb")
-    url = sd_personaleweb.host,
+    url = sd_personaleweb.host
     username = sd_personaleweb.login
     password = sd_personaleweb.password
     if not username or not password or not url:
