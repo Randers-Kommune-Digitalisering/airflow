@@ -158,6 +158,9 @@ class NexusClient:
                 (assoc for assoc in available_pathway_associations if assoc.get("patientPathwayPlacement", {}).get("name") == "Sundhed, Kultur og Omsorg"),
                 None
             )
+            if sundhed_kultur_og_omsorg_association is None:
+                raise ValueError("Could not find 'Sundhed, Kultur og Omsorg' association in available pathway associations")
+
             # NOTE: Hardcoded name for pathway association 'Personlige hjælpemidler'
             personlige_hjaelpemidler_association = next(
                 (assoc for assoc in sundhed_kultur_og_omsorg_association.get("children", []) if assoc.get("patientPathwayPlacement", {}).get("name") == "Personlige hjælpemidler"),
