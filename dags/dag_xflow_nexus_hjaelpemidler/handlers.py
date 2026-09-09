@@ -1,16 +1,14 @@
 import base64
-import logging
 import requests
 
 from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from sqlalchemy.engine import Row
+
 from airflow.utils.email import send_email_smtp
+from sqlalchemy.engine import Row
 
-from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient, ASSISTIVE_DEVICES_ASSIGNMENT_NAME
-
-logger = logging.getLogger(__name__)
+from dag_xflow_nexus_hjaelpemidler.nexus import ASSISTIVE_DEVICES_ASSIGNMENT_NAME, NexusClient
 
 
 # Helper functions
