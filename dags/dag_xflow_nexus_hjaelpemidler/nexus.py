@@ -8,6 +8,11 @@ from rkdigi import ManagedOAuth2Session
 
 logger = logging.getLogger(__name__)
 
+# Element names
+TOP_PROGRAM_NAME = "Sundhed, Kultur og Omsorg"
+STATE_ACTIVE_NAME = "Aktiv"
+STATE_DEAD_TYPE_ID = "DEAD"
+
 # Elements in the Nexus API that are specific to the assistive devices dashboard and its widgets/forms/assignments.
 ASSISTIVE_DEVICES_DASHBOARD_NAME = "Dokumentation - Personlige hjælpemidler"
 ASSISTIVE_DEVICES_DASHBOARD_DOCS_WIDGET_NAME = "Breve og dokumenter Personlige hjælpemidler"
@@ -85,6 +90,57 @@ class NexusClient:
         if len(patient_data_search) != 1:
             raise ValueError(f"Expected exactly one patient data entry, but found {len(patient_data_search)}")
         return self._follow(patient_data_search[0], "self")
+
+    def is_active(self, patient_data: dict, set_if_not: bool = False) -> bool:
+        """Check if a patient is currently active, optionally setting the state to active if not."""
+        current_state = patient_data.get("patientState", {})
+
+        # Always report 'DEAD' state as inactive - do not try to update
+        if current_state.get("type", {}).get("id") == STATE_DEAD_TYPE_ID:
+            # raise ValueError("State is 'Dead'")
+            return False
+
+        is_active = current_state.get("name") == STATE_ACTIVE_NAME  # Other states are considered active, but should be changed to this specific one.
+        if not is_active and set_if_not:
+            schedule = patient_data.get("patientStateValueSchedule", {})
+            new_period = self._follow(obj=schedule, rel="prototypeValuePeriod", method="get")
+
+            state = next((v for v in new_period.get("possibleValues", []) if v.get("name") == STATE_ACTIVE_NAME), None)
+            if state is None:
+                raise ValueError(f"Could not find patient state '{STATE_ACTIVE_NAME}' in possible values")
+
+            local_midnight = datetime.combine(date.today(), time.min, tzinfo=ZoneInfo("Europe/Copenhagen"))
+            iso_start = local_midnight.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+            new_period["value"] = state
+            new_period["startDate"] = iso_start
+            new_period["endDate"] = None
+
+            current_period = next((p for p in schedule.get("valuePeriods", []) if p.get("endDate") is None), None)
+            if current_period is None:
+                raise ValueError("Could not find the current (open) patientState value period")
+            current_period["endDate"] = iso_start
+
+            schedule.setdefault("valuePeriods", []).append(new_period)
+            patient_data["patientState"] = state
+            patient_data["patientStateStartDate"] = iso_start
+
+            updated_patient = self._follow(obj=patient_data, rel="update", method="put", json=patient_data)
+            return self.is_active(patient_data=updated_patient, set_if_not=False)
+        return is_active
+
+    def has_program(self, patient_data: dict, program_name: str, add_if_missing: bool = False) -> bool:
+        """Check if a specific program is associated with a patient, optionally adding it if missing."""
+        active_programs = self._follow(obj=patient_data, rel="activePrograms", method="get")
+        exists = next((p for p in active_programs if p.get("name") == program_name), None) is not None
+        if not exists and add_if_missing:
+            # Add the program if it is missing
+            available_programs = self._follow(obj=patient_data, rel="availableProgramPathways", method="get")
+            program_to_add = next((p for p in available_programs if p.get("name") == program_name), None)
+            if program_to_add is None:
+                raise ValueError(f"Program '{program_name}' cannot be added because it is not available in the available program pathways")
+            self._follow(obj=program_to_add, rel="enroll", method="put")
+            return self.has_program(patient_data=patient_data, program_name=program_name, add_if_missing=False)
+        return exists
 
     def add_assistive_device_document(self, patient_data: dict, date: date, name: str, file_name: str, file_bytes: bytes, mime_type: str) -> dict:
         """Add a document to the assistive devices dashboard for a specific patient."""        
