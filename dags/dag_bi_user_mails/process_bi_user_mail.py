@@ -35,7 +35,7 @@ def process_bi_user_mail() -> None:
 
     try:
 
-        sftp_hook = SFTPHook(ssh_conn_id="intftp_kmd")
+        sftp_hook = SFTPHook(ssh_conn_id="kmd_insight")
 
         with sftp_hook.get_conn() as sftp_client:
 
