@@ -563,7 +563,13 @@ def _enrich_row_with_snapshot(
             and pd.notna(column_value)
             and pd.isna(employment_changes_df.at[row_index, column_name])
         ):
-            employment_changes_df.at[row_index, column_name] = column_value
+            try:
+                employment_changes_df.at[row_index, column_name] = column_value
+            except TypeError:
+                employment_changes_df[column_name] = employment_changes_df[
+                    column_name
+                ].astype("string")
+                employment_changes_df.at[row_index, column_name] = str(column_value)
 
     return employment_changes_df
 
