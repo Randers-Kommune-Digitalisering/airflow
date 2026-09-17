@@ -1,7 +1,6 @@
 import logging
 import pandas as pd
 from datetime import datetime
-
 from prophet import Prophet
 
 # from airflow.exceptions import AirflowFailException
@@ -92,7 +91,7 @@ def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     """
     # Dropping unnecessary columns
     data = data.drop(columns=DROPPED_COLUMNS)
-    
+
     for column in ['CreatedAt', 'CalledAt', 'EndedAt',
                    'LastAggregatedDataUpdateTime']:
         data[column] = pd.to_datetime(data[column]).dt.tz_localize(None)
