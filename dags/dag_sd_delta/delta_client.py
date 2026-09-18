@@ -328,3 +328,99 @@ class DeltaClient:
                 "user": user
             })
         return employments
+
+    def get_sd_unit_codes_by_cpr(self, cpr: str, valid_date: date) -> list[str]:
+        """
+        Fetches SD unit codes for all active engagements in Delta matching the given CPR.
+
+        Args:
+            cpr (str): The CPR to filter engagements.
+            valid_date (date): The date to check for active engagements.
+
+        Returns:
+            list[str]: A list of SD unit codes, or an empty list if none found.
+        """
+        query = {
+            "graphQueries": [
+                {
+                    "graphQuery": {
+                        "structure": {
+                            "alias": "emp",
+                            "userKey": "APOS-Types-Engagement",
+                            "relations": [
+                                {
+                                    "alias": "per",
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "typeUserKey": "APOS-Types-Person",
+                                    "direction": "OUT",
+                                    "attributes": [
+                                        {
+                                            "alias": "cpr",
+                                            "userKey": "APOS-Types-Person-Attribute-CPR"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        "criteria": {
+                            "type": "AND",
+                            "criteria": [
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {
+                                        "source": "DEFINITION",
+                                        "alias": "emp.per.cpr"
+                                    },
+                                    "right": {
+                                        "source": "STATIC",
+                                        "value": str(cpr)
+                                    }
+                                },
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {
+                                        "source": "DEFINITION",
+                                        "alias": "emp.$state"
+                                    },
+                                    "right": {
+                                        "source": "STATIC",
+                                        "value": "STATE_ACTIVE"
+                                    }
+                                }
+                            ]
+                        },
+                        "projection": {
+                            "identity": True,
+                            "state": True,
+                            "attributes": [
+                                "APOS-Types-Engagement-Attribute-SDUnitCode"
+                            ]
+                        }
+                    },
+                    "validDate": valid_date.strftime("%Y-%m-%d"),
+                    "limit": 5
+                }
+            ]
+        }
+
+        res = self._session.post(self._graph_query_url, json=query)
+        res.raise_for_status()
+        if "graphQueryResult" not in res.json():
+            raise ValueError(f"Unexpected response format: {res.text}")
+
+        payload = res.json()
+        department_ids = []
+        for instance in payload["graphQueryResult"][0].get("instances", []):
+            department_id = next(
+                (
+                    attr.get("value")
+                    for attr in instance.get("attributes", [])
+                    if attr.get("userKey") == "APOS-Types-Engagement-Attribute-SDUnitCode"
+                ),
+                None
+            )
+            if department_id:
+                department_ids.append(department_id)
+        return department_ids
