@@ -1,4 +1,5 @@
 import logging
+import re
 
 from io import BytesIO
 from openpyxl import load_workbook
@@ -8,6 +9,14 @@ logger = logging.getLogger(__name__)
 
 DEPARTMENT_COLUMN = "NUV."
 EMAIL_COLUMNS = ("Email 1", "Email 2", "Email 3", "Email 4")
+CPR_REGEX = re.compile(
+    r"(?<!\d)(?:"
+    r"(?:0[1-9]|[12][0-9]|3[01])(?:0[13578]|10|12)\d{2}|"
+    r"(?:0[1-9]|[12][0-9]|30)(?:0[469]|11)\d{2}|"
+    r"(?:0[1-9]|1[0-9]|2[0-8])02\d{2}|"
+    r"2902(?:00|[2468][048]|[13579][26])"
+    r")(?:-?\d{4})(?!\d)"
+)
 
 
 def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
@@ -46,10 +55,7 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
             if department_index is not None and email_indexes:
                 break
         else:
-            raise ValueError(
-                "Excel file must contain columns "
-                f"'{DEPARTMENT_COLUMN}' and at least one email column"
-            )
+            raise ValueError(f"Excel file must contain columns '{DEPARTMENT_COLUMN}' and at least one email column")
 
         department_email_map: dict[str, list[str]] = {}
         for row_number, row in enumerate(rows, start=header_row_number + 1):
@@ -79,3 +85,25 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
         return department_email_map
     finally:
         workbook.close()
+
+
+def extract_cpr_from_pdf(pdf_bytes: bytes) -> str:
+    """
+    Extract one date-valid CPR number from a PDF as ten digits.
+
+    :param pdf_bytes: PDF file bytes containing a CPR number.
+    :return: The first valid CPR number found, without a separator.
+    """
+    if not pdf_bytes:
+        raise ValueError("PDF attachment is empty")
+
+    import fitz
+
+    with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
+        pdf_text = "\n".join(page.get_text() for page in document)
+
+    matches = CPR_REGEX.findall(pdf_text)
+    if not matches:
+        raise ValueError("No valid CPR number found in PDF")
+
+    return matches[0].replace("-", "")
