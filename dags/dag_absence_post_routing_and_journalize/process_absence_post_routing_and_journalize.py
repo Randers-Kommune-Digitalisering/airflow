@@ -24,7 +24,7 @@ def resolve_forward_body(
     original_body: str,
     config: dict,
 ) -> str:
-    """Return the configured body for the first matching subject fragment."""
+    """Return the configured body with the standard closing text appended."""
     subject_body_mapping = config.get("subject_body_mapping", {})
     if not isinstance(subject_body_mapping, dict):
         raise AirflowFailException(
@@ -32,16 +32,27 @@ def resolve_forward_body(
             "must be a JSON object"
         )
 
+    closing_body = config.get("default_closing_body", "")
+    if not isinstance(closing_body, str):
+        raise AirflowFailException(
+            "'default_closing_body' in Variable 'absence_post_config' "
+            "must be a string"
+        )
+
     normalized_subject = str(subject or "").casefold()
+    resolved_body = original_body
     for subject_fragment, body in subject_body_mapping.items():
         if not isinstance(subject_fragment, str) or not isinstance(body, str):
             raise AirflowFailException(
                 "'subject_body_mapping' keys and values must be strings"
             )
         if subject_fragment.casefold() in normalized_subject:
-            return body
+            resolved_body = body
+            break
 
-    return original_body
+    if not closing_body:
+        return resolved_body
+    return f"{resolved_body.rstrip()}\n\n{closing_body}"
 
 
 def sync_sd_org_department_mapping() -> None:
@@ -137,7 +148,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 continue
 
             try:
-                cpr = extract_cpr_from_pdf(pdf_bytes)
+                cpr = extract_cpr_from_pdf(pdf_bytes=pdf_bytes)
             except ValueError as exc:
                 logger.warning(f"No usable CPR found in {filename} attachment uid={uid_text}: {exc}")
                 continue
@@ -150,10 +161,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 if len(department_codes) == 1:
                     department_by_cpr[cpr] = department_codes.pop()
                 elif len(department_codes) > 1:
-                    logger.warning(
-                        "Multiple active SD departments found for maindoc attachment "
-                        f"uid={uid_text}; attachment will not be forwarded."
-                    )
+                    logger.warning(f"Multiple active SD departments: {department_codes} found for {filename} attachmentuid={uid_text}; attachment will not be forwarded.")
                     department_by_cpr[cpr] = None
                 else:
                     department_by_cpr[cpr] = None
