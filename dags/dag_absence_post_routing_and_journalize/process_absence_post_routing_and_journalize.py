@@ -24,19 +24,24 @@ def resolve_forward_body(
     original_body: str,
     config: dict,
 ) -> str:
-    """Return the configured body with the standard closing text appended."""
+    """
+    Return the configured body with the standard closing text appended.
+
+    :param subject: The subject of the email.
+    :param original_body: The original body of the email.
+    :param config: The configuration dict containing subject_body_mapping and default_closing_body.
+    :return: The resolved email body with the appropriate closing text appended.
+    """
     subject_body_mapping = config.get("subject_body_mapping", {})
     if not isinstance(subject_body_mapping, dict):
         raise AirflowFailException(
-            "'subject_body_mapping' in Variable 'absence_post_config' "
-            "must be a JSON object"
+            "'subject_body_mapping' in Variable 'absence_post_config' must be a JSON object"
         )
 
     closing_body = config.get("default_closing_body", "")
     if not isinstance(closing_body, str):
         raise AirflowFailException(
-            "'default_closing_body' in Variable 'absence_post_config' "
-            "must be a string"
+            "'default_closing_body' in Variable 'absence_post_config' must be a string"
         )
 
     normalized_subject = str(subject or "").casefold()
@@ -57,7 +62,7 @@ def resolve_forward_body(
 
 def sync_sd_org_department_mapping() -> None:
     """
-    Placeholder function for processing the absence_post_routing_and_journalize data.
+    Sync the mapping between SD org departments and email addresses into an Airflow Variable.
     """
     logger.info("Starting to process absence_post_routing_and_journalize data...")
     absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
@@ -116,6 +121,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
         imap_server=imap_server,
     )
     email_sender = EmailSender(smtp_server=smtp_server)
+
+    # Fetch all emails from the INBOX to process maindoc attachments
     emails, failed_ids = email_reader.get_emails(mailbox="INBOX", criteria="ALL")
     if failed_ids:
         logger.warning(f"Could not fetch {len(failed_ids)} email(s) from the mailbox.")
