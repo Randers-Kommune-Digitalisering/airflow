@@ -329,36 +329,36 @@ class DeltaClient:
             })
         return employments
 
-    def get_sd_unit_codes_by_cpr(self, cpr: str, valid_date: date) -> list[str]:
+    def get_sd_unit_codes_by_cpr(self, cpr: str, valid_date: date) -> list[dict]:
         """
-        Fetches SD unit codes for all active engagements in Delta matching the given CPR.
+        Fetches SD unit codes and the person's full name for all active engagements in Delta matching the given CPR.
 
         Args:
             cpr (str): The CPR to filter engagements.
             valid_date (date): The date to check for active engagements.
 
         Returns:
-            list[str]: A list of SD unit codes, or an empty list if none found.
+            list[dict]: A list of {"department_id": str, "person_name": str | None} entries, or an empty list if none found.
         """
         query = {
             "graphQueries": [
                 {
                     "graphQuery": {
                         "structure": {
-                            "alias": "emp",
-                            "userKey": "APOS-Types-Engagement",
+                            "alias": "person",
+                            "userKey": "APOS-Types-Person",
+                            "attributes": [
+                                {
+                                    "alias": "cpr",
+                                    "userKey": "APOS-Types-Person-Attribute-CPR"
+                                }
+                            ],
                             "relations": [
                                 {
-                                    "alias": "per",
+                                    "alias": "emp",
                                     "userKey": "APOS-Types-Engagement-TypeRelation-Person",
-                                    "typeUserKey": "APOS-Types-Person",
-                                    "direction": "OUT",
-                                    "attributes": [
-                                        {
-                                            "alias": "cpr",
-                                            "userKey": "APOS-Types-Person-Attribute-CPR"
-                                        }
-                                    ]
+                                    "typeUserKey": "APOS-Types-Engagement",
+                                    "direction": "IN"
                                 }
                             ]
                         },
@@ -370,7 +370,7 @@ class DeltaClient:
                                     "operator": "EQUAL",
                                     "left": {
                                         "source": "DEFINITION",
-                                        "alias": "emp.per.cpr"
+                                        "alias": "person.cpr"
                                     },
                                     "right": {
                                         "source": "STATIC",
@@ -382,7 +382,7 @@ class DeltaClient:
                                     "operator": "EQUAL",
                                     "left": {
                                         "source": "DEFINITION",
-                                        "alias": "emp.$state"
+                                        "alias": "person.$state"
                                     },
                                     "right": {
                                         "source": "STATIC",
@@ -394,8 +394,17 @@ class DeltaClient:
                         "projection": {
                             "identity": True,
                             "state": True,
-                            "attributes": [
-                                "APOS-Types-Engagement-Attribute-SDUnitCode"
+                            "incomingTypeRelations": [
+                                {
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "projection": {
+                                        "identity": True,
+                                        "state": True,
+                                        "attributes": [
+                                            "APOS-Types-Engagement-Attribute-SDUnitCode"
+                                        ]
+                                    }
+                                }
                             ]
                         }
                     },
@@ -411,16 +420,26 @@ class DeltaClient:
             raise ValueError(f"Unexpected response format: {res.text}")
 
         payload = res.json()
-        department_ids = []
+        engagements = []
         for instance in payload["graphQueryResult"][0].get("instances", []):
-            department_id = next(
-                (
-                    attr.get("value")
-                    for attr in instance.get("attributes", [])
-                    if attr.get("userKey") == "APOS-Types-Engagement-Attribute-SDUnitCode"
-                ),
-                None
-            )
-            if department_id:
-                department_ids.append(department_id)
-        return department_ids
+            person_name = (instance.get("identity") or {}).get("name")
+
+            for ref in instance.get("inTypeRefs", []) or []:
+                if ref.get("userKey") != "APOS-Types-Engagement-TypeRelation-Person":
+                    continue
+
+                target = ref.get("targetObject") or {}
+                if target.get("state") != "STATE_ACTIVE":
+                    continue
+
+                department_id = next(
+                    (
+                        attr.get("value")
+                        for attr in target.get("attributes", []) or []
+                        if attr.get("userKey") == "APOS-Types-Engagement-Attribute-SDUnitCode"
+                    ),
+                    None
+                )
+                if department_id:
+                    engagements.append({"department_id": department_id, "person_name": person_name})
+        return engagements

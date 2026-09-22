@@ -19,7 +19,7 @@ from utils.mail_messages import get_message_body, build_safe_subject_header
 logger = logging.getLogger(__name__)
 
 
-def resolve_forward_body(
+def _resolve_forward_body(
     subject: str | None,
     original_body: str,
     config: dict,
@@ -60,6 +60,46 @@ def resolve_forward_body(
     return f"{resolved_body.rstrip()}\n\n{closing_body}"
 
 
+def _notify_multiple_active_departments(
+    email_sender: EmailSender,
+    sender_email: str | None,
+    recipients: list[str] | None,
+    multi_department_info: dict[str, dict],
+) -> None:
+    """Send a summary email listing persons with more than one active SD department, with their PDFs attached."""
+    if not recipients or not all(isinstance(recipient, str) and recipient.strip() for recipient in recipients):
+        logger.warning(
+            "'multi_department_notification_recipients' is not configured; "
+            f"skipping notification for {len(multi_department_info)} person(s) with multiple active departments."
+        )
+        return
+
+    overview_lines = []
+    attachments: list[tuple[str, bytes]] = []
+    for info in sorted(multi_department_info.values(), key=lambda info: info["person_name"]):
+        person_name = info["person_name"]
+        overview_lines.append(
+            f"Navn: {person_name} - Afdelingskoder: {', '.join(sorted(info['department_codes']))}"
+        )
+        for attachment_filename, pdf_bytes in info["attachments"]:
+            attachments.append((f"{person_name}_{attachment_filename}", pdf_bytes))
+
+    body = (
+        "Følgende personer har mere end én aktiv SD-afdelingskode, "
+        "og deres vedhæftede dokument(er) er derfor ikke blevet videresendt automatisk:\n\n"
+        + "\n".join(overview_lines)
+    )
+
+    email_sender.send_email(
+        sender=sender_email,
+        recipients=recipients,
+        subject="Personer med flere aktive SD-afdelingskoder",
+        body=body,
+        attachments=attachments,
+    )
+    logger.info(f"Sent multiple-active-departments notification for {len(multi_department_info)} person(s) with {len(attachments)} attachment(s).")
+
+
 def sync_sd_org_department_mapping() -> None:
     """
     Sync the mapping between SD org departments and email addresses into an Airflow Variable.
@@ -94,6 +134,7 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
+    # Replace this imap with the correct connection for the real absence_post mailbox
     absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
@@ -103,6 +144,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
     sender_email = absence_post_config.get("sender_email")
     smtp_server = absence_post_config.get("smtp_server")
     imap_server = absence_post_config.get("imap_server")
+    multi_department_notification_recipients = absence_post_config.get("multi_department_notification_recipients")
 
     configured_recipients = Variable.get("absence_post_mapning", deserialize_json=True)
     if not isinstance(configured_recipients, dict):
@@ -129,8 +171,10 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
     processed_attachments = 0
     routed_attachments = 0
+    skipped_attachments = 0
     failures: list[str] = []
     department_by_cpr: dict[str, str | None] = {}
+    multi_department_info: dict[str, dict] = {}
     delta_client = DeltaClient(BaseHook.get_connection("delta_prod"))
     for message in emails:
         uid = getattr(message, "uid", None)
@@ -150,9 +194,6 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
             processed_attachments += 1
             pdf_bytes = attachment.get_payload(decode=True)
-            if not pdf_bytes:
-                logger.warning(f"Skipped unreadable {filename} attachment uid={uid_text}.")
-                continue
 
             try:
                 cpr = extract_cpr_from_pdf(pdf_bytes=pdf_bytes)
@@ -162,13 +203,23 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
             # Cache Delta lookups because a CPR can occur in multiple emails.
             if cpr not in department_by_cpr:
-                department_codes = set(
-                    delta_client.get_sd_unit_codes_by_cpr(cpr, date.today())
-                )
+                engagements = delta_client.get_sd_unit_codes_by_cpr(cpr, date.today())
+                department_codes = {e["department_id"] for e in engagements if e["department_id"]}
                 if len(department_codes) == 1:
                     department_by_cpr[cpr] = department_codes.pop()
                 elif len(department_codes) > 1:
-                    logger.warning(f"Multiple active SD departments: {department_codes} found for {filename} attachmentuid={uid_text}; attachment will not be forwarded.")
+                    logger.warning(
+                        f"Multiple active SD departments: {department_codes} found for {filename} uid={uid_text}; attachment will not be forwarded."
+                    )
+                    person_name = next(
+                        (e["person_name"] for e in engagements if e["person_name"]),
+                        cpr,
+                    )
+                    multi_department_info[cpr] = {
+                        "person_name": person_name,
+                        "department_codes": department_codes,
+                        "attachments": [],
+                    }
                     department_by_cpr[cpr] = None
                 else:
                     department_by_cpr[cpr] = None
@@ -177,10 +228,12 @@ def extract_cpr_from_maindoc_attachments() -> None:
             recipients = recipients_by_department.get(
                 department_code.casefold() if department_code else ""
             )
-            # If no recipients are found for the department, log a warning and skip this attachment.
+            # If no recipients are found for the department (e.g. multiple active departments or an unmapped department), skip this attachment without failing the whole task.
             if not recipients:
                 logger.warning(f"No recipients are configured for the SD department found for {filename} attachment uid={uid_text}.")
-                failures.append(uid_text)
+                skipped_attachments += 1
+                if cpr in multi_department_info:
+                    multi_department_info[cpr]["attachments"].append((filename, pdf_bytes))
                 continue
 
             try:
@@ -189,7 +242,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     sender=sender_email,
                     recipients=recipients,
                     subject=build_safe_subject_header(message.get("Subject")),
-                    body=resolve_forward_body(
+                    body=_resolve_forward_body(
                         subject=message.get("Subject"),
                         original_body=get_message_body(message),
                         config=absence_post_config,
@@ -208,6 +261,15 @@ def extract_cpr_from_maindoc_attachments() -> None:
             routed_attachments += 1
             logger.info(f"Forwarded {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
 
-    logger.info(f"Checked {processed_attachments} attachment(s); forwarded {routed_attachments} attachment(s).")
+    # Notify about multiple active departments if any were encountered.
+    if multi_department_info:
+        _notify_multiple_active_departments(
+            email_sender=email_sender,
+            sender_email=sender_email,
+            recipients=multi_department_notification_recipients,
+            multi_department_info=multi_department_info,
+        )
+
+    logger.info(f"Checked {processed_attachments} attachment(s); forwarded {routed_attachments} attachment(s); skipped {skipped_attachments} attachment(s).")
     if failures:
         raise AirflowFailException(f"Could not forward {len(failures)} maindoc PDF attachment(s)")
