@@ -117,7 +117,7 @@ def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     cutoff = max(two_years_ago, datetime(2023, 1, 1))
     data = data[data['CreatedAt'] >= cutoff]
 
-    data["dato"] = data["CreatedAt"].dt.date
+    data["dato"] = data["CreatedAt"].dt.normalize()
     data["ugenr"] = data["CreatedAt"].dt.isocalendar().week
     data["år"] = data["CreatedAt"].dt.year
     data["QueuesGrouped"] = (
@@ -179,11 +179,11 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
 
     prediction = model.predict(future)
 
-    prediction["dato"] = prediction["ds"].dt.date
+    prediction["dato"] = prediction["ds"].dt.normalize()
     result = prediction[['dato', 'yhat']].copy()
 
     historical_by_date = historical[["ds", "y"]].rename(columns={"y": "antal"})
-    historical_by_date["dato"] = historical_by_date["ds"].dt.date
+    historical_by_date["dato"] = historical_by_date["ds"].dt.normalize()
 
     result = prediction[["dato", "yhat"]].merge(
         historical_by_date[["dato", "antal"]],
