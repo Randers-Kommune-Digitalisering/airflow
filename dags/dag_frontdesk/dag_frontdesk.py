@@ -6,7 +6,7 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_frontdesk.process_frontdesk import process_frontdesk
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 1
+dag_args["retries"] = 0
 
 
 with DAG(

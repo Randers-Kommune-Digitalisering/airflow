@@ -1,9 +1,10 @@
 import logging
 import pandas as pd
 from datetime import datetime
+import holidays
 from prophet import Prophet
 
-# from airflow.exceptions import AirflowFailException
+from airflow.exceptions import AirflowFailException
 
 from dag_frontdesk.frontdesk_data import (
     fetch_operations,
@@ -61,46 +62,58 @@ EXCLUDED_COUNTERS = [
     'Jobcenter', 'Ydelseskontoret', 'Integration'
 ]
 
-HOLIDAY_DATES = pd.to_datetime([
-    # Nytårsdag
-    '2023-01-01', '2024-01-01', '2025-01-01', '2026-01-01',
-    # Skærtorsdag
-    '2023-04-13', '2024-03-29', '2025-04-18', '2026-04-03',
-    # Langfredag
-    '2023-04-14', '2024-03-30', '2025-04-19', '2026-04-04',
-    # 2. Påskedag
-    '2023-04-17', '2024-04-01', '2025-04-21', '2026-04-06',
-    # Store Bededag
-    '2023-05-05',
-    # Kr. Himmelfartsdag
-    '2023-05-25', '2024-05-16', '2025-06-05', '2026-05-21',
-    # 2. Pinsedag
-    '2023-06-04', '2024-05-26', '2025-06-15', '2026-05-31',
-    # 1. Juledag
-    '2023-12-25', '2024-12-25', '2025-12-25', '2026-12-25',
-    # 2. Juledag
-    '2023-12-26', '2024-12-26', '2025-12-26', '2026-12-26',
-    # Nytårsaften
-    '2023-12-31', '2024-12-31', '2025-12-31', '2026-12-31',
-])
+
+def _holiday_dates() -> pd.DatetimeIndex:
+    """
+    Return Danish public holidays for the historical and forecast periods.
+    """
+    today = datetime.now()
+    years = range(today.year - 2, today.year + 2)
+    danish_holidays = holidays.DK(years=years)
+
+    dates = set(danish_holidays.keys())
+    dates.update(datetime(year, 12, 31).date() for year in years)
+    return pd.to_datetime(sorted(dates))
 
 
 def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Filter and transforming raw operations data from the Frontdesk database.
+    Filter and transform raw operation data from the Frontdesk database.
     """
+    required_columns = {
+        "CreatedAt", "CalledAt", "EndedAt", "LastAggregatedDataUpdateTime",
+        "CounterName", "QueueName", "AggregatedProcessingTime",
+    }
+    missing_columns = sorted(required_columns - set(data.columns))
+    if missing_columns:
+        raise ValueError(
+            "Frontdesk data is missing required columns: "
+            f"{missing_columns}"
+        )
+
+    data = data.copy()
+
     # Dropping unnecessary columns
-    data = data.drop(columns=DROPPED_COLUMNS)
+    for col in DROPPED_COLUMNS:
+        if col in data.columns:
+            data = data.drop(columns=col)
 
     for column in ['CreatedAt', 'CalledAt', 'EndedAt',
                    'LastAggregatedDataUpdateTime']:
-        data[column] = pd.to_datetime(data[column]).dt.tz_localize(None)
+        series = pd.to_datetime(data[column], errors="coerce")
+        if getattr(series.dt, "tz", None) is not None:
+            series = series.dt.tz_localize(None)
+        data[column] = series
 
     # Removes data that isn't borgerservice
     data = data[~data["CounterName"].isin(EXCLUDED_COUNTERS)]
 
     # data older than two years or before 1/1/2023 will be removed
-    two_years_ago = datetime.now().replace(year=datetime.now().year - 2)
+    today = datetime.now()
+    try:
+        two_years_ago = today.replace(year=today.year - 2)
+    except ValueError:
+        two_years_ago = today.replace(year=today.year - 2, day=28)
     cutoff = max(two_years_ago, datetime(2023, 1, 1))
     data = data[data['CreatedAt'] >= cutoff]
 
@@ -133,17 +146,22 @@ def daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
-    holidays = pd.DataFrame(
-        ({'holiday': 'lukkedage', 'ds': HOLIDAY_DATES, 'lower_window': 0,
-          'upper_window': 1})
-    )
-    """
-    Create a one-year weekday visitor forecast for one model
-    """
+    if data.empty:
+        logger.warning(
+            "No data available for model '%s'; "
+            "skipping forecast", model_name
+            )
+        return pd.DataFrame(columns=["dato", "model", "antal", "yhat"])
 
-    data_model = data.rename(columns={'dato': 'ds', 'antal': 'y'})
-    data_model['cap'] = 500
-    data_model['floor'] = 1
+    holidays = pd.DataFrame({
+        'holiday': 'lukkedage',
+        'ds': _holiday_dates(),
+        'lower_window': 0,
+        'upper_window': 1
+    })
+
+    historical = data.rename(columns={'dato': 'ds', 'antal': 'y'}).copy()
+    historical["ds"] = pd.to_datetime(historical["ds"])
 
     model = Prophet(
         yearly_seasonality=True,
@@ -152,7 +170,7 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
         holidays=holidays,
         growth='flat'
     )
-    model.fit(data_model)
+    model.fit(historical)
 
     future = model.make_future_dataframe(periods=365)
     future['cap'] = 500
@@ -161,27 +179,41 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
 
     prediction = model.predict(future)
 
-    result = pd.concat([prediction[['ds', 'yhat']], data['antal']], axis=1)
-    result = result.rename(columns={'ds': 'dato'})
+    prediction["dato"] = prediction["ds"].dt.date
+    result = prediction[['dato', 'yhat']].copy()
+
+    historical_by_date = historical[["ds", "y"]].rename(columns={"y": "antal"})
+    historical_by_date["dato"] = historical_by_date["ds"].dt.date
+
+    result = prediction[["dato", "yhat"]].merge(
+        historical_by_date[["dato", "antal"]],
+        on="dato",
+        how="left"
+    )
+
     result['model'] = model_name
-    result['antal'] = result['antal'].round(2)
+    result['antal'] = result['antal'].fillna(0).round(2)
     result['yhat'] = result['yhat'].round(2)
 
     return result[['dato', 'model', 'antal', 'yhat']]
 
 
 def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build forecasts for all visitors and configured queue groups.
+    """
     predictions = [forecast(daily_visitors(workdata), 'samlet')]
-    """
-    Build forecasts for all visitors and configured queue groups
-    """
 
     for queue in QUEUES:
         subset = workdata[workdata['QueuesGrouped'] == queue]
+        if subset.empty:
+            logger.warning("No rows for queue '%s'; skipping forecast", queue)
+            continue
         try:
             predictions.append(forecast(daily_visitors(subset), queue))
-        except Exception as e:
-            logger.error(f"Failed to forecast queue '{queue}': {e}")
+        except Exception:
+            logger.exception("Failed to forecast queue '%s'", queue)
+            raise
 
     return pd.concat(predictions, axis=0).reset_index(drop=True)
 
@@ -212,11 +244,28 @@ def process_frontdesk() -> None:
     # clean and transform the source data for forecasting
     workdata = transform_data(raw_data)
 
+    if workdata.empty:
+        raise AirflowFailException(
+            "No Frontdesk operations remain after filtering"
+        )
+
     # Store processed operations in the postgres database
     upload_operations(workdata, target_engine)
 
     # Generate forecasts and upload them to the postgres database
     predictions = build_forecast(workdata)
+    if predictions.empty:
+        raise AirflowFailException("No forecast rows generated")
+
+    required_columns = ["dato", "model", "antal", "yhat"]
+    missing = [
+        col for col in required_columns if col not in predictions.columns]
+
+    if missing:
+        raise AirflowFailException(
+            f"Forecast is missing required columns: {missing}"
+        )
+
     upload_forecasts(predictions, target_engine)
 
     logger.info("Finished processing frontdesk data.")
