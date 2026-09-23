@@ -98,13 +98,13 @@ def _find_frame_with_messages_table(
     return None
 
 
-def _set_rows_per_page(frame: Frame, rows_per_page: str = "100") -> None:
+def _set_rows_per_page(frame: Frame, rows_per_page: str = "100") -> list[int]:
     """
-    Set the table page-size dropdown so all rows are rendered.
+    Set the table page size and return the available paginator pages.
 
     :param frame: Frame containing the messages table.
     :param rows_per_page: Page size to select.
-    :return: None; a missing dropdown is logged and ignored.
+    :return: Available page numbers; defaults to page 1 without a paginator.
     """
     try:
         dropdown = frame.locator("#messages\\:j_id17")
@@ -114,20 +114,69 @@ def _set_rows_per_page(frame: Frame, rows_per_page: str = "100") -> None:
         except (PlaywrightTimeoutError, PlaywrightError):
             dropdown.select_option(value=rows_per_page, timeout=10000)
         frame.wait_for_timeout(2000)
-        logger.info(f"Table page size set to {rows_per_page} rows")
+        logger.info(f"Table page size set to {rows_per_page}")
     except (PlaywrightTimeoutError, PlaywrightError):
-        logger.warning(f"Could not set table page size to {rows_per_page}; using current page size")
+        logger.warning(
+            f"Could not set table page size to {rows_per_page}; "
+            "using current page size"
+        )
+
+    page_links = frame.locator(
+        "#messages_paginator_top > span a.ui-paginator-page"
+    )
+    page_numbers: list[int] = []
+    try:
+        for index in range(page_links.count()):
+            aria_label = page_links.nth(index).get_attribute("aria-label")
+            if aria_label and aria_label.startswith("Page "):
+                page_numbers.append(int(aria_label.removeprefix("Page ")))
+    except (PlaywrightTimeoutError, PlaywrightError, ValueError):
+        logger.warning(
+            "Could not read table paginator; using the current page"
+        )
+
+    return page_numbers or [1]
 
 
-def read_message_codes(frame: Frame) -> list[str]:
+def _select_message_page(frame: Frame, page_number: int) -> bool:
+    """Select a paginator page and wait until it becomes active."""
+    page_link = frame.locator(
+        f'#messages_paginator_top > span a[aria-label="Page {page_number}"]'
+    )
+    try:
+        logger.info(f"Selecting message table page {page_number}")
+        if page_link.count() == 0:
+            if page_number == 1:
+                logger.info(
+                    "No paginator available; using the current table view"
+                )
+                return True
+
+            logger.error(
+                f"Message table page {page_number} is not available"
+            )
+            return False
+
+        if page_link.get_attribute("aria-current") != "page":
+            page_link.click(timeout=10000)
+            frame.locator(
+                "#messages_paginator_top > span "
+                f'a[aria-label="Page {page_number}"]'
+                ".ui-state-active"
+            ).wait_for(state="visible", timeout=10000)
+        return True
+    except (PlaywrightTimeoutError, PlaywrightError):
+        logger.exception(f"Could not select message table page {page_number}")
+        return False
+
+
+def _read_current_page_codes(frame: Frame) -> list[str]:
     """
-    Read all "Kode" values from the Fejl- & Kontrolmeddelelser table.
+    Read all "Kode" values from the current table page.
 
     :param frame: Frame containing the messages table.
     :return: List of codes in table row order.
     """
-    _set_rows_per_page(frame=frame)
-
     rows = frame.locator(f"{MESSAGES_TABLE_SELECTOR} > tr")
 
     # Rows are rendered progressively, so wait until the count stops growing.
@@ -155,13 +204,15 @@ def read_message_codes(frame: Frame) -> list[str]:
         logger.exception("Could not read codes from the messages table")
         return []
 
-    codes = [code for code in codes if code]
     try:
         row_count = rows.count()
     except PlaywrightError:
         row_count = 0
-    logger.info(f"Read {len(codes)} code(s) from {row_count} row(s)")
-    logger.info(f"Codes in table: {dict(Counter(codes))}")
+    populated_codes = [code for code in codes if code]
+    logger.info(
+        f"Read {len(populated_codes)} code(s) from {row_count} row(s)"
+    )
+    logger.info(f"Codes in table: {dict(Counter(populated_codes))}")
     return codes
 
 
@@ -170,13 +221,14 @@ def _set_row(frame: Frame, row_index: int) -> bool:
     Click the "Set" checkbox for a single table row.
 
     :param frame: Frame containing the messages table.
-    :param row_index: Zero-based row index as used in the row element ids.
+    :param row_index: Zero-based index on the currently visible table page.
     :return: True when the checkbox was clicked.
     """
     try:
-        checkbox = frame.locator(
-            f"#messages\\:{row_index}\\:j_idt85 .ui-chkbox-box"
+        row = frame.locator(f"{MESSAGES_TABLE_SELECTOR} > tr").nth(
+            row_index
         )
+        checkbox = row.locator(".ui-chkbox-box")
         checkbox.wait_for(state="visible", timeout=10000)
         checkbox.click(timeout=10000)
         frame.wait_for_timeout(500)
@@ -202,17 +254,24 @@ def review_department_messages(
         logger.warning("Fejl- & Kontrolmeddelelser table was not found")
         return []
 
-    codes = read_message_codes(frame=frame)
     allowed = {code.strip().casefold() for code in allowed_codes}
     marked: list[str] = []
 
-    for row_index, code in enumerate(codes):
-        if code.casefold() not in allowed:
+    for page_number in _set_rows_per_page(frame=frame):
+        if not _select_message_page(frame=frame, page_number=page_number):
             continue
 
-        if _set_row(frame=frame, row_index=row_index):
-            marked.append(code)
-            logger.info(f"Marked row {row_index} with code {code} as Set")
+        codes = _read_current_page_codes(frame=frame)
+        for row_index, code in enumerate(codes):
+            if code.casefold() not in allowed:
+                continue
+
+            if _set_row(frame=frame, row_index=row_index):
+                marked.append(code)
+                logger.info(
+                    f"Marked page {page_number}, row {row_index} "
+                    f"with code {code} as Set"
+                )
 
     return marked
 
