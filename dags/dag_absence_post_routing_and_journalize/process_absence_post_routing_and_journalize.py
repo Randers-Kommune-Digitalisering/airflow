@@ -141,6 +141,22 @@ def extract_cpr_from_maindoc_attachments() -> None:
     if not isinstance(absence_post_config, dict):
         raise AirflowFailException("Variable 'absence_post_config' must be a JSON object")
 
+    allowed_subject_fragments = absence_post_config.get("allowed_subject_fragments")
+    if (
+        not isinstance(allowed_subject_fragments, list)
+        or not allowed_subject_fragments
+        or not all(
+            isinstance(fragment, str) and fragment.strip()
+            for fragment in allowed_subject_fragments
+        )
+    ):
+        raise AirflowFailException(
+            "'allowed_subject_fragments' in Variable 'absence_post_config' must be a non-empty list of strings"
+        )
+    normalized_subject_fragments = [
+        fragment.casefold() for fragment in allowed_subject_fragments
+    ]
+
     sender_email = absence_post_config.get("sender_email")
     smtp_server = absence_post_config.get("smtp_server")
     imap_server = absence_post_config.get("imap_server")
@@ -164,7 +180,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
     )
     email_sender = EmailSender(smtp_server=smtp_server)
 
-    # Fetch all emails from the INBOX to process maindoc attachments
+    # Only fetch mails, if the subject contains a fragment from `allowed_subject_fragments`
     emails, failed_ids = email_reader.get_emails(mailbox="INBOX", criteria="ALL")
     if failed_ids:
         logger.warning(f"Could not fetch {len(failed_ids)} email(s) from the mailbox.")
@@ -176,7 +192,15 @@ def extract_cpr_from_maindoc_attachments() -> None:
     department_by_cpr: dict[str, str | None] = {}
     multi_department_info: dict[str, dict] = {}
     delta_client = DeltaClient(BaseHook.get_connection("delta_prod"))
+
     for message in emails:
+        subject = str(message.get("Subject") or "")
+        if not any(
+            fragment in subject.casefold()
+            for fragment in normalized_subject_fragments
+        ):
+            continue
+
         uid = getattr(message, "uid", None)
         uid_text = uid.decode(errors="ignore") if isinstance(uid, bytes) else str(uid)
 
