@@ -221,7 +221,11 @@ def daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
     :param data (pd.DataFrame): Transformed operations dataframe.
     :return pd.DataFrame: Dataframe with columns dato and antal.
     """
-    return data.groupby('dato').size().reset_index(name='antal')
+    if data.empty:
+        return pd.DataFrame(columns=["dato", "antal"])
+    daily = data.groupby("dato").size()
+    full_dates = pd.date_range(data["dato"].min(), data["dato"].max(), freq="D")
+    return daily.reindex(full_dates, fill_value=0).rename_axis("dato").reset_index(name="antal")
 
 
 def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
