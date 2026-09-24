@@ -300,6 +300,9 @@ def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
         if subset.empty:
             logger.warning("No rows for queue '%s'; skipping forecast", queue)
             continue
+        if subset["dato"].nunique() < 2:
+            logger.warning("Not enough dates for queue '%s'; skipping forecast", queue)
+            continue
         try:
             predictions.append(forecast(daily_visitors(subset), queue))
         except Exception:
