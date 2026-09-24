@@ -15,7 +15,7 @@ All writes replace target tables to keep reporting data aligned per DAG run.
 logger = logging.getLogger(__name__)
 
 # Kept as a constant so query intent is explicit and reusable.
-OPERATION_QUERY = "SELECT * FROM Operation"
+OPERATION_QUERY = "SELECT * FROM Operation WHERE CreatedAt >= DATEADD(year, -2, GETDATE())"
 
 
 def fetch_operations(source_engine) -> pd.DataFrame:
