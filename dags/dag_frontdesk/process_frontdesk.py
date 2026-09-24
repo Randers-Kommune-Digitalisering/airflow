@@ -297,6 +297,8 @@ def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
     :param workdata (pd.DataFrame): Transformed operations dataframe.
     :return pd.DataFrame: Forecast dataframe for total and queue groups.
     """
+    if workdata["dato"].nunique() < 2:
+        raise AirflowFailException("Not enough dates to build forecasts")
     predictions = [forecast(daily_visitors(workdata), 'samlet')]
 
     for queue in QUEUES:
