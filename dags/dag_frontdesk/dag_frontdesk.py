@@ -17,8 +17,8 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
-    description="Placeholder description for frontdesk",
-    tags=["frontdesk", "<tag1>", "<tag2>"],
+    description="Fetch data from frontdesk mssql db and upload to postgres",
+    tags=["frontdesk", "mssql", "postgres"],
 ) as dag:
 
     run_frontdesk = PythonOperator(
