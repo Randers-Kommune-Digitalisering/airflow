@@ -4,7 +4,7 @@
 
 ## Formål
 
-Formålet med jobbet er at hente rå Frontdesk-operationer fra MSSQL, transformere data til rapportering og prognoser og gemme resultatet i Postgres
+Formålet med jobbet er at hente rå Frontdesk-operationer fra MSSQL, transformere data til rapportering og prognoser og gemme resultatet i Postgres.
 
 ## Beskrivelse
 
@@ -27,14 +27,14 @@ Formålet med jobbet er at hente rå Frontdesk-operationer fra MSSQL, transforme
     - Kun hverdage medtages
 - Gemmer forecast i Postgres-tabellen forecasts
 
-Hvis der ikke er data efter filtrering, eller forecast-output er ugyldigt, stopper jobbet bevidst med fejl
+Hvis der ikke er data efter filtrering, eller forecast-output er ugyldigt, stopper jobbet bevidst med fejl.
 
 **Dataflow:**
 - Frontdesk MSSQL -> transformering og forecast -> Postgres (operations og forecasts)
 
 ## Afhængigheder
 :key: | **Airflow Connections**
-**Frontdesk kilde (MSSQL)**
+**Frontdesk-kilde (MSSQL)**
 - **`azure_frontdesk_db`**
 
 **Conn type**: MYSSQL
@@ -44,7 +44,7 @@ bruges som `Connection id`i Airflow til at hente host, database, user, pass og p
 *Required felter*:
 - Connection id, Host, DataBase, Login, Password og Port
 
-**Frontdesk mål (Postgres)**:
+**Frontdesk-mål (Postgres)**:
 - **`frontdesk_db`**
 
 **Conn type**: Postgres
