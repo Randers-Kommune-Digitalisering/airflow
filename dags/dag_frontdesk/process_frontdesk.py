@@ -13,6 +13,18 @@ from dag_frontdesk.frontdesk_data import (
 )
 from rkdigi.database_manager import DatabaseManager
 
+"""
+Frontdesk processing module.
+
+This module contains the business logic for the Frontdesk pipeline:
+1. Validate and transform raw operation data.
+2. Aggregate daily visitor counts.
+3. Build Prophet forecasts for total volume and queue groups.
+4. Upload processed operations and forecast output.
+
+Use process_frontdesk() as the orchestration entry point from the DAG.
+"""
+
 logger = logging.getLogger(__name__)
 
 QUEUES = [
@@ -62,16 +74,93 @@ EXCLUDED_COUNTERS = [
     'Jobcenter', 'Ydelseskontoret', 'Integration'
 ]
 
+DATETIME_COLUMNS = [
+    'CreatedAt',
+    'CalledAt',
+    'EndedAt',
+    'LastAggregatedDataUpdateTime',
+]
+
+
+def _validate_required_columns(data: pd.DataFrame, required: set[str]) -> None:
+    """
+    Ensure required columns exist before transforming data.
+
+    :param data (pd.DataFrame): Input dataframe to validate.
+    :param required (set[str]): Set of required column names.
+    :return: None.
+    """
+    missing_columns = sorted(required - set(data.columns))
+    if missing_columns:
+        raise ValueError(
+            "Frontdesk data is missing required columns: "
+            f"{missing_columns}"
+        )
+
+
+def _drop_columns_if_present(
+    data: pd.DataFrame,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    Drop columns when they exist in the input dataframe.
+
+    :param data (pd.DataFrame): Input dataframe.
+    :param columns (list[str]): Columns that should be dropped when present.
+    :return pd.DataFrame: Dataframe without the selected columns.
+    """
+    existing = [column for column in columns if column in data.columns]
+    if not existing:
+        return data
+    return data.drop(columns=existing)
+
+
+def _normalize_datetime_columns(
+    data: pd.DataFrame,
+    columns: list[str],
+) -> pd.DataFrame:
+    """
+    Parse datetime columns and strip timezone information if present.
+
+    :param data (pd.DataFrame): Input dataframe.
+    :param columns (list[str]): Datetime-like columns to parse.
+    :return pd.DataFrame: Dataframe with normalized datetime columns.
+    """
+    for column in columns:
+        parsed = pd.to_datetime(data[column], errors="coerce")
+        if getattr(parsed.dt, "tz", None) is not None:
+            parsed = parsed.dt.tz_localize(None)
+        data[column] = parsed
+    return data
+
+
+def _cutoff_date() -> datetime:
+    """
+    Return the lower bound date for kept operation rows.
+
+    :return pd.datetime : Cutoff datetime used for record filtering.
+    """
+    today = datetime.now()
+    try:
+        two_years_ago = today.replace(year=today.year - 2)
+    except ValueError:
+        # Handles leap day by falling back to the 28th.
+        two_years_ago = today.replace(year=today.year - 2, day=28)
+    return max(two_years_ago, datetime(2023, 1, 1))
+
 
 def _holiday_dates() -> pd.DatetimeIndex:
     """
     Return Danish public holidays for the historical and forecast periods.
+
+    :return pd.DatetimeIndex: Datetime index of holiday/closure dates.
     """
     today = datetime.now()
     years = range(today.year - 2, today.year + 2)
     danish_holidays = holidays.DK(years=years)
 
     dates = set(danish_holidays.keys())
+    # Dec 31 is treated as a closure day for forecasting purposes.
     dates.update(datetime(year, 12, 31).date() for year in years)
     return pd.to_datetime(sorted(dates))
 
@@ -79,42 +168,27 @@ def _holiday_dates() -> pd.DatetimeIndex:
 def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     """
     Filter and transform raw operation data from the Frontdesk database.
+
+    :param data (pd.DataFrame): Raw operations dataframe.
+    :return pd.DataFrame: Cleaned dataframe with date/time fields.
     """
     required_columns = {
         "CreatedAt", "CalledAt", "EndedAt", "LastAggregatedDataUpdateTime",
         "CounterName", "QueueName", "AggregatedProcessingTime",
     }
-    missing_columns = sorted(required_columns - set(data.columns))
-    if missing_columns:
-        raise ValueError(
-            "Frontdesk data is missing required columns: "
-            f"{missing_columns}"
-        )
+    _validate_required_columns(data, required_columns)
 
     data = data.copy()
 
-    # Dropping unnecessary columns
-    for col in DROPPED_COLUMNS:
-        if col in data.columns:
-            data = data.drop(columns=col)
+    # Keep only fields needed for downstream transformations and publishing.
+    data = _drop_columns_if_present(data, DROPPED_COLUMNS)
+    data = _normalize_datetime_columns(data, DATETIME_COLUMNS)
 
-    for column in ['CreatedAt', 'CalledAt', 'EndedAt',
-                   'LastAggregatedDataUpdateTime']:
-        series = pd.to_datetime(data[column], errors="coerce")
-        if getattr(series.dt, "tz", None) is not None:
-            series = series.dt.tz_localize(None)
-        data[column] = series
-
-    # Removes data that isn't borgerservice
+    # Remove counters that are outside Borgerservice scope.
     data = data[~data["CounterName"].isin(EXCLUDED_COUNTERS)]
 
-    # data older than two years or before 1/1/2023 will be removed
-    today = datetime.now()
-    try:
-        two_years_ago = today.replace(year=today.year - 2)
-    except ValueError:
-        two_years_ago = today.replace(year=today.year - 2, day=28)
-    cutoff = max(two_years_ago, datetime(2023, 1, 1))
+    # Keep only recent data while enforcing an absolute lower bound.
+    cutoff = _cutoff_date()
     data = data[data['CreatedAt'] >= cutoff]
 
     data["dato"] = data["CreatedAt"].dt.normalize()
@@ -123,11 +197,13 @@ def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     data["QueuesGrouped"] = (
         data["QueueName"]
         .map(QUEUE_GROUPS)
+        # Preserve original queue names when no grouping rule exists.
         .fillna(data['QueueName'])
     )
 
     data["BehandlingstidMinutter"] = data["EndedAt"] - data["CalledAt"]
     data["BehandlingstidMinutterDecimal"] = (
+        # Frontdesk processing time is stored in 100ns ticks.
         data["AggregatedProcessingTime"] / (10**7 * 60)
         ).round(2)
     data["VentetidMinutter"] = data["CalledAt"] - data["CreatedAt"]
@@ -140,12 +216,22 @@ def transform_data(data: pd.DataFrame) -> pd.DataFrame:
 
 def daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
     """
-    Aggregate operation records by date
+    Aggregate operation records by date.
+
+    :param data (pd.DataFrame): Transformed operations dataframe.
+    :return pd.DataFrame: Dataframe with columns dato and antal.
     """
     return data.groupby('dato').size().reset_index(name='antal')
 
 
 def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
+    """
+    Train a Prophet model and return daily history plus forecast.
+
+    :param data (pd.DataFrame): Daily visitor counts, dato, antal.
+    :param model_name (str): Label for the forecast model output.
+    :return pd.DataFrame: Dataframe with dato, model, antal, and yhat.
+    """
     if data.empty:
         logger.warning(
             "No data available for model '%s'; "
@@ -153,7 +239,7 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
             )
         return pd.DataFrame(columns=["dato", "model", "antal", "yhat"])
 
-    holidays = pd.DataFrame({
+    holiday_frame = pd.DataFrame({
         'holiday': 'lukkedage',
         'ds': _holiday_dates(),
         'lower_window': 0,
@@ -167,7 +253,7 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
         yearly_seasonality=True,
         weekly_seasonality=True,
         seasonality_mode='multiplicative',
-        holidays=holidays,
+        holidays=holiday_frame,
         growth='flat'
     )
     model.fit(historical)
@@ -175,16 +261,17 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
     future = model.make_future_dataframe(periods=365)
     future['cap'] = 500
     future['floor'] = 1
-    future = future[future['ds'].dt.weekday < 5]  # only weekdays
+    # Service is closed during weekends, so forecast only weekdays.
+    future = future[future['ds'].dt.weekday < 5]
 
     prediction = model.predict(future)
 
     prediction["dato"] = prediction["ds"].dt.normalize()
-    result = prediction[['dato', 'yhat']].copy()
 
     historical_by_date = historical[["ds", "y"]].rename(columns={"y": "antal"})
     historical_by_date["dato"] = historical_by_date["ds"].dt.normalize()
 
+    # Merge actual historical counts into the predicted timeline.
     result = prediction[["dato", "yhat"]].merge(
         historical_by_date[["dato", "antal"]],
         on="dato",
@@ -192,6 +279,7 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
     )
 
     result['model'] = model_name
+    # Future rows have no historical count; they are set to 0 for consistency
     result['antal'] = result['antal'].fillna(0).round(2)
     result['yhat'] = result['yhat'].round(2)
 
@@ -201,6 +289,9 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
 def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
     """
     Build forecasts for all visitors and configured queue groups.
+
+    :param workdata (pd.DataFrame): Transformed operations dataframe.
+    :return pd.DataFrame: Forecast dataframe for total and queue groups.
     """
     predictions = [forecast(daily_visitors(workdata), 'samlet')]
 
@@ -221,6 +312,8 @@ def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
 def process_frontdesk() -> None:
     """
     Fetch, transform, forecast, and publish Frontdesk operations data
+
+    :return: None.
     """
     logger.info("Starting to process frontdesk data...")
 
