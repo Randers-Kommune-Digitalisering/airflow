@@ -25,17 +25,23 @@ def _resolve_forward_body(
     config: dict,
 ) -> str:
     """
-    Return the configured body with the standard closing text appended.
+    Return the configured body with optional greeting and closing text.
 
     :param subject: The subject of the email.
     :param original_body: The original body of the email.
-    :param config: The configuration dict containing subject_body_mapping and default_closing_body.
-    :return: The resolved email body with the appropriate closing text appended.
+    :param config: The absence post configuration.
+    :return: The resolved email body with greeting and closing text.
     """
     subject_body_mapping = config.get("subject_body_mapping", {})
     if not isinstance(subject_body_mapping, dict):
         raise AirflowFailException(
             "'subject_body_mapping' in Variable 'absence_post_config' must be a JSON object"
+        )
+
+    welcome_body = config.get("default_welcome_body", "")
+    if not isinstance(welcome_body, str):
+        raise AirflowFailException(
+            "'default_welcome_body' in Variable 'absence_post_config' must be a string"
         )
 
     closing_body = config.get("default_closing_body", "")
@@ -55,9 +61,11 @@ def _resolve_forward_body(
             resolved_body = body
             break
 
-    if not closing_body:
-        return resolved_body
-    return f"{resolved_body.rstrip()}\n\n{closing_body}"
+    if welcome_body:
+        resolved_body = f"{welcome_body.rstrip()}\n\n{resolved_body}"
+    if closing_body:
+        resolved_body = f"{resolved_body.rstrip()}\n\n{closing_body}"
+    return resolved_body
 
 
 def _notify_multiple_active_departments(
