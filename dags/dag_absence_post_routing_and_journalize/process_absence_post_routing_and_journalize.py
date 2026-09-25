@@ -282,7 +282,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     attachments=[(filename, pdf_bytes)],
                 )
                 # Delete the original email after successfully forwarding the attachment.
-                email_reader.delete_email_by_uid(uid=uid)
+                email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
                 logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
 
             except Exception:
