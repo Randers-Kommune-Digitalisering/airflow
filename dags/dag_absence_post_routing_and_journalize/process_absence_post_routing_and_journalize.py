@@ -125,7 +125,7 @@ def sync_sd_org_department_mapping() -> None:
     # Find the newest matching Excel attachment in the mailbox
     found = find_latest_attachment(
         email_reader=email_reader,
-        filename_prefixes="SD org"
+        filename_prefixes=("SD org",)
     )
 
     if not found:
