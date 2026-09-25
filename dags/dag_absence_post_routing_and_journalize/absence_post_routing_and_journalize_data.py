@@ -99,8 +99,11 @@ def extract_cpr_from_pdf(pdf_bytes: bytes) -> str:
 
     import fitz
 
-    with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
-        pdf_text = "\n".join(page.get_text() for page in document)
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
+            pdf_text = "\n".join(page.get_text() for page in document)
+    except (fitz.FileDataError, RuntimeError) as exc:
+        raise ValueError("PDF attachment could not be parsed") from exc
 
     matches = CPR_REGEX.findall(pdf_text)
     if not matches:
