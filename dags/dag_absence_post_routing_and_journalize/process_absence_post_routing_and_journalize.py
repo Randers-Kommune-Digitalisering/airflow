@@ -74,7 +74,16 @@ def _notify_multiple_active_departments(
     recipients: list[str] | None,
     multi_department_info: dict[str, dict],
 ) -> None:
-    """Send a summary email listing persons with more than one active SD department, with their PDFs attached."""
+    """
+    Notify recipients about persons with multiple active SD departments with department codes and the affected PDF attachments.
+
+    :param email_sender: EmailSender used to send the notification.
+    :param sender_email: Email address used as the sender.
+    :param recipients: Email addresses receiving the notification.
+    :param multi_department_info: Person names, department codes, and PDF
+        attachments grouped by CPR.
+    :return: None.
+    """
     if not recipients or not all(isinstance(recipient, str) and recipient.strip() for recipient in recipients):
         logger.warning(
             "'multi_department_notification_recipients' is not configured; "
@@ -235,7 +244,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
             # Cache Delta lookups because a CPR can occur in multiple emails.
             if cpr not in department_by_cpr:
-                engagements = delta_client.get_sd_unit_codes_by_cpr(cpr, date.today())
+                engagements = delta_client.get_sd_unit_codes_by_cpr(cpr=cpr, valid_date=date.today())
                 department_codes = {e["department_id"] for e in engagements if e["department_id"]}
                 if len(department_codes) == 1:
                     department_by_cpr[cpr] = department_codes.pop()
