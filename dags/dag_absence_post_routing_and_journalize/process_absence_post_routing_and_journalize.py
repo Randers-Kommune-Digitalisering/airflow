@@ -254,8 +254,10 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     )
                     person_name = next(
                         (e["person_name"] for e in engagements if e["person_name"]),
-                        cpr,
+                        None,
                     )
+                    if person_name is None:
+                        raise AirflowFailException("No person name found for multiple active SD departments")
                     multi_department_info[cpr] = {
                         "person_name": person_name,
                         "department_codes": department_codes,
