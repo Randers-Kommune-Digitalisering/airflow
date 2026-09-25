@@ -303,5 +303,14 @@ def extract_cpr_from_maindoc_attachments() -> None:
         )
 
     logger.info(f"Checked {processed_attachments} attachment(s); forwarded {routed_attachments} attachment(s); skipped {skipped_attachments} attachment(s).")
+    failure_messages = []
+    if failed_ids:
+        failure_messages.append(
+            f"Could not fetch {len(failed_ids)} email(s) from the mailbox"
+        )
     if failures:
-        raise AirflowFailException(f"Could not forward {len(failures)} maindoc PDF attachment(s)")
+        failure_messages.append(
+            f"Could not forward {len(failures)} maindoc PDF attachment(s)"
+        )
+    if failure_messages:
+        raise AirflowFailException("; ".join(failure_messages))
