@@ -151,7 +151,7 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
-    # Replace this imap with the correct connection for the real absence_post mailbox
+    # Replace this imap with the correct connection for Fravær Postkasse. Use absence_post_imap when testing locally
     absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
@@ -284,7 +284,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 email_sender.send_email(
                     sender=sender_email,
                     recipients=recipients,
-                    subject=build_safe_subject_header(message.get("Subject")),
+                    subject=build_safe_subject_header(raw_subject=message.get("Subject")),
                     body=_resolve_forward_body(
                         subject=message.get("Subject"),
                         original_body=get_message_body(message),
@@ -293,6 +293,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     attachments=[(filename, pdf_bytes)],
                 )
                 # Delete the original email after successfully forwarding the attachment.
+                # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
                 email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
                 logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
 
