@@ -173,12 +173,15 @@ def transform_data(data: pd.DataFrame) -> pd.DataFrame:
         "CreatedAt", "CalledAt", "EndedAt", "LastAggregatedDataUpdateTime",
         "CounterName", "QueueName", "AggregatedProcessingTime",
     }
+    # TODO: Kald funktioner med parameternavne(f.eks. _validate_required_columns(data=data, required_columns=required_columns))
     _validate_required_columns(data, required_columns)
 
     data = data.copy()
 
     # Keep only fields needed for downstream transformations and publishing.
+    # TODO: Kald funktioner med parameternavne
     data = _drop_columns_if_present(data, DROPPED_COLUMNS)
+    # TODO: Kald funktioner med parameternavne
     data = _normalize_datetime_columns(data, DATETIME_COLUMNS)
 
     # Remove counters that are outside Borgerservice scope.
@@ -299,6 +302,7 @@ def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
 
     if workdata["dato"].nunique() < 2:
         raise AirflowFailException("Not enough dates to build forecasts")
+    # TODO: Kald funktioner med parameternavne
     predictions = [forecast(daily_visitors(workdata), 'samlet')]
 
     for queue in queues:
@@ -310,6 +314,7 @@ def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
             logger.warning("Not enough dates for queue '%s'; skipping forecast", queue)
             continue
         try:
+            # TODO: Kald funktioner med parameternavne
             predictions.append(forecast(daily_visitors(subset), queue))
         except Exception:
             logger.exception("Failed to forecast queue '%s'", queue)
@@ -341,9 +346,11 @@ def process_frontdesk() -> None:
     target_engine = target_db._engine
 
     # raw operations from the frontdesk database
+    # TODO: Kald funktioner med parameternavne
     raw_data = fetch_operations(source_engine)
 
     # clean and transform the source data for forecasting
+    # TODO: Kald funktioner med parameternavne
     workdata = transform_data(raw_data)
 
     if workdata.empty:
@@ -352,9 +359,11 @@ def process_frontdesk() -> None:
         )
 
     # Store processed operations in the postgres database
+    # TODO: Kald funktioner med parameternavne
     upload_operations(workdata, target_engine)
 
     # Generate forecasts and upload them to the postgres database
+    # TODO: Kald funktioner med parameternavne
     predictions = build_forecast(workdata)
     if predictions.empty:
         raise AirflowFailException("No forecast rows generated")
@@ -368,6 +377,7 @@ def process_frontdesk() -> None:
             f"Forecast is missing required columns: {missing}"
         )
 
+    # TODO: Kald funktioner med parameternavne
     upload_forecasts(predictions, target_engine)
 
     logger.info("Finished processing frontdesk data.")
