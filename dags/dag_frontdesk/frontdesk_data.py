@@ -15,6 +15,7 @@ All writes replace target tables to keep reporting data aligned per DAG run.
 logger = logging.getLogger(__name__)
 
 # Kept as a constant so query intent is explicit and reusable.
+# TODO: Brug værdien i linje 29 i stedet for en konstant. Den bliver kun brugt 1 sted
 OPERATION_QUERY = "SELECT * FROM Operation WHERE CreatedAt >= DATEADD(year, -2, GETDATE())"
 
 
@@ -36,6 +37,7 @@ def upload_operations(workdata: pd.DataFrame, target_engine) -> None:
     :param target_engine: Engine for the target Postgres database.
     :return: None.
     """
+    # TODO: Kald funktioner med parameternavne
     _upload_dataset(workdata, "operations", target_engine)
 
 
@@ -47,6 +49,7 @@ def upload_forecasts(predictions: pd.DataFrame, target_engine) -> None:
     :param target_engine: Engine for the target Postgres database.
     :return: None.
     """
+    # TODO: Kald funktioner med parameternavne
     _upload_dataset(predictions, "forecasts", target_engine)
 
 
