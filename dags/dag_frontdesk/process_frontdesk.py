@@ -168,6 +168,8 @@ def _holiday_dates() -> pd.DatetimeIndex:
 
 
 # TODO: Flyt ud til frontdesk_data.py 
+# TODO: Rename alle felterne udover dato, ugenr og år i operation-tabellen i snake_cases: F.eks. QueueName --> queue_name
+# Husk du også skal ændre kolonnenavnene i brugergrænsefladen også efter du har ændret dem i databasen.
 def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     """
     Filter and transform raw operation data from the Frontdesk database.
