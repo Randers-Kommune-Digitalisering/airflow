@@ -28,6 +28,7 @@ Use process_frontdesk() as the orchestration entry point from the DAG.
 
 logger = logging.getLogger(__name__)
 
+# TODO: Load into frontdesk_runtime_config from Airflow Variables. Easier to maintain and update queue groups in the future without making any code changes/commits
 QUEUE_GROUPS = {
     "Afhent pas/kørekort/sundhedskort ": "Afhent pas/kørekort/sundhedskort",
     "Beboerindskud ": "Beboerindskud og boligstøtte",
@@ -57,16 +58,19 @@ QUEUE_GROUPS = {
     "Skat": "Skat",
 }
 
+# TODO: Load into frontdesk_runtime_config from Airflow Variables. Easier to maintain and update dropped columns in the future without making any code changes/commits
 DROPPED_COLUMNS = [
         "MunicipalityID", "QueueId", "QueueCategoryId", "State", "StateId",
         "CounterId", "EmployeeId", "DelayedUntil", "DelayedFrom",
         "IsEmployeeAnonymized", "EmployeeInitials"
     ]
 
+# TODO: Load into frontdesk_runtime_config from Airflow Variables. Easier to maintain and update excluded counters in the future without making any code changes/commits
 EXCLUDED_COUNTERS = [
     'Jobcenter', 'Ydelseskontoret', 'Integration'
 ]
 
+# TODO: Load into frontdesk_runtime_config from Airflow Variables. Easier to maintain and update datetime columns in the future without making any code changes/commits
 DATETIME_COLUMNS = [
     'CreatedAt',
     'CalledAt',
