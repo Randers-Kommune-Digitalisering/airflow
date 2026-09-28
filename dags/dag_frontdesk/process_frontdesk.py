@@ -5,6 +5,7 @@ import holidays
 from prophet import Prophet
 
 from airflow.exceptions import AirflowFailException
+from airflow.models import Variable
 
 from dag_frontdesk.frontdesk_data import (
     fetch_operations,
@@ -26,14 +27,6 @@ Use process_frontdesk() as the orchestration entry point from the DAG.
 """
 
 logger = logging.getLogger(__name__)
-
-QUEUES = [
-     'Pas', 'MitID', 'Afhent pas/kørekort/sundhedskort', 'Kørekort', 'Pension',
-     'Informationen', 'Buskort til pensionister', 'Andet',
-     'Beboerindskud og boligstøtte', 'Skat', 'Flytning og Folkeregister',
-     'Sundhedskort og lægevalg', 'Legitimationskort',
-     'Tilflytning fra udlandet', 'Fritagelse for digitalpost',
-]
 
 QUEUE_GROUPS = {
     "Afhent pas/kørekort/sundhedskort ": "Afhent pas/kørekort/sundhedskort",
@@ -297,11 +290,14 @@ def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
     :param workdata (pd.DataFrame): Transformed operations dataframe.
     :return pd.DataFrame: Forecast dataframe for total and queue groups.
     """
+    frontdesk_runtime_config = Variable.get("frontdesk_runtime_config", deserialize_json=True)
+    queues = frontdesk_runtime_config["queues"]
+
     if workdata["dato"].nunique() < 2:
         raise AirflowFailException("Not enough dates to build forecasts")
     predictions = [forecast(daily_visitors(workdata), 'samlet')]
 
-    for queue in QUEUES:
+    for queue in queues:
         subset = workdata[workdata['QueuesGrouped'] == queue]
         if subset.empty:
             logger.warning("No rows for queue '%s'; skipping forecast", queue)
