@@ -24,17 +24,19 @@ DAG'en `absence_post_sync_sd_org_department_mapping` udfører følgende trin:
 DAG'en `absence_post_forward_mails` udfører følgende trin:
 
 - Henter alle emails fra fraværspostkassens `INBOX`
-- Behandler kun emails, hvis emnet indeholder et fragment fra `allowed_subject_fragments`. Andre emails bliver liggende urørt. 
+- Behandler kun emails, hvis emnet indeholder et fragment fra `allowed_subject_fragments` fra Airflow Variablen `absence_post_config`. Andre emails bliver liggende urørt.
+	- F.eks: `Vi mangler oplysninger fra jeres medarbejder`
 - Behandler vedhæftninger, hvor filnavnet starter med `maindoc` og slutter med `.pdf`
 - Udtrækker CPR-nummer fra teksten i hver PDF
 - Slår aktive ansættelser og SD-afdelingskoder op i Delta pr. CPR
 - Genbruger Delta-opslaget, hvis det samme CPR optræder i flere vedhæftninger
 - Finder afdelingens modtagere i Airflow Variablen `absence_post_mapning`
 - Videresender PDF'en med emailens oprindelige emne og en konfigureret brødtekst alt efter emnet på mailen
-- Indleder den videresendte mail med `default_welcome_body`, når værdien er konfigureret
-- Tilføjer altid `default_closing_body`, når værdien er konfigureret
-- Erstatter den oprindelige brødtekst, hvis emnet indeholder en nøgle fra `subject_body_mapping` første match anvendes
+- Indleder den videresendte mail med `default_welcome_body` fra Airflow Variablen `absence_post_config`, når værdien er konfigureret
+- Tilføjer altid `default_closing_body` fra Airflow Variablen `absence_post_config`, når værdien er konfigureret
+- Erstatter den oprindelige brødtekst, hvis emnet indeholder en nøgle fra `subject_body_mapping` fra Airflow Variablen `absence_post_config` første match anvendes
 - Sletter den oprindelige email efter en vellykket videresendelse
+  - Mailen må kun slettes når mailen er blevet videresendt og gemt på p-sagen inden de slettes. 
 
 Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokumentet ikke automatisk:
 
@@ -44,7 +46,7 @@ Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokum
 
 **Dataflow:**
 - SD-ORG-email (IMAP) + SD ORG Excel-vedhæftning → afdelings- og emailmapping → Airflow Variable
-- Fraværspost-email (IMAP) + PDF-vedhæftning → CPR-nummer → Delta-opslag → afdelingsmodtagere → videresendt email (SMTP)
+- Fraværspost-email (IMAP) + PDF-vedhæftning → CPR-nummer → Delta-opslag → afdelingsmodtagere → videresendt email (SMTP) → Slet original mail fra postkassen 
 
 **Bemærk (datahåndtering):**
 
@@ -70,7 +72,7 @@ Delta anvendes til at finde personens aktive ansættelser, navn og SD-afdelingsk
 - **`absence_post_imap`**
 - **Bitwarden navn: `Postkasse - FravaerPost`**
 
-Bruges til at hente login og password til den postkasse, som DAG'en læser input fra.
+Bruges til at hente den nyeste ulæste SD-org Excel-vedhæftning fra fraværspostkassens 
 
 *Required felter*:
 - Connection id, Username (Login) og Password
