@@ -8,13 +8,13 @@ from dag_absence_post_routing_and_journalize.process_absence_post_routing_and_jo
 )
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 
 with DAG(
     dag_id="absence_post_forward_mails",
     start_date=datetime(year=2026, month=9, day=14, tz=timezone("Europe/Copenhagen")),
-    schedule="@monthly",
+    schedule="0 9 * * *",
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
