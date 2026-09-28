@@ -13,7 +13,7 @@ Løsningen består af to DAG'er: én til at synkronisere afdelingernes emailadre
 
 DAG'en `absence_post_sync_sd_org_department_mapping` udfører følgende trin:
 
-- Henter den nyeste ulæste Excel-vedhæftning fra fraværspostkassens `INBOX`, hvor filnavnet skal starte med `SD org`
+- Henter den nyeste ulæste Excel-vedhæftning fra Fravaer.post postkassen `INBOX`, hvor filnavnet skal starte med `SD org`
 - Finder kolonnen `NUV.` og mindst én af kolonnerne `Email 1`, `Email 2`, `Email 3` eller `Email 4`
 - Opbygger en mapping fra SD-afdelingskode til en liste af unikke emailmodtagere
 - Gemmer mappingen som JSON i Airflow Variablen `absence_post_mapning`
@@ -55,7 +55,7 @@ Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokum
 
 **Forudsætning (manuel proces):**
 
-Personale og HR sender en opdateret SD-ORG Excel-fil til fraværspostkassen. Filnavnet skal starte med `SD org`, og filen skal indeholde kolonnen `NUV.` samt mindst én af emailkolonnerne `Email 1` til `Email 4`.
+Personale og HR sender en opdateret SD-ORG Excel-fil til Fravaer.post postkassen. Filnavnet skal starte med `SD org`, og filen skal indeholde kolonnen `NUV.` samt mindst én af emailkolonnerne `Email 1` til `Email 4`.
 
 DAG'en `absence_post_sync_sd_org_department_mapping` skal køres manuelt, når afdelingernes emailmapping skal opdateres.
 
@@ -68,11 +68,11 @@ Delta anvendes til at finde personens aktive ansættelser, navn og SD-afdelingsk
 ### Airflow Connections
 :key: | **Airflow Connections**
 
-**IMAP (fraværspostkasse):**
+**IMAP (Fravaer.post):**
 - **`absence_post_imap`**
 - **Bitwarden navn: `Postkasse - FravaerPost`**
 
-Bruges til at hente den nyeste ulæste SD-org Excel-vedhæftning fra fraværspostkassens 
+Bruges til at hente den nyeste ulæste SD-org Excel-vedhæftning fra Fravaer.post postkassen til tasken `absence_post_sync_sd_org_department_mapping`
 
 *Required felter*:
 - Connection id, Username (Login) og Password
