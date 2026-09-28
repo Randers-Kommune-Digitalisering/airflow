@@ -68,7 +68,9 @@ Delta anvendes til at finde personens aktive ansættelser, navn og SD-afdelingsk
 ### Airflow Connections
 :key: | **Airflow Connections**
 
-OBS: Mangler få adgang til den rigtige Fravær postkasse og dermed er connection ikke lavet endnu til den. Anvender `absence_post_imap` i mellemtiden til lokal udvikling som skal bruges til tasken `absence_post_forward_mails`
+
+**OBS** Der er endnu ikke adgang til den korrekte fraværspostkasse, og forbindelsen til den er derfor ikke oprettet.
+Under lokal udvikling anvendes `absence_post_imap` midlertidigt til `absence_post_forward_mails` tasken.
 
 **IMAP (Fravaer.post):**
 - **`absence_post_imap`**
@@ -106,6 +108,7 @@ Bruges til opslag af aktive ansættelser, SD-afdelingskoder & fulde navn
 - `subject_body_mapping`
 - `default_welcome_body` (tekst før brødteksten, fx `Kære leder,`)
 - `default_closing_body`
+- `multi_department_notification_recipients` liste af emailadresser, der modtager opsummeringsmailen med PDF-filer ved flere aktive SD-afdelingskoder
 
 Eksempel:
 ```json
@@ -114,6 +117,7 @@ Eksempel:
 	"smtp_server": "smtp.example.local",
 	"imap_server": "imap.example.local",
 	"allowed_subject_fragments": ["Vi mangler oplysninger fra jeres medarbejder"],
+	"multi_department_notification_recipients": ["test@randers.dk"],
 	"default_welcome_body": "Kære leder,",
 	"subject_body_mapping": {
 		"sygefravær": "Konfigureret tekst til emails om sygefravær"
