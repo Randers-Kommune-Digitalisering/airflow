@@ -79,6 +79,7 @@ DATETIME_COLUMNS = [
 ]
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def _validate_required_columns(data: pd.DataFrame, required: set[str]) -> None:
     """
     Ensure required columns exist before transforming data.
@@ -95,6 +96,7 @@ def _validate_required_columns(data: pd.DataFrame, required: set[str]) -> None:
         )
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def _drop_columns_if_present(
     data: pd.DataFrame,
     columns: list[str],
@@ -112,6 +114,7 @@ def _drop_columns_if_present(
     return data.drop(columns=existing)
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def _normalize_datetime_columns(
     data: pd.DataFrame,
     columns: list[str],
@@ -131,6 +134,7 @@ def _normalize_datetime_columns(
     return data
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def _cutoff_date() -> datetime:
     """
     Return the lower bound date for kept operation rows.
@@ -146,6 +150,7 @@ def _cutoff_date() -> datetime:
     return max(two_years_ago, datetime(2023, 1, 1))
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def _holiday_dates() -> pd.DatetimeIndex:
     """
     Return Danish public holidays for the historical and forecast periods.
@@ -162,6 +167,7 @@ def _holiday_dates() -> pd.DatetimeIndex:
     return pd.to_datetime(sorted(dates))
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     """
     Filter and transform raw operation data from the Frontdesk database.
@@ -214,6 +220,7 @@ def transform_data(data: pd.DataFrame) -> pd.DataFrame:
     return data.reset_index(drop=True)
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
     """
     Aggregate operation records by date.
@@ -228,6 +235,7 @@ def daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
     return daily.reindex(full_dates, fill_value=0).rename_axis("dato").reset_index(name="antal")
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
     """
     Train a Prophet model and return daily history plus forecast.
@@ -290,6 +298,7 @@ def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
     return result[['dato', 'model', 'antal', 'yhat']]
 
 
+# TODO: Flyt ud til frontdesk_data.py 
 def build_forecast(workdata: pd.DataFrame) -> pd.DataFrame:
     """
     Build forecasts for all visitors and configured queue groups.
