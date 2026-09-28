@@ -68,6 +68,8 @@ Delta anvendes til at finde personens aktive ansættelser, navn og SD-afdelingsk
 ### Airflow Connections
 :key: | **Airflow Connections**
 
+OBS: Mangler få adgang til den rigtige Fravær postkasse og dermed er connection ikke lavet endnu til den. Anvender `absence_post_imap` i mellemtiden til lokal udvikling som skal bruges til tasken `absence_post_forward_mails`
+
 **IMAP (Fravaer.post):**
 - **`absence_post_imap`**
 - **Bitwarden navn: `Postkasse - FravaerPost`**
