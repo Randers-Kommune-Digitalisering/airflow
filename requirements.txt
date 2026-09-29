@@ -18,3 +18,5 @@ playwright==1.54.0
 Scrapy==2.12.0
 scrapy-playwright==0.0.43
 Twisted==25.5.0
+prophet
+holidays
