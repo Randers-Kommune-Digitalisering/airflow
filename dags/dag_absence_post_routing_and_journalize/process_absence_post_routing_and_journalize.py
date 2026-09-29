@@ -123,6 +123,8 @@ def sync_sd_org_department_mapping() -> None:
     logger.info("Starting to process absence_post_routing_and_journalize data...")
     absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
+    if not isinstance(absence_post_config, dict):
+        raise AirflowFailException("Variable 'absence_post_config' must be a JSON object")
 
     email_reader = EmailReader(
         email=absence_post_imap_conn.login,
