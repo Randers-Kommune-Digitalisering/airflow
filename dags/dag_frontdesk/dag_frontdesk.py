@@ -6,13 +6,12 @@ from utils.config import DEFAULT_DAG_ARGS
 from dag_frontdesk.process_frontdesk import process_frontdesk
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 0
+dag_args["retries"] = 1
 
 
 with DAG(
-    dag_id="dag_frontdesk",
-    start_date=datetime(year=2026, month=9, day=15, tz=timezone(
-        "Europe/Copenhagen")),
+    dag_id="azure_frontdesk_data_to_postgres_db",
+    start_date=datetime(year=2026, month=9, day=15, tz=timezone("Europe/Copenhagen")),
     schedule="@weekly",
     catchup=False,
     max_active_runs=1,
@@ -24,4 +23,5 @@ with DAG(
     run_frontdesk = PythonOperator(
         task_id="process_frontdesk_task",
         python_callable=process_frontdesk,
+        do_xcom_push=False,
     )
