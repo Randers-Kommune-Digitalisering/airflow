@@ -20,7 +20,7 @@ All writes replace target tables to keep reporting data aligned per DAG run.
 logger = logging.getLogger(__name__)
 
 
-def validate_runtime_config(frontdesk_runtime_config: object) -> None:
+def _validate_runtime_config(frontdesk_runtime_config: object) -> None:
     """
     Validate the Airflow Variable structure before processing data.
 
@@ -95,7 +95,7 @@ def load_frontdesk_runtime_config() -> dict:
         "frontdesk_runtime_config",
         deserialize_json=True,
     )
-    validate_runtime_config(frontdesk_runtime_config=frontdesk_runtime_config)
+    _validate_runtime_config(frontdesk_runtime_config=frontdesk_runtime_config)
     return frontdesk_runtime_config
 
 
@@ -241,7 +241,7 @@ def transform_data(
     return data.reset_index(drop=True)
 
 
-def daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
+def _daily_visitors(data: pd.DataFrame) -> pd.DataFrame:
     """
     Aggregate operation records into daily visitor counts.
 
@@ -274,7 +274,7 @@ def fetch_operations(source_engine) -> pd.DataFrame:
     )
 
 
-def forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
+def _forecast(data: pd.DataFrame, model_name: str) -> pd.DataFrame:
     """
     Train a Prophet model and return daily history plus forecast values.
 
@@ -341,8 +341,8 @@ def build_forecast(
     """
     if workdata["dato"].nunique() < 2:
         raise AirflowFailException("Not enough dates to build forecasts")
-    daily_data = daily_visitors(data=workdata)
-    predictions = [forecast(data=daily_data, model_name="samlet")]
+    daily_data = _daily_visitors(data=workdata)
+    predictions = [_forecast(data=daily_data, model_name="samlet")]
 
     queues = frontdesk_runtime_config["queues"]
     for queue in queues:
@@ -356,9 +356,9 @@ def build_forecast(
                 "Not enough dates for queue '%s'; skipping forecast", queue)
             continue
         try:
-            queue_daily_data = daily_visitors(data=subset)
+            queue_daily_data = _daily_visitors(data=subset)
             predictions.append(
-                forecast(data=queue_daily_data, model_name=queue)
+                _forecast(data=queue_daily_data, model_name=queue)
             )
         except Exception:
             logger.exception("Failed to forecast queue '%s'", queue)

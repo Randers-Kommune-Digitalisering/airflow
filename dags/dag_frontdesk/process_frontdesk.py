@@ -34,19 +34,19 @@ def process_frontdesk() -> None:
 
     frontdesk_runtime_config = load_frontdesk_runtime_config()
 
-    source_db = DatabaseManager(
+    frontdesk_mssql_db_manager = DatabaseManager(
         profile_name="azure_frontdesk_db",
         db_type="mssql",
         airflow_connection_id="azure_frontdesk_db"
     )
-    source_engine = source_db._engine
+    source_engine = frontdesk_mssql_db_manager._engine
 
-    target_db = DatabaseManager(
+    reporting_postgres_db_manager = DatabaseManager(
         profile_name="frontdesk_db",
         db_type="postgres",
         airflow_connection_id="frontdesk_db"
     )
-    target_engine = target_db._engine
+    target_engine = reporting_postgres_db_manager._engine
 
     # raw operations from the frontdesk database
     raw_data = fetch_operations(source_engine=source_engine)

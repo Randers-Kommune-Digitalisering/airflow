@@ -23,5 +23,5 @@ with DAG(
     run_frontdesk = PythonOperator(
         task_id="process_frontdesk_task",
         python_callable=process_frontdesk,
-        do_xcom_push=True,
+        do_xcom_push=False,
     )
