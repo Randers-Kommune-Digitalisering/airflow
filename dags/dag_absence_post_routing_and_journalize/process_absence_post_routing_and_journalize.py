@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_forward_body(
-    subject: str | None,
+    normalized_subject: str | None,
     original_body: str,
     config: dict,
 ) -> str:
     """
     Return the configured body with optional greeting and closing text.
 
-    :param subject: The subject of the email.
+    :param normalized_subject: The normalized subject of the email (casefold).
     :param original_body: The original body of the email.
     :param config: The absence post configuration.
     :return: The resolved email body with greeting and closing text.
@@ -50,7 +50,6 @@ def _resolve_forward_body(
             "'default_closing_body' in Variable 'absence_post_config' must be a string"
         )
 
-    normalized_subject = str(subject or "").casefold()
     resolved_body = original_body
     for subject_fragment, body in subject_body_mapping.items():
         if not isinstance(subject_fragment, str) or not isinstance(body, str):
@@ -212,8 +211,9 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
     for message in emails:
         subject = str(message.get("Subject") or "")
+        subject_cf = subject.casefold()
         if not any(
-            fragment in subject.casefold()
+            fragment in subject_cf
             for fragment in normalized_subject_fragments
         ):
             continue
@@ -285,9 +285,9 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 email_sender.send_email(
                     sender=sender_email,
                     recipients=recipients,
-                    subject=build_safe_subject_header(raw_subject=message.get("Subject")),
+                    subject=build_safe_subject_header(raw_subject=subject),
                     body=_resolve_forward_body(
-                        subject=message.get("Subject"),
+                        normalized_subject=subject_cf,
                         original_body=get_message_body(message),
                         config=absence_post_config,
                     ),
