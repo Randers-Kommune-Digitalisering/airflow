@@ -221,6 +221,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
         uid = getattr(message, "uid", None)
         uid_text = uid.decode(errors="ignore") if isinstance(uid, bytes) else str(uid)
 
+        forward_success = []
         for attachment in message.iter_attachments():
             filename = attachment.get_filename() or ""
             normalized_filename = filename.strip().casefold()
@@ -292,18 +293,22 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     ),
                     attachments=[(filename, pdf_bytes)],
                 )
-                # Delete the original email after successfully forwarding the attachment.
-                # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
-                email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
-                logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
+                forward_success.append(True)
 
             except Exception:
                 logger.exception(f"Could not forward {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
                 failures.append(uid_text)
+                forward_success.append(False)
                 continue
 
             routed_attachments += 1
             logger.info(f"Forwarded {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
+
+        # Delete the original email after successfully forwarding the attachment(s).
+        # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
+        if all(forward_success):
+            email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+            logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
 
     # Notify about multiple active departments if any were encountered.
     if multi_department_info:
