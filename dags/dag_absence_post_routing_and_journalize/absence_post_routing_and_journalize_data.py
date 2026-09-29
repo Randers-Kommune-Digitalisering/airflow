@@ -99,12 +99,11 @@ def extract_cpr_from_pdf(pdf_bytes: bytes) -> str:
 
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
-            pdf_text = "\n".join(page.get_text() for page in document)
+            for page in document:
+                match = CPR_REGEX.search(page.get_text())
+                if match:
+                    return match.group().replace("-", "")
     except (fitz.FileDataError, RuntimeError) as exc:
         raise ValueError("PDF attachment could not be parsed") from exc
 
-    matches = CPR_REGEX.findall(pdf_text)
-    if not matches:
-        raise ValueError("No valid CPR number found in PDF")
-
-    return matches[0].replace("-", "")
+    raise ValueError("No valid CPR number found in PDF")
