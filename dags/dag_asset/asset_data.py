@@ -371,8 +371,8 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
         "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
         "common.manufacturer,common.model,common.imei,common.SerialNumber"
     )
-    # Query parameters for filtering away non-mobile Samsung android devices and Apple devices that are not iPhones (iPads, Apple TVs etc.)
-    query = 'common.manufacturer contains "samsung" OR common.model does not contain "iPad" AND common.model does not contain "AppleTV"'
+    # Query parameters for filtering away Apple TVs
+    query = 'common.model does not contain "AppleTV"'
     limit = 200  # can be higher but documentation specifies "no more than 200."
     offset = 0
 
@@ -409,7 +409,7 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
 
 def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     """
-    Fetch device data from Ivanti API and upsert into MobileDevice table.
+    Sync MobileDevice table with the devices returned by Ivanti API.
 
     :param http_hook: Airflow HttpHook for the Ivanti API
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
@@ -464,16 +464,20 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             .all()
         }
 
-        # Fetch existing devices
         existing_devices = {
             d.serial_number: d
             for d in session.query(MobileDevice)
-            .filter(MobileDevice.serial_number.in_(device_map.keys()))
             .all()
         }
 
         inserted = 0
         updated = 0
+        deleted = 0
+
+        for serial, device in existing_devices.items():
+            if serial not in device_map:
+                session.delete(device)
+                deleted += 1
 
         for serial, data in device_map.items():
             existing = existing_devices.get(serial)
@@ -493,7 +497,7 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
 
         session.commit()
 
-        logger.info(f"Inserted: {inserted}, Updated: {updated}, Total: {len(device_map)} from Ivanti API data into MobileDevice table.")
+        logger.info(f"Ivanti sync: inserted={inserted}, updated={updated}, deleted={deleted}, total={len(device_map)}")
 
     return True
 
