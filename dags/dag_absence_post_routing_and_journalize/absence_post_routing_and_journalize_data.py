@@ -1,11 +1,8 @@
-import logging
 import re
 
 from io import BytesIO
 from openpyxl import load_workbook
 
-
-logger = logging.getLogger(__name__)
 
 DEPARTMENT_COLUMN = "NUV."
 EMAIL_COLUMNS = ("Email 1", "Email 2", "Email 3", "Email 4")
@@ -58,6 +55,7 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
             raise ValueError(f"Excel file must contain columns '{DEPARTMENT_COLUMN}' and at least one email column")
 
         department_email_map: dict[str, list[str]] = {}
+        seen_recipients: dict[str, set[str]] = {}
         for row_number, row in enumerate(rows, start=header_row_number + 1):
             department = row[department_index] if department_index < len(row) else None
             emails = [
@@ -68,15 +66,15 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
 
             if department is None and not emails:
                 continue
-            if not emails:
-                continue
             if department is None or not str(department).strip():
                 raise ValueError(f"Row {row_number} has no '{DEPARTMENT_COLUMN}' value")
 
             department_key = str(department).strip()
             recipients = department_email_map.setdefault(department_key, [])
+            department_seen = seen_recipients.setdefault(department_key, set())
             for recipient in emails:
-                if recipient not in recipients:
+                if recipient not in department_seen:
+                    department_seen.add(recipient)
                     recipients.append(recipient)
 
         if not department_email_map:
