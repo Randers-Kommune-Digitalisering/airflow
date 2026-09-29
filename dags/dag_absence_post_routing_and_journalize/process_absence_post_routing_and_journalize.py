@@ -295,7 +295,6 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     ),
                     attachments=[(filename, pdf_bytes)],
                 )
-                forward_success.append(True)
 
             except Exception:
                 logger.exception(f"Could not forward {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
@@ -303,6 +302,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 forward_success.append(False)
                 continue
 
+            forward_success.append(True)
             routed_attachments += 1
             logger.info(f"Forwarded {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
 
