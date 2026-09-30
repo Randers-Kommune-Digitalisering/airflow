@@ -561,8 +561,8 @@ def insert_device_license_and_historical_data(
     asset_engine: Engine
 ) -> bool:
     """
-    Fetch Device License CSV, Comm2ig historical CSV, and Atea EAN from SFTP,
-    then update Computer table in Asset DB accordingly.
+    Fetch historical computer data and mobile mail and calendar sync from SFTP,
+    then update Computer and MobileDevice tables in Asset DB.
 
     :param sftp_hook: Airflow SFTPHook for Asset SFTP.
     :param http_hook: Airflow HttpHook for the Atea API.
@@ -573,6 +573,7 @@ def insert_device_license_and_historical_data(
     comm2ig_historical_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["comm2ig_historical_file_path"]
     ean_atea_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["ean_atea_file_path"]
     dustin_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["dustin_file_path"]
+    mail_calender_sync_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["mail_calender_sync_file_path"]
 
     with sftp_hook.get_conn() as sftp_client:
         logger.info("Fetching Device License CSV from SFTP...")
@@ -610,6 +611,26 @@ def insert_device_license_and_historical_data(
             df_dustin.columns = df_dustin.columns.str.strip()
 
         df_dustin['Order Date'] = pd.to_datetime(df_dustin['Order Date'], errors='coerce')
+
+        logger.info("Fetching Ivanti mail and calendar sync from SFTP...")
+        with sftp_client.open(mail_calender_sync_file, 'rb') as file:
+            df_mail_calender_sync = pd.read_excel(
+                file,
+                dtype=str,
+                usecols=['User ID', 'LDAP Group Distinguished Name'],
+            )
+
+    mail_sync_rows = df_mail_calender_sync.dropna(
+        subset=['User ID', 'LDAP Group Distinguished Name']
+    )
+    users_with_mail_sync = {
+        row['User ID'].strip().casefold()
+        for _, row in mail_sync_rows.iterrows()
+        if 'cn=mobileiron med mail sync og cert validering' in {
+            part.strip().casefold()
+            for part in row['LDAP Group Distinguished Name'].split(',')
+        }
+    }
 
     # Fetch Atea API Data
     atea_data = _fetch_atea_data(http_hook=http_hook)
@@ -712,12 +733,35 @@ def insert_device_license_and_historical_data(
 
                 updated_dustin += 1
 
+        updated_mail_sync = 0
+        devices_and_users = session.query(
+            MobileDevice, User.primary_user
+        ).outerjoin(User, MobileDevice.user_id == User.user_id).all()
+        linked_devices = 0
+        enabled_devices = 0
+        for mobile_device, primary_user in devices_and_users:
+            if primary_user:
+                linked_devices += 1
+            mobile_device.mail_calender_sync = bool(
+                primary_user
+                and primary_user.strip().casefold() in users_with_mail_sync
+            )
+            if mobile_device.mail_calender_sync:
+                enabled_devices += 1
+            updated_mail_sync += 1
+
         session.commit()
 
         logger.info(f"Device License updated for {updated_device} computers")
         logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
         logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
         logger.info(f"Dustin historical data updated for {updated_dustin} computers")
+        logger.info(f"Mobile mail sync status updated for {updated_mail_sync} devices")
+        logger.info(
+            "Mail sync: eligible users=%s, linked devices=%s, "
+            "enabled devices=%s",
+            len(users_with_mail_sync), linked_devices, enabled_devices,
+        )
 
         return True
 
@@ -1179,6 +1223,7 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
+        md."mail_calender_sync",
         u."primary_user",
         u."full_name",
         u."email"
@@ -1200,6 +1245,7 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
+        md."mail_calender_sync",
         u."primary_user",
         u."full_name",
         u."email";
