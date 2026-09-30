@@ -407,6 +407,51 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
     return all_devices
 
 
+def _fetch_ivanti_mail_sync_users(http_hook: HttpHook) -> set[str]:
+    logger.info("Fetching mail-calender sync users from Ivanti API ...")
+
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+    if not conn.login or not conn.password:
+        raise ValueError("Missing credentials for Ivanti API connection.")
+
+    http_hook.method = "GET"
+
+    # Fields needed to get the required data for the mail sync users
+    fields = "user.user_id,user.ldap.groups.dn"
+    # Query to filter users who are part of the mail sync group
+    query = '"user.ldap.groups.dn" = "cn=mobileiron med mail sync og cert validering,dc=randers,dc=dk"'
+
+    limit = 200
+    offset = 0
+    users: set[str] = set()
+    while True:
+        res = http_hook.run(
+            endpoint="/api/v2/devices",
+            data={
+                "adminDeviceSpaceId": 1,
+                "fields": fields,
+                "query": query,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+        data = res.json()
+        batch = data["results"]
+        if not batch and data.get("hasMore"):
+            raise ValueError("Ivanti returned an empty page with hasMore=True")
+        for device in batch:
+            user_id = device.get("user.user_id")
+            if isinstance(user_id, str) and user_id.strip():
+                users.add(user_id.strip().casefold())
+
+        if not data.get("hasMore", len(batch) == limit):
+            break
+        offset += limit
+
+    logger.info(f"Successfully retrieved mail-calender sync users from Ivanti API. Total users: {len(users)}")
+    return users
+
+
 def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     """
     Sync MobileDevice table with the devices returned by Ivanti API.
@@ -422,6 +467,7 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
         logger.error("No data fetched from Ivanti API.")
         return False
 
+    users_with_mail_sync = _fetch_ivanti_mail_sync_users(http_hook=http_hook)
     logger.debug(f"Ivanti devices: {len(ivanti_data)} records after filtering.")
 
     device_map = {}
@@ -485,6 +531,11 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             user_full_name = data.pop("user_full_name", None)
             user = users_by_full_name.get(user_full_name) if user_full_name else None
             user_id = user.user_id if user else None
+            data["mail_calender_sync"] = bool(
+                user and user.primary_user
+                and user.primary_user.strip().casefold()
+                in users_with_mail_sync
+            )
 
             if existing:
                 for key, value in data.items():
@@ -573,7 +624,6 @@ def insert_device_license_and_historical_data(
     comm2ig_historical_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["comm2ig_historical_file_path"]
     ean_atea_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["ean_atea_file_path"]
     dustin_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["dustin_file_path"]
-    mail_calender_sync_file = Variable.get("asset_config", default_var=None, deserialize_json=True)["mail_calender_sync_file_path"]
 
     with sftp_hook.get_conn() as sftp_client:
         logger.info("Fetching Device License CSV from SFTP...")
@@ -611,26 +661,6 @@ def insert_device_license_and_historical_data(
             df_dustin.columns = df_dustin.columns.str.strip()
 
         df_dustin['Order Date'] = pd.to_datetime(df_dustin['Order Date'], errors='coerce')
-
-        logger.info("Fetching Ivanti mail and calendar sync from SFTP...")
-        with sftp_client.open(mail_calender_sync_file, 'rb') as file:
-            df_mail_calender_sync = pd.read_excel(
-                file,
-                dtype=str,
-                usecols=['User ID', 'LDAP Group Distinguished Name'],
-            )
-
-    mail_sync_rows = df_mail_calender_sync.dropna(
-        subset=['User ID', 'LDAP Group Distinguished Name']
-    )
-    users_with_mail_sync = {
-        row['User ID'].strip().casefold()
-        for _, row in mail_sync_rows.iterrows()
-        if 'cn=mobileiron med mail sync og cert validering' in {
-            part.strip().casefold()
-            for part in row['LDAP Group Distinguished Name'].split(',')
-        }
-    }
 
     # Fetch Atea API Data
     atea_data = _fetch_atea_data(http_hook=http_hook)
@@ -733,36 +763,12 @@ def insert_device_license_and_historical_data(
 
                 updated_dustin += 1
 
-        updated_mail_sync = 0
-        devices_and_users = session.query(
-            MobileDevice, User.primary_user
-        ).outerjoin(User, MobileDevice.user_id == User.user_id).all()
-        linked_devices = 0
-        enabled_devices = 0
-        for mobile_device, primary_user in devices_and_users:
-            if primary_user:
-                linked_devices += 1
-            mobile_device.mail_calender_sync = bool(
-                primary_user
-                and primary_user.strip().casefold() in users_with_mail_sync
-            )
-            if mobile_device.mail_calender_sync:
-                enabled_devices += 1
-            updated_mail_sync += 1
-
         session.commit()
 
         logger.info(f"Device License updated for {updated_device} computers")
         logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
         logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
         logger.info(f"Dustin historical data updated for {updated_dustin} computers")
-        logger.info(f"Mobile mail sync status updated for {updated_mail_sync} devices")
-        logger.info(
-            "Mail sync: eligible users=%s, linked devices=%s, "
-            "enabled devices=%s",
-            len(users_with_mail_sync), linked_devices, enabled_devices,
-        )
-
         return True
 
 
