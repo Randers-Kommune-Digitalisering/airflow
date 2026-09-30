@@ -25,7 +25,6 @@ from dag_sd_delta.utils import validate_insts_to_import
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["email_on_failure"] = True
-dag_args["email"].append("digitalisering@randers.dk")
 dag_args["retries"] = 2
 dag_args["retry_delay"] = timedelta(minutes=5)
 

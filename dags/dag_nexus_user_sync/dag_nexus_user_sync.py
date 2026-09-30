@@ -15,7 +15,7 @@ from dag_nexus_user_sync.delta import DeltaClient
 from dag_nexus_user_sync.nexus import NexusClient
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args['email'] = ["digitalisering@randers.dk", "Jane.Scharling.Andersen@randers.dk"]
+dag_args['email'].append("Jane.Scharling.Andersen@randers.dk")
 dag_args["retries"] = 2
 dag_args["retry_delay"] = timedelta(minutes=2)
 
