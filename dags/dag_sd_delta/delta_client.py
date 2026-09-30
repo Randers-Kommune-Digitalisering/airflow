@@ -328,3 +328,118 @@ class DeltaClient:
                 "user": user
             })
         return employments
+
+    def get_sd_unit_codes_by_cpr(self, cpr: str, valid_date: date) -> list[dict]:
+        """
+        Fetches SD unit codes and the person's full name for all active engagements in Delta matching the given CPR.
+
+        Args:
+            cpr (str): The CPR to filter engagements.
+            valid_date (date): The date to check for active engagements.
+
+        Returns:
+            list[dict]: A list of {"department_id": str, "person_name": str | None} entries, or an empty list if none found.
+        """
+        query = {
+            "graphQueries": [
+                {
+                    "graphQuery": {
+                        "structure": {
+                            "alias": "person",
+                            "userKey": "APOS-Types-Person",
+                            "attributes": [
+                                {
+                                    "alias": "cpr",
+                                    "userKey": "APOS-Types-Person-Attribute-CPR"
+                                }
+                            ],
+                            "relations": [
+                                {
+                                    "alias": "emp",
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "typeUserKey": "APOS-Types-Engagement",
+                                    "direction": "IN"
+                                }
+                            ]
+                        },
+                        "criteria": {
+                            "type": "AND",
+                            "criteria": [
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {
+                                        "source": "DEFINITION",
+                                        "alias": "person.cpr"
+                                    },
+                                    "right": {
+                                        "source": "STATIC",
+                                        "value": str(cpr)
+                                    }
+                                },
+                                {
+                                    "type": "MATCH",
+                                    "operator": "EQUAL",
+                                    "left": {
+                                        "source": "DEFINITION",
+                                        "alias": "person.$state"
+                                    },
+                                    "right": {
+                                        "source": "STATIC",
+                                        "value": "STATE_ACTIVE"
+                                    }
+                                }
+                            ]
+                        },
+                        "projection": {
+                            "identity": True,
+                            "state": True,
+                            "incomingTypeRelations": [
+                                {
+                                    "userKey": "APOS-Types-Engagement-TypeRelation-Person",
+                                    "projection": {
+                                        "identity": True,
+                                        "state": True,
+                                        "attributes": [
+                                            "APOS-Types-Engagement-Attribute-SDUnitCode"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "validDate": valid_date.strftime("%Y-%m-%d"),
+                    "limit": 5
+                }
+            ]
+        }
+
+        res = self._session.post(self._graph_query_url, json=query)
+        res.raise_for_status()
+        if "graphQueryResult" not in res.json():
+            raise ValueError(f"Unexpected response format: {res.text}")
+
+        payload = res.json()
+        engagements = []
+        for instance in payload["graphQueryResult"][0].get("instances", []):
+            person_name = (instance.get("identity") or {}).get("name")
+
+            for ref in instance.get("inTypeRefs", []) or []:
+                if ref.get("userKey") != "APOS-Types-Engagement-TypeRelation-Person":
+                    continue
+
+                target = ref.get("targetObject") or {}
+                if target.get("state") != "STATE_ACTIVE":
+                    continue
+
+                department_id = next(
+                    (
+                        attr.get("value")
+                        for attr in target.get("attributes", []) or []
+                        if attr.get("userKey") == "APOS-Types-Engagement-Attribute-SDUnitCode"
+                    ),
+                    None
+                )
+                if department_id:
+                    engagements.append({"department_id": department_id, "person_name": person_name})
+        return engagements
