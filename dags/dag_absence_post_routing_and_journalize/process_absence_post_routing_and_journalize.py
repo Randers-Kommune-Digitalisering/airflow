@@ -20,14 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_forward_body(
-    subject: str | None,
+    normalized_subject: str | None,
     original_body: str,
     config: dict,
 ) -> str:
     """
     Return the configured body with optional greeting and closing text.
 
-    :param subject: The subject of the email.
+    :param normalized_subject: The normalized subject of the email (casefold).
     :param original_body: The original body of the email.
     :param config: The absence post configuration.
     :return: The resolved email body with greeting and closing text.
@@ -50,7 +50,6 @@ def _resolve_forward_body(
             "'default_closing_body' in Variable 'absence_post_config' must be a string"
         )
 
-    normalized_subject = str(subject or "").casefold()
     resolved_body = original_body
     for subject_fragment, body in subject_body_mapping.items():
         if not isinstance(subject_fragment, str) or not isinstance(body, str):
@@ -124,6 +123,8 @@ def sync_sd_org_department_mapping() -> None:
     logger.info("Starting to process absence_post_routing_and_journalize data...")
     absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
+    if not isinstance(absence_post_config, dict):
+        raise AirflowFailException("Variable 'absence_post_config' must be a JSON object")
 
     email_reader = EmailReader(
         email=absence_post_imap_conn.login,
@@ -212,8 +213,9 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
     for message in emails:
         subject = str(message.get("Subject") or "")
+        subject_cf = subject.casefold()
         if not any(
-            fragment in subject.casefold()
+            fragment in subject_cf
             for fragment in normalized_subject_fragments
         ):
             continue
@@ -221,6 +223,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
         uid = getattr(message, "uid", None)
         uid_text = uid.decode(errors="ignore") if isinstance(uid, bytes) else str(uid)
 
+        forward_success = []
         for attachment in message.iter_attachments():
             filename = attachment.get_filename() or ""
             normalized_filename = filename.strip().casefold()
@@ -284,26 +287,30 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 email_sender.send_email(
                     sender=sender_email,
                     recipients=recipients,
-                    subject=build_safe_subject_header(raw_subject=message.get("Subject")),
+                    subject=build_safe_subject_header(raw_subject=subject),
                     body=_resolve_forward_body(
-                        subject=message.get("Subject"),
+                        normalized_subject=subject_cf,
                         original_body=get_message_body(message),
                         config=absence_post_config,
                     ),
                     attachments=[(filename, pdf_bytes)],
                 )
-                # Delete the original email after successfully forwarding the attachment.
-                # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
-                email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
-                logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
 
             except Exception:
                 logger.exception(f"Could not forward {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
                 failures.append(uid_text)
+                forward_success.append(False)
                 continue
 
+            forward_success.append(True)
             routed_attachments += 1
             logger.info(f"Forwarded {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
+
+        # Delete the original email after successfully forwarding the attachment(s).
+        # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
+        if all(forward_success):
+            email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+            logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
 
     # Notify about multiple active departments if any were encountered.
     if multi_department_info:

@@ -1,11 +1,8 @@
-import logging
 import re
 
 from io import BytesIO
 from openpyxl import load_workbook
 
-
-logger = logging.getLogger(__name__)
 
 DEPARTMENT_COLUMN = "NUV."
 EMAIL_COLUMNS = ("Email 1", "Email 2", "Email 3", "Email 4")
@@ -58,6 +55,7 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
             raise ValueError(f"Excel file must contain columns '{DEPARTMENT_COLUMN}' and at least one email column")
 
         department_email_map: dict[str, list[str]] = {}
+        seen_recipients: dict[str, set[str]] = {}
         for row_number, row in enumerate(rows, start=header_row_number + 1):
             department = row[department_index] if department_index < len(row) else None
             emails = [
@@ -68,15 +66,15 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
 
             if department is None and not emails:
                 continue
-            if not emails:
-                continue
             if department is None or not str(department).strip():
                 raise ValueError(f"Row {row_number} has no '{DEPARTMENT_COLUMN}' value")
 
             department_key = str(department).strip()
             recipients = department_email_map.setdefault(department_key, [])
+            department_seen = seen_recipients.setdefault(department_key, set())
             for recipient in emails:
-                if recipient not in recipients:
+                if recipient not in department_seen:
+                    department_seen.add(recipient)
                     recipients.append(recipient)
 
         if not department_email_map:
@@ -101,12 +99,11 @@ def extract_cpr_from_pdf(pdf_bytes: bytes) -> str:
 
     try:
         with fitz.open(stream=pdf_bytes, filetype="pdf") as document:
-            pdf_text = "\n".join(page.get_text() for page in document)
+            for page in document:
+                match = CPR_REGEX.search(page.get_text())
+                if match:
+                    return match.group().replace("-", "")
     except (fitz.FileDataError, RuntimeError) as exc:
         raise ValueError("PDF attachment could not be parsed") from exc
 
-    matches = CPR_REGEX.findall(pdf_text)
-    if not matches:
-        raise ValueError("No valid CPR number found in PDF")
-
-    return matches[0].replace("-", "")
+    raise ValueError("No valid CPR number found in PDF")
