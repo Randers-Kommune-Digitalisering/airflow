@@ -36,8 +36,7 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
         rows = worksheet.iter_rows(values_only=True)
         department_index = None
         email_indexes: list[int] = []
-        header_row_number = 0
-        for header_row_number, headers in enumerate(rows, start=1):
+        for headers in rows:
             normalized_headers = {
                 str(value).strip().casefold(): index
                 for index, value in enumerate(headers)
@@ -56,7 +55,7 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
 
         department_email_map: dict[str, list[str]] = {}
         seen_recipients: dict[str, set[str]] = {}
-        for row_number, row in enumerate(rows, start=header_row_number + 1):
+        for row in rows:
             department = row[department_index] if department_index < len(row) else None
             emails = [
                 str(row[index]).strip()
@@ -64,10 +63,8 @@ def build_department_email_map(excel_bytes: bytes) -> dict[str, list[str]]:
                 if index < len(row) and row[index] is not None and str(row[index]).strip()
             ]
 
-            if department is None and not emails:
+            if not emails or department is None or not str(department).strip():
                 continue
-            if department is None or not str(department).strip():
-                raise ValueError(f"Row {row_number} has no '{DEPARTMENT_COLUMN}' value")
 
             department_key = str(department).strip()
             recipients = department_email_map.setdefault(department_key, [])
