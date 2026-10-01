@@ -414,7 +414,7 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
     return all_devices
 
 
-def _fetch_ivanti_mail_sync_users(http_hook: HttpHook) -> set[str]:
+def _fetch_ivanti_mail_calendar_sync_users(http_hook: HttpHook) -> set[str]:
     logger.info("Fetching mail-calender sync users from Ivanti API ...")
 
     conn = http_hook.get_connection(http_hook.http_conn_id)
@@ -474,7 +474,7 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
         logger.error("No data fetched from Ivanti API.")
         return False
 
-    users_with_mail_sync = _fetch_ivanti_mail_sync_users(http_hook=http_hook)
+    users_with_mail_calendar_sync = _fetch_ivanti_mail_calendar_sync_users(http_hook=http_hook)
     logger.debug(f"Ivanti devices: {len(ivanti_data)} records after filtering.")
 
     device_map = {}
@@ -538,10 +538,10 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             user_full_name = data.pop("user_full_name", None)
             user = users_by_full_name.get(user_full_name) if user_full_name else None
             user_id = user.user_id if user else None
-            data["mail_calender_sync"] = bool(
+            data["mail_calendar_sync"] = bool(
                 user and user.primary_user
                 and user.primary_user.strip().casefold()
-                in users_with_mail_sync
+                in users_with_mail_calendar_sync
             )
 
             if existing:
@@ -1236,7 +1236,7 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
-        md."mail_calender_sync",
+        md."mail_calendar_sync",
         u."primary_user",
         u."full_name",
         u."email"
@@ -1258,7 +1258,7 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
-        md."mail_calender_sync",
+        md."mail_calendar_sync",
         u."primary_user",
         u."full_name",
         u."email";
