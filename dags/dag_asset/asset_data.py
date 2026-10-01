@@ -415,6 +415,12 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
 
 
 def _fetch_ivanti_mail_calendar_sync_users(http_hook: HttpHook) -> set[str]:
+    """
+    Fetch user IDs for devices in the Ivanti mail and calendar sync group.
+
+    :param http_hook: Airflow HttpHook for the Ivanti API.
+    :return: Set of normalized user IDs with mail and calendar sync.
+    """
     logger.info("Fetching mail-calender sync users from Ivanti API ...")
 
     conn = http_hook.get_connection(http_hook.http_conn_id)
@@ -619,8 +625,8 @@ def insert_device_license_and_historical_data(
     asset_engine: Engine
 ) -> bool:
     """
-    Fetch historical computer data and mobile mail and calendar sync from SFTP,
-    then update Computer and MobileDevice tables in Asset DB.
+    Fetch Device License CSV, Comm2ig historical CSV, and Atea EAN from SFTP,
+    then update Computer table in Asset DB accordingly.
 
     :param sftp_hook: Airflow SFTPHook for Asset SFTP.
     :param http_hook: Airflow HttpHook for the Atea API.
