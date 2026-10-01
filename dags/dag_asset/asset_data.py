@@ -394,11 +394,18 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
         )
 
         data = res.json()
-        batch = data.get("results", []) or []
+        batch = data.get("results")
+        if not isinstance(batch, list) or not isinstance(
+            data.get("hasMore"), bool
+        ):
+            raise ValueError("Invalid Ivanti devices pagination response")
+        if not batch and data["hasMore"]:
+            raise ValueError("Ivanti returned an empty device page with hasMore=True")
 
         all_devices.extend(batch)
 
-        if len(batch) < limit:
+        # Check if there are more devices to fetch
+        if not data["hasMore"]:
             break
 
         offset += limit
