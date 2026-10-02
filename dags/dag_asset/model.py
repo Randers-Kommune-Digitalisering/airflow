@@ -68,5 +68,6 @@ class MobileDevice(Base):
     carrier = Column(String)
     created_at = Column(DateTime)
     last_connected_at = Column(DateTime)
+    mail_calendar_sync = Column(Boolean, default=False)
     user_id = Column(Integer, ForeignKey("user.user_id"), nullable=True, index=True)
     user = relationship("User", back_populates="mobile_devices")

@@ -371,8 +371,8 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
         "common.current_phone_number,common.creation_date,common.last_connected_at,common.platform_name,"
         "common.manufacturer,common.model,common.imei,common.SerialNumber"
     )
-    # Query parameters for filtering away non-mobile Samsung android devices and Apple devices that are not iPhones (iPads, Apple TVs etc.)
-    query = 'common.manufacturer contains "samsung" OR common.model does not contain "iPad" AND common.model does not contain "AppleTV"'
+    # Query parameters for filtering away Apple TVs
+    query = 'common.model does not contain "AppleTV"'
     limit = 200  # can be higher but documentation specifies "no more than 200."
     offset = 0
 
@@ -394,11 +394,17 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
         )
 
         data = res.json()
-        batch = data.get("results", []) or []
+        batch = data.get("results")
+        has_more = data.get("hasMore")
+        if not isinstance(batch, list) or not isinstance(has_more, bool):
+            raise ValueError("Invalid Ivanti devices pagination response")
+        if not batch and has_more:
+            raise ValueError("Ivanti returned an empty device page with hasMore=True")
 
         all_devices.extend(batch)
 
-        if len(batch) < limit:
+        # Check if there are more devices to fetch
+        if not has_more:
             break
 
         offset += limit
@@ -407,9 +413,64 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
     return all_devices
 
 
+def _fetch_ivanti_mail_calendar_sync_users(http_hook: HttpHook) -> set[str]:
+    """
+    Fetch user IDs for devices in the Ivanti mail and calendar sync group.
+
+    :param http_hook: Airflow HttpHook for the Ivanti API.
+    :return: Set of normalized user IDs with mail and calendar sync.
+    """
+    logger.info("Fetching mail-calender sync users from Ivanti API ...")
+
+    conn = http_hook.get_connection(http_hook.http_conn_id)
+    if not conn.login or not conn.password:
+        raise ValueError("Missing credentials for Ivanti API connection.")
+
+    http_hook.method = "GET"
+
+    # Fields needed to get the required data for the mail sync users
+    fields = "user.user_id,user.ldap.groups.dn"
+    # Query to filter users who are part of the mail sync group
+    query = '"user.ldap.groups.dn" = "cn=mobileiron med mail sync og cert validering,dc=randers,dc=dk"'
+
+    limit = 200
+    offset = 0
+    users: set[str] = set()
+    while True:
+        res = http_hook.run(
+            endpoint="/api/v2/devices",
+            data={
+                "adminDeviceSpaceId": 1,
+                "fields": fields,
+                "query": query,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+        data = res.json()
+        batch = data.get("results")
+        has_more = data.get("hasMore")
+        if not isinstance(batch, list) or not isinstance(has_more, bool):
+            raise ValueError("Invalid Ivanti mail sync pagination response")
+        if not batch and has_more:
+            raise ValueError("Ivanti returned an empty page with hasMore=True")
+        for device in batch:
+            user_id = device.get("user.user_id")
+            if not isinstance(user_id, str) or not user_id.strip():
+                raise ValueError("Invalid Ivanti mail sync user ID")
+            users.add(user_id.strip().casefold())
+
+        if not has_more:
+            break
+        offset += limit
+
+    logger.info(f"Successfully retrieved mail-calender sync users from Ivanti API. Total users: {len(users)}")
+    return users
+
+
 def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
     """
-    Fetch device data from Ivanti API and upsert into MobileDevice table.
+    Sync MobileDevice table with the devices returned by Ivanti API.
 
     :param http_hook: Airflow HttpHook for the Ivanti API
     :param asset_engine: SQLAlchemy Engine for the Asset DB.
@@ -422,6 +483,7 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
         logger.error("No data fetched from Ivanti API.")
         return False
 
+    users_with_mail_calendar_sync = _fetch_ivanti_mail_calendar_sync_users(http_hook=http_hook)
     logger.debug(f"Ivanti devices: {len(ivanti_data)} records after filtering.")
 
     device_map = {}
@@ -464,16 +526,20 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             .all()
         }
 
-        # Fetch existing devices
         existing_devices = {
             d.serial_number: d
             for d in session.query(MobileDevice)
-            .filter(MobileDevice.serial_number.in_(device_map.keys()))
             .all()
         }
 
         inserted = 0
         updated = 0
+        deleted = 0
+
+        for serial, device in existing_devices.items():
+            if serial not in device_map:
+                session.delete(device)
+                deleted += 1
 
         for serial, data in device_map.items():
             existing = existing_devices.get(serial)
@@ -481,6 +547,11 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
             user_full_name = data.pop("user_full_name", None)
             user = users_by_full_name.get(user_full_name) if user_full_name else None
             user_id = user.user_id if user else None
+            data["mail_calendar_sync"] = bool(
+                user and user.primary_user
+                and user.primary_user.strip().casefold()
+                in users_with_mail_calendar_sync
+            )
 
             if existing:
                 for key, value in data.items():
@@ -493,7 +564,7 @@ def insert_ivanti_data(http_hook: HttpHook, asset_engine: Engine) -> bool:
 
         session.commit()
 
-        logger.info(f"Inserted: {inserted}, Updated: {updated}, Total: {len(device_map)} from Ivanti API data into MobileDevice table.")
+        logger.info(f"Ivanti sync: inserted={inserted}, updated={updated}, deleted={deleted}, total={len(device_map)}")
 
     return True
 
@@ -714,7 +785,6 @@ def insert_device_license_and_historical_data(
         logger.info(f"Comm2ig historical data updated for {updated_comm2ig} computers")
         logger.info(f"Atea kob_ean_nr updated for {updated_atea} computers")
         logger.info(f"Dustin historical data updated for {updated_dustin} computers")
-
         return True
 
 
@@ -1175,6 +1245,7 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
+        md."mail_calendar_sync",
         u."primary_user",
         u."full_name",
         u."email"
@@ -1196,6 +1267,7 @@ def export_mobile_assets_from_db(asset_engine: Engine) -> io.BytesIO:
         md."carrier",
         md."created_at",
         md."last_connected_at",
+        md."mail_calendar_sync",
         u."primary_user",
         u."full_name",
         u."email";
