@@ -1,24 +1,16 @@
+import re
 import logging
 
+from urllib.parse import urljoin
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 from airflow.hooks.base import BaseHook
-
 from rkdigi import ManagedOAuth2Session
 
+from dag_xflow_nexus_hjaelpemidler.constants import STATE_ACTIVE_NAME, STATE_DEAD_TYPE_ID
+from dag_xflow_nexus_hjaelpemidler.models import NexusDocument, NexusCase
+
 logger = logging.getLogger(__name__)
-
-# Element names
-TOP_PROGRAM_NAME = "Sundhed, Kultur og Omsorg"
-STATE_ACTIVE_NAME = "Aktiv"
-STATE_DEAD_TYPE_ID = "DEAD"
-
-# Elements in the Nexus API that are specific to the assistive devices dashboard and its widgets/forms/assignments.
-ASSISTIVE_DEVICES_DASHBOARD_NAME = "Dokumentation - Personlige hjælpemidler"
-ASSISTIVE_DEVICES_DASHBOARD_DOCS_WIDGET_NAME = "Breve og dokumenter Personlige hjælpemidler"
-ASSISTIVE_DEVICES_DASHBOARD_COMMUNICATION_WIDGET_NAME = "Henvendelse Visitation Personlige hjælpemidler"
-ASSISTIVE_DEVICES_COMMUNICATION_FORM_TITLE = "Henvendelse Kropsbårne hjælpemidler"
-ASSISTIVE_DEVICES_ASSIGNMENT_NAME = "PHJÆ Nye ansøgninger fra X-Flow"
 
 
 class NexusClient:
@@ -32,11 +24,26 @@ class NexusClient:
             client_secret=nexus_conn.password,
         )
 
-    # Universal private helpers for navigating the Nexus API, which uses HAL (Hypertext Application Language) for hypermedia.
-    def _link(self, obj: dict, rel: str) -> str:
-        """Get the URL for a given HAL link relation from an object."""
-        return obj.get("_links", {}).get(rel, {}).get("href")
+    @staticmethod
+    def _normalize(value):
+        """Recursively normalize strings in the given value by stripping whitespace and collapsing multiple spaces."""
+        if isinstance(value, str):
+            return re.sub(r"\s+", " ", value).strip()
 
+        if isinstance(value, dict):
+            return {k: NexusClient._normalize(v) for k, v in value.items()}
+
+        if isinstance(value, list):
+            return [NexusClient._normalize(v) for v in value]
+
+        return value
+
+    def _json(self, response):
+        """Process the JSON response from a requests.Response object, raising an error for HTTP issues."""
+        response.raise_for_status()
+        return self._normalize(response.json())
+
+    # Universal private helpers for navigating the Nexus API, which uses HAL (Hypertext Application Language) for hypermedia.
     def _follow(self, obj: dict, rel: str, method: str = "get", **kwargs) -> dict:
         """Follow a HAL link relation from an object and return the resulting JSON response."""
         url = obj.get("_links", {}).get(rel, {}).get("href")
@@ -44,56 +51,46 @@ class NexusClient:
             available_rels = ", ".join(obj.get("_links", {}).keys()) or "<none>"
             raise ValueError(f"Missing HAL link rel '{rel}'. Available rels: {available_rels}")
         res = self.session.request(method.upper(), url, **kwargs)
-        res.raise_for_status()
-        return res.json()
+        return self._json(res)
 
     def _get(self, endpoint: str = None, params: dict | None = None) -> dict:
         """Perform a GET request to the Nexus API, optionally to a specific endpoint with query parameters."""
         url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}" if endpoint else self.base_url
         response = self.session.get(url, params=params)
-        response.raise_for_status()
-        return response.json()
-
-    def _post(self, endpoint: str = None, data: dict | None = None) -> dict:
-        """Perform a POST request to the Nexus API, optionally to a specific endpoint with JSON data."""
-        url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}" if endpoint else self.base_url
-        response = self.session.post(url, json=data)
-        response.raise_for_status()
-        return response.json()
-
-    # Private helpers
-    def _get_patient_dashboard(self, patient_data: dict, dashboard_name: str) -> dict:
-        """Get the dashboard data for a specific patient and dashboard name."""
-        patient_preferences = self._follow(patient_data, "patientPreferences")
-        dashboard_partial = next((item for item in patient_preferences["CITIZEN_DASHBOARD"] if item.get("name") == dashboard_name), None)
-        if dashboard_partial is None:
-            raise ValueError(f"Could not find '{dashboard_name}' in patient preferences")
-        return self._follow(dashboard_partial, "self")
-
-    def _get_widget(self, dashboard: dict, widget_header_title: str) -> dict:
-        """Get a specific widget from a dashboard by its header title."""
-        widget = next((item for item in dashboard["view"]["widgets"] if item.get("headerTitle") == widget_header_title), None)
-        if widget is None:
-            raise ValueError(f"Could not find widget with headerTitle '{widget_header_title}' in dashboard")
-        return widget
+        return self._json(response)
 
     # Public methods
-    def get_patient_data(self, cpr: str) -> dict | None:
+    def get_dashboard(self, patient: dict, name: str) -> dict:
+        """Get the dashboard data for a specific patient and dashboard name."""
+        patient_preferences = self._follow(patient, "patientPreferences")
+        dashboard_partial = next((item for item in patient_preferences["CITIZEN_DASHBOARD"] if item.get("name") == name), None)
+        if dashboard_partial is None:
+            raise ValueError(f"Could not find '{name}' in patient preferences")
+        return self._follow(dashboard_partial, "self")
+
+    def get_widget(self, dashboard: dict, name: str) -> dict:
+        """Get a specific widget from a dashboard by its header title."""
+        widget = next((item for item in dashboard.get("view", {}).get("widgets", []) if item.get("headerTitle") == name), None)
+        if widget is None:
+            raise ValueError(f"Could not find widget with headerTitle '{name}' in dashboard")
+        return widget
+
+    def get_patient(self, search_text: str) -> dict | None:
         """Get the patient data for a specific CPR number."""
         home = self._get()
-        patient_search = self._follow(home, "patients", params={"query": cpr})
+        patient_search = self._follow(home, "patients", params={"query": search_text})
         pages = patient_search.get("pages", [])
         if not pages:
-            # raise ValueError("No patient data found for CPR")
+            # raise ValueError("No patient data found for search_text")
             return None
         patient_data_search = self._follow(pages[0], "patientData")
         if len(patient_data_search) != 1:
             raise ValueError(f"Expected exactly one patient data entry, but found {len(patient_data_search)}")
         return self._follow(patient_data_search[0], "self")
 
-    def is_active(self, patient_data: dict, set_if_not: bool = False) -> bool:
+    def is_active(self, patient: dict, set_if_not: bool = False) -> bool:
         """Check if a patient is currently active, optionally setting the state to active if not."""
-        current_state = patient_data.get("patientState", {})
+        current_state = patient.get("patientState", {})
 
         # Always report 'DEAD' state as inactive - do not try to update
         if current_state.get("type", {}).get("id") == STATE_DEAD_TYPE_ID:
@@ -102,7 +99,7 @@ class NexusClient:
 
         is_active = current_state.get("name") == STATE_ACTIVE_NAME  # Other states are considered active, but should be changed to this specific one.
         if not is_active and set_if_not:
-            schedule = patient_data.get("patientStateValueSchedule", {})
+            schedule = patient.get("patientStateValueSchedule", {})
             new_period = self._follow(obj=schedule, rel="prototypeValuePeriod", method="get")
 
             state = next((v for v in new_period.get("possibleValues", []) if v.get("name") == STATE_ACTIVE_NAME), None)
@@ -121,160 +118,66 @@ class NexusClient:
             current_period["endDate"] = iso_start
 
             schedule.setdefault("valuePeriods", []).append(new_period)
-            patient_data["patientState"] = state
-            patient_data["patientStateStartDate"] = iso_start
+            patient["patientState"] = state
+            patient["patientStateStartDate"] = iso_start
 
-            updated_patient = self._follow(obj=patient_data, rel="update", method="put", json=patient_data)
-            return self.is_active(patient_data=updated_patient, set_if_not=False)
+            updated_patient = self._follow(obj=patient, rel="update", method="put", json=patient)
+            return self.is_active(patient=updated_patient, set_if_not=False)
         return is_active
 
-    def has_program(self, patient_data: dict, program_name: str, add_if_missing: bool = False) -> bool:
-        """Check if a specific program is associated with a patient, optionally adding it if missing."""
-        active_programs = self._follow(obj=patient_data, rel="activePrograms", method="get")
-        exists = next((p for p in active_programs if p.get("name") == program_name), None) is not None
-        if not exists and add_if_missing:
-            # Add the program if it is missing
-            available_programs = self._follow(obj=patient_data, rel="availableProgramPathways", method="get")
+    def has_pathway(self, patient: dict, program_name: str, pathway_name: str | None = None, add_if_missing: bool = False) -> bool:
+        """Check if a specific program or pathway is associated with a patient, optionally adding it if missing."""
+        active_pathways = self._follow(obj=patient, rel="pathwayTree", method="get")  # active programs and their children (pathways)
+        parent_program = next((p for p in active_pathways if p.get("name") == program_name), None)
+
+        # Add the program if it is missing
+        if not parent_program and add_if_missing:
+            available_programs = self._follow(obj=patient, rel="availableProgramPathways", method="get")
             program_to_add = next((p for p in available_programs if p.get("name") == program_name), None)
             if program_to_add is None:
                 raise ValueError(f"Program '{program_name}' cannot be added because it is not available in the available program pathways")
+
             self._follow(obj=program_to_add, rel="enroll", method="put")
-            return self.has_program(patient_data=patient_data, program_name=program_name, add_if_missing=False)
-        return exists
+            return self.has_pathway(patient=patient, program_name=program_name, pathway_name=pathway_name, add_if_missing=False)
 
-    def add_assistive_device_document(self, patient_data: dict, date: date, name: str, file_name: str, file_bytes: bytes, mime_type: str) -> dict:
-        """Add a document to the assistive devices dashboard for a specific patient."""        
-        # Ensure the file name is valid
-        file_name = "_".join(file_name.strip().rstrip(".").split())
-        if not file_name:
-            raise ValueError("File name cannot be empty")
+        if parent_program is None:
+            return False
 
-        dashboard = self._get_patient_dashboard(patient_data, ASSISTIVE_DEVICES_DASHBOARD_NAME)
-        widget = self._get_widget(dashboard, ASSISTIVE_DEVICES_DASHBOARD_DOCS_WIDGET_NAME)
-        new_document = self._follow(widget["creatableObjects"], "documentPrototype")
-        new_document["name"] = name
-        new_document["originalFileName"] = file_name
+        if pathway_name is None:
+            return True
 
-        if new_document.get("relevanceDate", "").split("T")[0] != date.strftime("%Y-%m-%d"):
-            local_midnight = datetime.combine(date, time.min, tzinfo=ZoneInfo("Europe/Copenhagen"))
-            new_document["relevanceDate"] = local_midnight.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        child_pathways = parent_program.get("children") or []
+        if any(child.get("name") == pathway_name for child in child_pathways):
+            return True
 
-        created_document = self._follow(new_document, "create", method="post", json=new_document)
-
-        return self._follow(created_document, "upload", method="post", files={"file": (file_name, file_bytes, mime_type)})
-
-    def create_assistive_device_communication_form(
-            self,
-            patient_data: dict,
-            application_date: date,
-            application_reason: str,
-            communication_source: str,
-            device: str,
-            optional_contact_info: str | None = None,
-            patient_understands: bool | None = None,
-            can_information_be_obtained: bool | None = None
-    ) -> dict:
-        """Create a communication form for assistive devices for a specific patient."""
-        # Field names
-        APPLICATION_DATE_FIELD = "Ansøgningsdato"
-        APPLICATION_REASON_FIELD = "Henvendelses årsag"
-        COMMUNICATION_SOURCE_FIELD = "Henvendelseskilde"
-        PATIENT_UNDERSTANDS_FIELD = "Er borgeren indforstået med henvendelsen?"
-        PATIENT_INFORMED_FIELD = "Borger oplyst om ovenstående"
-        INFORMATION_OBTAINED_FIELD = "Der er givet tilladelse til indhentning af oplysninger"
-        DEVICE = "Hvad søges der om?"
-        CONTACT_INFO_FIELD = "Uddyb med navn, telefonnummer m.m."
-        # Action name
-        COMPLETED_ACTION_NAME = "Udfyldt"
-
-        dashboard = self._get_patient_dashboard(patient_data, ASSISTIVE_DEVICES_DASHBOARD_NAME)
-        widget = self._get_widget(dashboard, ASSISTIVE_DEVICES_DASHBOARD_COMMUNICATION_WIDGET_NAME)
-
-        forms = widget.get("creatableObjects", {}).get("forms", [])
-        if not forms:
-            raise ValueError("No forms found in widget.creatableObjects.forms")
-
-        selected_form = next((form for form in forms if form.get("title") == ASSISTIVE_DEVICES_COMMUNICATION_FORM_TITLE), None)
-        if selected_form is None:
-            raise ValueError(
-                f"Could not find form with title '{ASSISTIVE_DEVICES_COMMUNICATION_FORM_TITLE}'. "
+        # Add the pathway if it is missing
+        if add_if_missing:
+            available_pathways = self._follow(
+                obj=parent_program,
+                rel="availableNestedProgramPathways",
+                method="get",
             )
-
-        form = self._follow(selected_form, "formDataPrototype")
-
-        # If "forløb" 'Personlige hjælpemidler" is not already set, find it in the available pathway associations and set it.
-        if form.get("pathwayAssociation", {}).get("placement") is None:
-            available_pathway_associations = self._follow(
-                obj=form.get("pathwayAssociation", {}),
-                rel="availablePathwayAssociation",
-                params={"subjectId": form.get("formDefinition", {}).get("uid")}
+            pathway_to_add = next(
+                (pathway for pathway in available_pathways if pathway.get("name") == pathway_name),
+                None,
             )
-            # NOTE: Hardcoded name for pathway association 'Sundhed, Kultur og Omsorg'
-            sundhed_kultur_og_omsorg_association = next(
-                (assoc for assoc in available_pathway_associations if assoc.get("patientPathwayPlacement", {}).get("name") == "Sundhed, Kultur og Omsorg"),
-                None
-            )
-            if sundhed_kultur_og_omsorg_association is None:
-                raise ValueError("Could not find 'Sundhed, Kultur og Omsorg' association in available pathway associations")
-
-            # NOTE: Hardcoded name for pathway association 'Personlige hjælpemidler'
-            personlige_hjaelpemidler_association = next(
-                (assoc for assoc in sundhed_kultur_og_omsorg_association.get("children", []) if assoc.get("patientPathwayPlacement", {}).get("name") == "Personlige hjælpemidler"),
-                None
-            )
-            placement = personlige_hjaelpemidler_association.get("patientPathwayPlacement")
-            if placement is None:
-                raise ValueError("Could not find 'Personlige hjælpemidler' placement in available pathway associations")
-            form["pathwayAssociation"]["placement"] = placement
-
-        def _get_dropdown_value_or_raise(field_item: dict, option_name: str) -> dict:
-            option = next((v for v in field_item.get("possibleValues", []) if v.get("name") == option_name), None)
-            if option is None:
-                available_options = [v.get("name") for v in field_item.get("possibleValues", [])]
+            if pathway_to_add is None:
                 raise ValueError(
-                    f"Could not find option '{option_name}' for field '{field_item.get('label')}'. "
-                    f"Available options: {available_options}"
+                    f"Pathway '{pathway_name}' cannot be added because it is not available "
+                    f"under program '{program_name}'"
                 )
-            return option
 
-        # Populate the form with provided data
-        for item in form.get("items", []):
-            label = item.get("label")
-            if label == APPLICATION_DATE_FIELD:
-                # Nexus expects an ISO UTC timestamp string for date fields.
-                local_midnight = datetime.combine(application_date, time.min, tzinfo=ZoneInfo("Europe/Copenhagen"))
-                item["value"] = local_midnight.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            elif label == APPLICATION_REASON_FIELD:
-                item["value"] = application_reason
-            elif label == COMMUNICATION_SOURCE_FIELD:
-                item["value"] = _get_dropdown_value_or_raise(item, communication_source)
-            elif label == PATIENT_UNDERSTANDS_FIELD:
-                # NOTE: Hardcoded options
-                selected_name = "Uafklaret" if patient_understands is None else ("Ja" if patient_understands else "Nej")
-                item["value"] = _get_dropdown_value_or_raise(item, selected_name)
-            elif label == PATIENT_INFORMED_FIELD:
-                # NOTE: Hardcoded options
-                item["value"] = _get_dropdown_value_or_raise(item, "Skriftligt")
-            elif label == INFORMATION_OBTAINED_FIELD:
-                # NOTE: Hardcoded options
-                selected_name = "Der er ikke taget stilling" if can_information_be_obtained is None else ("Ja" if can_information_be_obtained else "Nej")
-                item["value"] = _get_dropdown_value_or_raise(item, selected_name)
-            elif label == DEVICE:
-                option = next((v for v in item.get("possibleValues", []) if v.get("name", "").lower() == device.lower()), None)
-                if option is not None:
-                    item["value"] = [option]
-            elif label == CONTACT_INFO_FIELD and optional_contact_info:
-                item["value"] = optional_contact_info
+            self._follow(obj=pathway_to_add, rel="enroll", method="put")
+            return self.has_pathway(
+                patient=patient,
+                program_name=program_name,
+                pathway_name=pathway_name,
+                add_if_missing=False,
+            )
 
-        actions = self._follow(form, "availableActions")
-        action = next((a for a in actions if a.get("name") == COMPLETED_ACTION_NAME), None)
-        if action is None:
-            raise ValueError(f"Could not find action '{COMPLETED_ACTION_NAME}' in availableActions")
+        return False
 
-        created_form = self._follow(action, "createFormData", method="post", json=form)
-        return created_form
-
-    def get_auto_assignment(self, form: dict, assignment_name: str) -> dict:
+    def get_auto_assignment(self, form: dict, assignment_title: str, organization_name: str) -> dict:
         """Get the auto-assignment for a specific form and assignment name."""
         activityIdentifier = form.get("activityIdentifier", {}).get("identifier")
         state = form.get("workflowState", {}).get("name")
@@ -297,9 +200,27 @@ class NexusClient:
 
         auto_assignments_res = self._follow(obj=form, rel="autoAssignmentsPrototype", method="post", json=payload)
         assignments = auto_assignments_res.get("assignments", [])
-        selected_assignment = next((a for a in assignments if a.get("type", {}).get("name") == assignment_name), None)
+        selected_assignment = next((a for a in assignments if a.get("type", {}).get("name") == assignment_title), None)
         if not selected_assignment:
-            raise ValueError(f"Could not find assignment with type name '{assignment_name}' in response")
+            raise ValueError(f"Could not find assignment with type name '{assignment_title}' in response")
+
+        if (selected_assignment.get("organizationAssignee") or {}).get("displayName") != organization_name:
+            # If the current organization assignee does not match the desired organization,
+            # fetch the list of available organization assignees and select the correct one.
+            organization_href = selected_assignment.get("_links", {}).get("availableOrganizationAssignees", {}).get("href")
+            if not organization_href:
+                raise ValueError("Assignment has no availableOrganizationAssignees link")
+            organizations = self._json(self.session.request("GET", urljoin(self.base_url, organization_href)))
+            if not isinstance(organizations, list):
+                raise ValueError("Expected a list of available organization assignees")
+            organization = next((item for item in organizations if item.get("name") == organization_name), None)
+            if organization is None:
+                raise ValueError(f"Organization assignee '{organization_name}' is not available")
+
+            selected_assignment["organizationAssignee"] = {
+                "organizationId": organization["id"],
+                "displayName": organization["name"],
+            }
 
         return selected_assignment
 
@@ -327,10 +248,28 @@ class NexusClient:
 
         if created_form:
             try:
+                # Try to delete the form (Only 'Henvendelse Kropsbårne hjælpemidler' form supports direct deletion)
                 self._follow(obj=created_form, rel="delete", method="delete")
                 logger.warning(f"Rolled back form id={created_form.get('id')}")
             except Exception:
-                logger.exception(f"Failed rolling back form id={created_form.get('id')}")
+                try:
+                    # If direct deletion fails, revert the form to draft mode and add a prefix to indicate it was cancelled due to an error
+                    actions = self._follow(obj=created_form, rel="availableActions")
+                    draft_action = next((action for action in actions if action.get("name") == "Kladde"), None)
+                    if draft_action is None:
+                        raise ValueError("Could not find action 'Kladde' in availableActions")
+                    for item in created_form.get("items", []):
+                        if item.get("label") == "Hvad er årsagen":
+                            prefix = "ANNULLERET pga. fejl - "
+                            value = item.get("value")
+                            if value is None:
+                                item["value"] = prefix
+                            elif isinstance(value, str) and not value.startswith(prefix):
+                                item["value"] = prefix + value
+                    self._follow(obj=draft_action, rel="updateFormData", method="put", json=created_form)
+                    logger.warning(f"Reverted form to draft id={created_form.get('id')}")
+                except Exception:
+                    logger.exception(f"Failed reverting form to draft id={created_form.get('id')}")
 
         for document in reversed(created_docs):
             try:
@@ -338,3 +277,89 @@ class NexusClient:
                 logger.warning(f"Rolled back document id={document.get('id')}")
             except Exception:
                 logger.exception(f"Failed rolling back document id={document.get('id')}")
+
+    def get_document(self, widget: dict, pathway_name: str) -> dict:
+        """Retrieve a document (prototype, without creating it) from the specified widget in Nexus with the specified pathway name. Returns the document api object."""
+        document = self._follow(widget["creatableObjects"], "documentPrototype")
+
+        # Ensure the new document is associated with the correct pathway before proceeding
+        if (document.get("pathwayAssociation", {}).get("placement") or {}).get("name") != pathway_name:
+            pathway_associations = self._follow(document.get("pathwayAssociation"), "availablePathwayAssociation")
+            pathway_association = next((c for p in pathway_associations for c in p.get("children", []) if c.get("name") == pathway_name), None)
+            if pathway_association is None:
+                raise ValueError(f"Could not find placement with name '{pathway_name}'.")
+            pathway_association = self._follow(pathway_association, "self")
+            document = self._follow(pathway_association, "documentPrototype")
+
+        return document
+
+    def create_document(self, document: dict, nexus_document: NexusDocument) -> dict:
+        """Add a document to the specified widget in Nexus. Returns the created document api object."""
+        document["name"] = nexus_document.name
+        document["originalFileName"] = nexus_document.file_name
+
+        if document.get("relevanceDate", "").split("T")[0] != nexus_document.date.strftime("%Y-%m-%d"):
+            local_midnight = datetime.combine(nexus_document.date, time.min, tzinfo=ZoneInfo("Europe/Copenhagen"))
+            document["relevanceDate"] = local_midnight.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+        created_document = self._follow(document, "create", method="post", json=document)
+        return self._follow(created_document, "upload", method="post", files={"file": (nexus_document.file_name, nexus_document.file_bytes, nexus_document.mime_type)})
+
+    def get_filled_form(self, widget: dict, nexus_case: NexusCase) -> dict:
+        """Retrieve the filled form for the specified widget and nexus case."""
+        fields_by_name = {field.label: field for field in nexus_case.fields}
+        if len(fields_by_name) != len(nexus_case.fields):
+            raise ValueError("Duplicate field names are not allowed")
+
+        # Find the form with the title matching the nexus_case.form_name
+        forms = widget.get("creatableObjects", {}).get("forms", [])
+        if not forms:
+            raise ValueError("No forms found in widget.creatableObjects.forms")
+
+        form = next((form for form in forms if form.get("title") == nexus_case.form_name), None)
+        if form is None:
+            raise ValueError(f"Could not find form with title '{nexus_case.form_name}'.")
+        form = self._follow(form, "formDataPrototype")
+
+        # If the current pathway placement does not match the one specified in the nexus_case, find and set the correct placement
+        if (form.get("pathwayAssociation", {}).get("placement") or {}).get("name") != nexus_case.pathway_name:
+            placements = self._follow(form.get("pathwayAssociation"), "availablePathwayPlacements")
+            placement = next((c.get("patientPathwayPlacement") for p in placements for c in p.get("children", []) if c.get("patientPathwayPlacement", {}).get("name") == nexus_case.pathway_name), None)
+            if placement is None:
+                raise ValueError(f"Could not find pathway placement '{nexus_case.pathway_name}'")
+
+            form["pathwayAssociation"]["placement"] = placement
+
+        # Apply the field values from the nexus_case to the form items
+        unmatched_labels = set(fields_by_name)
+        for item in form.get("items", []):
+            field = fields_by_name.get(item.get("label"))
+            if field is not None:
+                field.apply(item)
+                unmatched_labels.discard(item.get("label"))
+
+        if unmatched_labels:
+            available_labels = sorted({item.get("label") for item in form.get("items", [])})
+            raise ValueError(
+                f"Could not find form item(s) for field(s): {sorted(unmatched_labels)}.\n"
+                f"Available form item labels: {available_labels}"
+            )
+
+        return form
+
+    def create_form(self, form: dict, action_name: str) -> dict:
+        """Create the specified form by performing the given action."""
+        if not form.get("pathwayAssociation", {}).get("placement"):
+            raise ValueError("Form does not have a pathway placement set")
+
+        missing_required_fields = [i.get("label") for i in form.get("items", []) if i.get("required") and i.get("value") in (None, "", [])]
+        if missing_required_fields:
+            raise ValueError(f"Required form fields are missing values: {missing_required_fields}")
+
+        actions = self._follow(form, "availableActions")
+        action = next((a for a in actions if a.get("name") == action_name), None)
+        if action is None:
+            raise ValueError(f"Could not find action '{action_name}' in availableActions")
+
+        created_form = self._follow(action, "createFormData", method="post", json=form)
+        return created_form
