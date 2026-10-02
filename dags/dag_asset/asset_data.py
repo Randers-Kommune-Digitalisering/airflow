@@ -395,17 +395,16 @@ def _fetch_ivanti_devices(http_hook: HttpHook) -> list[dict]:
 
         data = res.json()
         batch = data.get("results")
-        if not isinstance(batch, list) or not isinstance(
-            data.get("hasMore"), bool
-        ):
+        has_more = data.get("hasMore")
+        if not isinstance(batch, list) or not isinstance(has_more, bool):
             raise ValueError("Invalid Ivanti devices pagination response")
-        if not batch and data["hasMore"]:
+        if not batch and has_more:
             raise ValueError("Ivanti returned an empty device page with hasMore=True")
 
         all_devices.extend(batch)
 
         # Check if there are more devices to fetch
-        if not data["hasMore"]:
+        if not has_more:
             break
 
         offset += limit
@@ -449,15 +448,19 @@ def _fetch_ivanti_mail_calendar_sync_users(http_hook: HttpHook) -> set[str]:
             },
         )
         data = res.json()
-        batch = data["results"]
-        if not batch and data.get("hasMore"):
+        batch = data.get("results")
+        has_more = data.get("hasMore")
+        if not isinstance(batch, list) or not isinstance(has_more, bool):
+            raise ValueError("Invalid Ivanti mail sync pagination response")
+        if not batch and has_more:
             raise ValueError("Ivanti returned an empty page with hasMore=True")
         for device in batch:
             user_id = device.get("user.user_id")
-            if isinstance(user_id, str) and user_id.strip():
-                users.add(user_id.strip().casefold())
+            if not isinstance(user_id, str) or not user_id.strip():
+                raise ValueError("Invalid Ivanti mail sync user ID")
+            users.add(user_id.strip().casefold())
 
-        if not data.get("hasMore", len(batch) == limit):
+        if not has_more:
             break
         offset += limit
 
