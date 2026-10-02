@@ -4,6 +4,7 @@ import requests
 from dag_xflow_nexus_hjaelpemidler.config import FORM_CONFIG_BY_TABLE, build_fields_by_table
 from dag_xflow_nexus_hjaelpemidler.models import (
     HjaelpemiddelData,
+    HjaelpemiddelFormData,
     NexusAssignment,
     NexusCase,
     NexusDocument
@@ -79,10 +80,11 @@ def get_nexus_case(
             f"No Nexus form configuration registered for table '{table_name}'"
         ) from error
 
-    model_object.normal_deadline = config["generate_due_date"](model_object=model_object)
-    model_object.extended_deadline = config["generate_extended_due_date"](model_object=model_object)
+    normal_deadline = config["generate_due_date"](model_object=model_object)
+    extended_deadline = config["generate_extended_due_date"](model_object=model_object)
 
-    fields = build_fields_by_table[table_name](model_object=model_object)
+    form_data = HjaelpemiddelFormData(model_object, normal_deadline, extended_deadline)
+    fields = build_fields_by_table[table_name](model_object=form_data)
     documents = _build_documents(model_object=model_object, session=session)
     assignment_title = config["generate_assignment_title"](model_object=model_object)
     assignment = NexusAssignment(
@@ -90,7 +92,7 @@ def get_nexus_case(
         organization=config["assignment_organization"],
         title=assignment_title,
         start_date=model_object.form_date.strftime("%Y-%m-%d"),
-        due_date=config["generate_due_date"](model_object).strftime("%Y-%m-%d"),
+        due_date=normal_deadline.strftime("%Y-%m-%d"),
     )
     return NexusCase(
         cpr=model_object.cpr,

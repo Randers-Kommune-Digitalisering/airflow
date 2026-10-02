@@ -45,6 +45,16 @@ class StoetteTilBilData(HjaelpemiddelData, Protocol):
     type: str | None
 
 
+class HjaelpemiddelFormData:
+    def __init__(self, source: HjaelpemiddelData, normal_deadline: date, extended_deadline: date | None) -> None:
+        self.source = source
+        self.normal_deadline = normal_deadline
+        self.extended_deadline = extended_deadline
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.source, name)
+
+
 # Nexus
 # Classes for representing Nexus data
 @dataclass(frozen=True)
