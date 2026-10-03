@@ -1,57 +1,28 @@
-import base64
 import requests
 
-from datetime import timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-
 from airflow.utils.email import send_email_smtp
-from sqlalchemy.engine import Row
 
-from dag_xflow_nexus_hjaelpemidler.nexus import ASSISTIVE_DEVICES_ASSIGNMENT_NAME, TOP_PROGRAM_NAME, NexusClient
+from dag_xflow_nexus_hjaelpemidler.constants import COMPLETED_ACTION_NAME
+from dag_xflow_nexus_hjaelpemidler.models import NexusCase
+from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient
 
 
 # Helper functions
-def _decode_base64_pdf(base64_string: str) -> bytes:
-    """ Decode a raw base64 string into file bytes, rejecting anything that is not a PDF. """
-    try:
-        file_bytes = base64.b64decode("".join(base64_string.split()), validate=True)
-    except Exception as e:
-        raise ValueError("Invalid base64 content") from e
-
-    if not file_bytes.startswith(b"%PDF-"):
-        raise ValueError("Unknown file type: only PDF is supported")
-    return file_bytes
-
-
-def _get_xflow_attachment(session: requests.Session, url: str) -> bytes:
-    """ Download an attachment from xFlow. """
-    response = session.get(url, timeout=60)
-    response.raise_for_status()
-    return response.content
-
-
-def _error_email_sender(row: Row, xflow_session: requests.Session, table_name: str, msg: str) -> None:
+def _error_email_sender(nexus_case: NexusCase, msg: str) -> None:
     """ Send an email when a patient is not found in Nexus or is inactive. """
     with TemporaryDirectory(prefix="xflow-not-found-") as temp_dir:
         attachment_paths = []
 
-        form_name = f"{table_name}.pdf"
-        form_path = Path(temp_dir) / form_name
-        form_path.write_bytes(_decode_base64_pdf(row.form_pdf_base64))
-        attachment_paths.append(str(form_path))
-
-        for attachment in row.attachments or []:
-            attachment_name = Path(attachment["title"]).name or "bilag"
-            attachment_path = Path(temp_dir) / attachment_name
-            attachment_path.write_bytes(
-                _get_xflow_attachment(session=xflow_session, url=attachment["url"])
-            )
+        for document in nexus_case.documents:
+            attachment_path = Path(temp_dir) / Path(document.file_name).name
+            attachment_path.write_bytes(document.file_bytes)
             attachment_paths.append(str(attachment_path))
 
         send_email_smtp(
             from_email="Digitalisering@randers.dk",
-            to=["personligehjaelpemidler@randers.dk"],
+            to=[nexus_case.error_notification_recipient],
             subject=f"Fejl i Nexus: {msg}",
             html_content=(
                 msg
@@ -60,30 +31,20 @@ def _error_email_sender(row: Row, xflow_session: requests.Session, table_name: s
         )
 
 
-# Handlers for each xFlow table
-def personligt_hjaelpemiddel(
-    nexus_client: NexusClient,
-    xflow_session: requests.Session,
-    row: Row,
-    table_name: str,
-) -> None:
-    """ Send a 'personligt_hjaelpemiddel' application with its attachments to Nexus. Raise to mark the row as failed. """
-    patient_data = nexus_client.get_patient_data(cpr=row.cpr)
+def process_nexus_case(nexus_client: NexusClient, xflow_session: requests.Session, nexus_case: NexusCase) -> None:
+    """Process a Nexus case """
+    patient_data = nexus_client.get_patient(search_text=nexus_case.cpr)
     if patient_data is None:
         _error_email_sender(
-            row=row,
-            xflow_session=xflow_session,
-            table_name=table_name,
+            nexus_case=nexus_case,
             msg="Borger ikke fundet i Nexus"
         )
         return
 
-    is_active = nexus_client.is_active(patient_data=patient_data, set_if_not=True)
+    is_active = nexus_client.is_active(patient=patient_data, set_if_not=True)
     if not is_active:
         _error_email_sender(
-            row=row,
-            xflow_session=xflow_session,
-            table_name=table_name,
+            nexus_case=nexus_case,
             msg="Borger er sat som død"
         )
         return
@@ -93,50 +54,30 @@ def personligt_hjaelpemiddel(
     created_assignment = None
 
     try:
-        if not nexus_client.has_program(patient_data=patient_data, program_name=TOP_PROGRAM_NAME, add_if_missing=True):
-            raise ValueError(f"Failed to ensure patient is enrolled in program '{TOP_PROGRAM_NAME}'")
+        if not nexus_client.has_pathway(patient=patient_data, program_name=nexus_case.program_name, pathway_name=nexus_case.pathway_name, add_if_missing=True):
+            raise ValueError(f"Failed to ensure patient is enrolled in pathway '{nexus_case.pathway_name}'")
         else:
-            created_doc = nexus_client.add_assistive_device_document(
-                patient_data=patient_data,
-                date=row.form_date,
-                name=row.form_doc_name,
-                file_name=f"{row.form_doc_name}.pdf",
-                file_bytes=_decode_base64_pdf(row.form_pdf_base64),
-                mime_type="application/pdf"
-            )
-            created_docs.append(created_doc)
+            dashboard = nexus_client.get_dashboard(patient=patient_data, name=nexus_case.dashboard_name)
+            doc_widget = nexus_client.get_widget(dashboard=dashboard, name=nexus_case.document_widget_name)
 
-            for attachment in row.attachments or []:
-                created_attachment = nexus_client.add_assistive_device_document(
-                    patient_data=patient_data,
-                    date=row.form_date,
-                    name=row.attachment_doc_name,
-                    file_name=attachment["title"],
-                    file_bytes=_get_xflow_attachment(session=xflow_session, url=attachment["url"]),
-                    mime_type=attachment["mimeType"]
-                )
-                created_docs.append(created_attachment)
+            for doc in nexus_case.documents:
+                api_doc = nexus_client.get_document(widget=doc_widget, pathway_name=nexus_case.pathway_name)
+                created_api_doc = nexus_client.create_document(document=api_doc, nexus_document=doc)
+                created_docs.append(created_api_doc)
 
-            created_form = nexus_client.create_assistive_device_communication_form(
-                patient_data=patient_data,
-                application_date=row.form_date,
-                application_reason=row.reason_text,
-                communication_source=row.on_behalf_of_relation if row.for_another else "Borger",
-                device=row.device_name,
-                optional_contact_info=f"{row.on_behalf_of_text.lower()}\n{row.on_behalf_of_name} - tlf: {row.on_behalf_of_phone}" if row.for_another and row.on_behalf_of_relation else None,
-                patient_understands=True,
-                can_information_be_obtained=row.can_collect_data
-            )
+            form_widget = nexus_client.get_widget(dashboard=dashboard, name=nexus_case.form_widget_name)
+            filled_form = nexus_client.get_filled_form(widget=form_widget, nexus_case=nexus_case)
+            created_form = nexus_client.create_form(form=filled_form, action_name=COMPLETED_ACTION_NAME)
 
-            assignment = nexus_client.get_auto_assignment(form=created_form, assignment_name=ASSISTIVE_DEVICES_ASSIGNMENT_NAME)
+            api_assignment = nexus_client.get_auto_assignment(form=created_form, assignment_title=nexus_case.assignment.name, organization_name=nexus_case.assignment.organization)
 
-            if assignment.get("startDate") != row.form_date.strftime("%Y-%m-%d"):
-                assignment["startDate"] = row.form_date.strftime("%Y-%m-%d")
-                assignment["dueDate"] = (row.form_date + timedelta(weeks=30)).strftime("%Y-%m-%d")
+            if api_assignment.get("startDate") != nexus_case.assignment.start_date:
+                api_assignment["startDate"] = nexus_case.assignment.start_date
+                api_assignment["dueDate"] = nexus_case.assignment.due_date
 
-            assignment["title"] = f"{row.device_name.strip() or 'Personlig hjælpemiddel'} {row.renewal_or_new_text}"
+            api_assignment["title"] = nexus_case.assignment.title
 
-            created_assignment = nexus_client.create_assignment(assignment=assignment)
+            created_assignment = nexus_client.create_assignment(assignment=api_assignment)
     except Exception:
         nexus_client.rollback_objects(
             created_docs=created_docs,
@@ -144,9 +85,3 @@ def personligt_hjaelpemiddel(
             created_assignment=created_assignment
         )
         raise
-
-
-# Mapping of xFlow table names to their respective handler functions
-HANDLERS = {
-    "personligt_hjaelpemiddel": personligt_hjaelpemiddel,
-}

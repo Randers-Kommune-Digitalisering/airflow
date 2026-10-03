@@ -34,7 +34,12 @@ def get_config_start_main_flow() -> None:
         nexus_hook = BaseHook.get_hook("nexus_prod")
         xflow_hook = BaseHook.get_hook("xflow")
 
-        get_xflow_data_add_to_nexus(tables=tables, meta_hook=meta_hook, nexus_hook=nexus_hook, xflow_hook=xflow_hook, var_name=VAR_NAME)
+        get_xflow_data_add_to_nexus(
+            meta_hook=meta_hook,
+            nexus_hook=nexus_hook,
+            xflow_hook=xflow_hook,
+            tables=tables
+        )
 
     else:
         raise ValueError(f"Variable '{VAR_NAME}' is not set or is empty")
