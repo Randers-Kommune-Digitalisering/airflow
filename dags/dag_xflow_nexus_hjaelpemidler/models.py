@@ -61,12 +61,14 @@ class HjaelpemiddelFormData:
 class NexusCase:
     cpr: str
     table_name: str
+    error_notification_recipient: str
     dashboard_name: str
     program_name: str
     pathway_name: str
     document_widget_name: str
     form_widget_name: str
     form_name: str
+    renewal_or_new_text: str
     fields: list[Field]
     documents: list[NexusDocument]
     assignment: NexusAssignment

@@ -18,6 +18,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: None,
         "assignment_name": ASSISTIVE_DEVICES_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_DEVICES_GROUP_NAME,
+        "error_notification_recipient": "personligehjaelpemidler@randers.dk",
     },
     "servicehund": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -31,6 +32,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "kommunikationshjælpemiddel": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -44,6 +46,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "hjaelpemiddel_til_barn": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -57,6 +60,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "andre_typer_af_hjaelpemidler": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -70,6 +74,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "staastoettestol": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -83,6 +88,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "elscooter": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -96,6 +102,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "stoette_til_bil": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -109,6 +116,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=58),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "saerlig_indretning_af_bil_koerekort": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -122,6 +130,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=58),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
     "boligindretning": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
@@ -135,6 +144,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_extended_due_date": lambda model_object: model_object.form_date + relativedelta(months=20),
         "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_116_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
+        "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     }
 }
 

@@ -1,7 +1,5 @@
-import base64
 import requests
 
-from typing import Any
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from airflow.utils.email import send_email_smtp
@@ -12,46 +10,19 @@ from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient
 
 
 # Helper functions
-def _decode_base64_pdf(base64_string: str) -> bytes:
-    """ Decode a raw base64 string into file bytes, rejecting anything that is not a PDF. """
-    try:
-        file_bytes = base64.b64decode("".join(base64_string.split()), validate=True)
-    except Exception as e:
-        raise ValueError("Invalid base64 content") from e
-
-    if not file_bytes.startswith(b"%PDF-"):
-        raise ValueError("Unknown file type: only PDF is supported")
-    return file_bytes
-
-
-def _get_xflow_attachment(session: requests.Session, url: str) -> bytes:
-    """ Download an attachment from xFlow. """
-    response = session.get(url, timeout=60)
-    response.raise_for_status()
-    return response.content
-
-
-def _error_email_sender(object: Any, xflow_session: requests.Session, table_name: str, msg: str) -> None:
+def _error_email_sender(nexus_case: NexusCase, msg: str) -> None:
     """ Send an email when a patient is not found in Nexus or is inactive. """
     with TemporaryDirectory(prefix="xflow-not-found-") as temp_dir:
         attachment_paths = []
 
-        form_name = f"{table_name}.pdf"
-        form_path = Path(temp_dir) / form_name
-        form_path.write_bytes(_decode_base64_pdf(object.form_pdf_base64))
-        attachment_paths.append(str(form_path))
-
-        for attachment in object.attachments or []:
-            attachment_name = Path(attachment["title"]).name or "bilag"
-            attachment_path = Path(temp_dir) / attachment_name
-            attachment_path.write_bytes(
-                _get_xflow_attachment(session=xflow_session, url=attachment["url"])
-            )
+        for document in nexus_case.documents:
+            attachment_path = Path(temp_dir) / Path(document.file_name).name
+            attachment_path.write_bytes(document.file_bytes)
             attachment_paths.append(str(attachment_path))
 
         send_email_smtp(
             from_email="Digitalisering@randers.dk",
-            to=["personligehjaelpemidler@randers.dk"],
+            to=[nexus_case.error_notification_recipient],
             subject=f"Fejl i Nexus: {msg}",
             html_content=(
                 msg
@@ -65,9 +36,7 @@ def process_nexus_case(nexus_client: NexusClient, xflow_session: requests.Sessio
     patient_data = nexus_client.get_patient(search_text=nexus_case.cpr)
     if patient_data is None:
         _error_email_sender(
-            object=nexus_case,
-            xflow_session=xflow_session,
-            table_name=nexus_case.table_name,
+            nexus_case=nexus_case,
             msg="Borger ikke fundet i Nexus"
         )
         return
@@ -75,9 +44,7 @@ def process_nexus_case(nexus_client: NexusClient, xflow_session: requests.Sessio
     is_active = nexus_client.is_active(patient=patient_data, set_if_not=True)
     if not is_active:
         _error_email_sender(
-            object=nexus_case,
-            xflow_session=xflow_session,
-            table_name=nexus_case.table_name,
+            nexus_case=nexus_case,
             msg="Borger er sat som død"
         )
         return
@@ -107,6 +74,8 @@ def process_nexus_case(nexus_client: NexusClient, xflow_session: requests.Sessio
             if api_assignment.get("startDate") != nexus_case.assignment.start_date:
                 api_assignment["startDate"] = nexus_case.assignment.start_date
                 api_assignment["dueDate"] = nexus_case.assignment.due_date
+
+            api_assignment["title"] = f"{nexus_case.device_name.strip() or 'Digital Ansøgning'} {nexus_case.renewal_or_new_text}"
 
             created_assignment = nexus_client.create_assignment(assignment=api_assignment)
     except Exception:

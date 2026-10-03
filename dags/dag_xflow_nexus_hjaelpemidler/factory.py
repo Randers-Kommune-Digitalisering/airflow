@@ -97,6 +97,8 @@ def get_nexus_case(
     return NexusCase(
         cpr=model_object.cpr,
         table_name=table_name,
+        renewal_or_new_text=model_object.renewal_or_new_text,
+        error_notification_recipient=config["error_notification_recipient"],
         dashboard_name=config["dashboard_name"],
         program_name=config["program_name"],
         form_name=config["form_name"],

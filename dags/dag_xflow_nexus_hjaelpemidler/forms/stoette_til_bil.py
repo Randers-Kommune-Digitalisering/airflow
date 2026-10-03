@@ -26,9 +26,11 @@ def generate_stoette_til_bil_fields(model_object: Any) -> list[Field]:
         ),
         Field(label="Borger oplyst om ovenstående", field_type=FieldType.DROPDOWN, value="Skriftligt (Kvitteringsbrev"),
         Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=model_object.device_name),
-        Field(label="Type", field_type=FieldType.DROPDOWN, value=model_object.type),
         Field(label="Opgavefrist", field_type=FieldType.DROPDOWN, value="Lang")
     ]
+
+    if model_object.type is not None:
+        fields.append(Field(label="Type", field_type=FieldType.DROPDOWN, value=model_object.type))
 
     if optional_contact_info:
         fields.append(Field(label="Uddyb kilde med navn, telefonnr. m.m.", field_type=FieldType.TEXT_AREA, value=optional_contact_info))

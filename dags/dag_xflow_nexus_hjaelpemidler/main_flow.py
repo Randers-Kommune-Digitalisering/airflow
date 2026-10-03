@@ -6,6 +6,7 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy import MetaData, Table, inspect, select, update
 from sqlalchemy.engine import Engine
 
+from dag_xflow_nexus_hjaelpemidler.config import FORM_CONFIG_BY_TABLE
 from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient
 from dag_xflow_nexus_hjaelpemidler.factory import get_nexus_case
 from dag_xflow_nexus_hjaelpemidler.handlers import process_nexus_case
@@ -32,6 +33,8 @@ def get_xflow_data_add_to_nexus(meta_hook: PostgresHook, nexus_hook: BaseHook, x
                 raise ValueError(
                     f"Table '{SCHEMA}.{table_name}' does not exist."
                 )
+            if table_name not in FORM_CONFIG_BY_TABLE:
+                raise ValueError(f"No Nexus form configuration registered for table '{table_name}'")
             table = Table(table_name, metadata, autoload_with=meta_engine)
             failed_row_ids = process_table(engine=meta_engine, table=table, nexus_client=nexus_client, xflow_session=xflow_session)
             if failed_row_ids:
