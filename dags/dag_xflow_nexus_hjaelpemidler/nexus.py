@@ -131,14 +131,17 @@ class NexusClient:
         parent_program = next((p for p in active_pathways if p.get("name") == program_name), None)
 
         # Add the program if it is missing
-        if not parent_program and add_if_missing:
+        if parent_program is None and add_if_missing:
             available_programs = self._follow(obj=patient, rel="availableProgramPathways", method="get")
             program_to_add = next((p for p in available_programs if p.get("name") == program_name), None)
             if program_to_add is None:
                 raise ValueError(f"Program '{program_name}' cannot be added because it is not available in the available program pathways")
 
             self._follow(obj=program_to_add, rel="enroll", method="put")
-            return self.has_pathway(patient=patient, program_name=program_name, pathway_name=pathway_name, add_if_missing=False)
+            active_pathways = self._follow(obj=patient, rel="pathwayTree", method="get")
+            parent_program = next((p for p in active_pathways if p.get("name") == program_name), None)
+            if parent_program is None:
+                raise ValueError(f"Program '{program_name}' was not found after enrollment")
 
         if parent_program is None:
             return False
