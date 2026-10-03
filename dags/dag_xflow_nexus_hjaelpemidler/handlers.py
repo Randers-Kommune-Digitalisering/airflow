@@ -75,7 +75,7 @@ def process_nexus_case(nexus_client: NexusClient, xflow_session: requests.Sessio
                 api_assignment["startDate"] = nexus_case.assignment.start_date
                 api_assignment["dueDate"] = nexus_case.assignment.due_date
 
-            api_assignment["title"] = f"{nexus_case.device_name.strip() or 'Digital Ansøgning'} {nexus_case.renewal_or_new_text}"
+            api_assignment["title"] = nexus_case.assignment.title
 
             created_assignment = nexus_client.create_assignment(assignment=api_assignment)
     except Exception:
