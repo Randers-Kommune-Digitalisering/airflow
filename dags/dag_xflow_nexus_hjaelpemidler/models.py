@@ -27,7 +27,7 @@ class HjaelpemiddelData(Protocol):
     form_date: date
     form_doc_name: str
     form_pdf_base64: str
-    receipt_pdf_base64: str
+    receipt_pdf_base64: str | None
     attachment_doc_name: str
     attachments: list[dict] | None
     device_name: str

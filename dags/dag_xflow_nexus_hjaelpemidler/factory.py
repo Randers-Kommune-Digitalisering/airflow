@@ -43,15 +43,17 @@ def _build_documents(
             mime_type="application/pdf",
             file_bytes=_decode_base64_pdf(model_object.form_pdf_base64),
             date=model_object.form_date,
-        ),
-        NexusDocument(
+        )
+    ]
+
+    if model_object.receipt_pdf_base64 is not None:
+        documents.append(NexusDocument(
             name=f"{model_object.form_doc_name} Kvittering",
             file_name="receipt.pdf",
             mime_type="application/pdf",
             file_bytes=_decode_base64_pdf(model_object.receipt_pdf_base64),
             date=model_object.form_date,
-        )
-    ]
+        ))
 
     for attachment in model_object.attachments or []:
         documents.append(
