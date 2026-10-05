@@ -73,6 +73,10 @@ def process_bi_user_mail() -> None:
 
         for record in records:
 
+            if not record.get("email_adresse"):
+                logger.warning("Skipping record with missing email")
+                continue
+
             user_existing = get_user_by_email(conn=db_session, email=record["email_adresse"])
 
             # Skip sending email if the user has already been notified
