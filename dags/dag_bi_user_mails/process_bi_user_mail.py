@@ -73,7 +73,8 @@ def process_bi_user_mail() -> None:
 
         for record in records:
 
-            if not record.get("email_adresse"):
+            email = record.get("email_adresse")
+            if pd.isna(email) or not str(email).strip():
                 logger.warning("Skipping record with missing email")
                 continue
 
