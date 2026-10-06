@@ -125,7 +125,7 @@ with DAG(
 
     send_email = EmailOperator(
         task_id="send_email",
-        to=["udvikling@randers.dk", "Jane.Scharling.Andersen@randers.dk"],
+        to=["Jane.Scharling.Andersen@randers.dk"],
         subject="Nexus Delta Synkronisering Report - {{ ti.xcom_pull(task_ids='make_report_html')[1] }}",
         html_content="{{ ti.xcom_pull(task_ids='make_report_html')[0] }}",
     )
