@@ -34,7 +34,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
         "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
-    "kommunikationshjælpemiddel": {
+    "kommunikationshjaelpemiddel": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
         "document_widget_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DOCUMENT_112_113_WIDGET_NAME,
         "form_widget_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_FORM_112_113_WIDGET_NAME,
