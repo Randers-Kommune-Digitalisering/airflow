@@ -85,7 +85,11 @@ class SbsysClient:
             "SagID": sag_id,
             "Beskrivelse": "Fraværsbrev automatisk journaliseret.",
             "OmfattetAfAktindsigt": True,
-            "DokumentNavn": "Fraværsbrev"
+            "DokumentNavn": "Fraværsbrev",
+            "DokumentArt": {
+                "Id": 1,
+                "Navn": "Indgående",
+            },
         }
         multipart = {
             "file": ("maindoc.pdf", file, "application/pdf"),
