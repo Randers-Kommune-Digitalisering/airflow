@@ -67,6 +67,7 @@ def process_table(engine: Engine, table: Table, nexus_client: NexusClient, xflow
                 .values(status=HjaelpemiddelStatus.PROCESSING.value)
             )
 
+        logger.info(f"Processing {table.name} id: {row_id}")
         try:
             nexus_case = get_nexus_case(
                 session=xflow_session,
@@ -82,6 +83,7 @@ def process_table(engine: Engine, table: Table, nexus_client: NexusClient, xflow
             logger.exception(f"Failed processing {table.name} id={row_id}")
             with engine.begin() as conn:
                 conn.execute(update(table).where(table.c.id == row_id).values(status=HjaelpemiddelStatus.FAILED.value))
+            logger.info(f"Marked {table.name} id: {row_id} as FAILED")
             failed_row_ids.append(row_id)
             continue
 
@@ -91,3 +93,4 @@ def process_table(engine: Engine, table: Table, nexus_client: NexusClient, xflow
                 .where(table.c.id == row_id)
                 .values(status=HjaelpemiddelStatus.SUCCESS.value)
             )
+        logger.info(f"Marked {table.name} id: {row_id} as SUCCESS")

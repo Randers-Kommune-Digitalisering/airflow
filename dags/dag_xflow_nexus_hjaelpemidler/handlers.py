@@ -1,3 +1,4 @@
+import logging
 import requests
 
 from pathlib import Path
@@ -7,6 +8,9 @@ from airflow.utils.email import send_email_smtp
 from dag_xflow_nexus_hjaelpemidler.constants import COMPLETED_ACTION_NAME
 from dag_xflow_nexus_hjaelpemidler.models import NexusCase
 from dag_xflow_nexus_hjaelpemidler.nexus import NexusClient
+
+
+logger = logging.getLogger(__name__)
 
 
 # Helper functions
@@ -20,6 +24,7 @@ def _error_email_sender(nexus_case: NexusCase, msg: str) -> None:
             attachment_path.write_bytes(document.file_bytes)
             attachment_paths.append(str(attachment_path))
 
+        logger.info(f"Sending error email for {nexus_case.table_name} - msg: {msg}")
         send_email_smtp(
             from_email="Digitalisering@randers.dk",
             to=[nexus_case.error_notification_recipient],
