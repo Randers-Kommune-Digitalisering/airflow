@@ -62,7 +62,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
         "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
-    "andre_typer_af_hjaelpemidler": {
+    "hjaelpemiddel_andre_typer_af_hjaelpemidler": {
         "dashboard_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME,
         "document_widget_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_DOCUMENT_112_113_WIDGET_NAME,
         "form_widget_name": ASSISTIVE_TECHNOLOGY_ASSESSMENT_FORM_112_113_WIDGET_NAME,
@@ -158,5 +158,5 @@ build_fields_by_table = {
     "hjaelpemiddel_til_barn": generate_hjaelpemiddel_til_barn_fields,
     "kommunikationshjælpemiddel": generate_kommunikationshjaelpemiddel_fields,
     "servicehund": generate_servicehund_fields,
-    "andre_typer_af_hjaelpemidler": generate_andre_typer_af_hjaelpemidler_fields,
+    "hjaelpemiddel_andre_typer_af_hjaelpemidler": generate_andre_typer_af_hjaelpemidler_fields,
 }
