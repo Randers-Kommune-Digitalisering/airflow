@@ -10,6 +10,7 @@ from dag_absence_post_routing_and_journalize.absence_post_routing_and_journalize
     build_department_email_map,
     extract_cpr_from_pdf,
 )
+from dag_absence_post_routing_and_journalize.sbsys_client import SbsysClient
 from dag_sd_delta.delta_client import DeltaClient
 from rkdigi.email_handling import EmailReader, EmailSender
 
@@ -243,6 +244,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 cpr = extract_cpr_from_pdf(pdf_bytes=pdf_bytes)
             except ValueError as exc:
                 logger.warning(f"No usable CPR found in {filename} attachment uid={uid_text}: {exc}")
+                forward_success.append(False)
                 continue
 
             # Cache Delta lookups because a CPR can occur in multiple emails.
@@ -280,6 +282,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 skipped_attachments += 1
                 if cpr in multi_department_info:
                     multi_department_info[cpr]["attachments"].append((filename, pdf_bytes))
+                forward_success.append(False)
                 continue
 
             try:
@@ -296,21 +299,50 @@ def extract_cpr_from_maindoc_attachments() -> None:
                     attachments=[(filename, pdf_bytes)],
                 )
 
+                sag_id = 0000  # Dummy sag ID for testing
+                client = SbsysClient(BaseHook.get_connection("sbsys_api_test"))
+                sag = client.get_emnesag(sag_id=sag_id)
+                if (
+                    not isinstance(sag, dict)
+                    or (sag.get("SagsStatus") or {}).get("Id") != 6  # 6 means active SagsStatus in SBSYS Test
+                ):
+                    raise AirflowFailException("No active SBSYS test Emnesag found")
+
+                delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag_id)
+                delforloeb_to_use = None
+                if isinstance(delforloeb_result, list):
+                    delforloeb_to_use = next(
+                        (
+                            item for item in delforloeb_result
+                            if item.get("Titel") == "03 Andet fravær"
+                        ),
+                        None,
+                    )
+                journalize_result = client.journalize(
+                    file=pdf_bytes,
+                    sag_id=sag_id,
+                    delforloeb_id=(
+                        delforloeb_to_use["ID"] if delforloeb_to_use else None
+                    ),
+                )
+                if not journalize_result:
+                    raise AirflowFailException("SBSYS journalization returned no result")
+                logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
+
             except Exception:
-                logger.exception(f"Could not forward {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
+                logger.exception(f"Could not forward and journalize {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
                 failures.append(uid_text)
                 forward_success.append(False)
                 continue
 
             forward_success.append(True)
             routed_attachments += 1
-            logger.info(f"Forwarded {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
+            logger.info(f"Forwarded and journalized {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
 
-        # Delete the original email after successfully forwarding the attachment(s).
-        # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
-        if all(forward_success):
+        # Delete only when every maindoc PDF was forwarded and journalized.
+        if forward_success and all(forward_success):
             email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
-            logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
+            logger.info(f"Deleted email uid={uid_text} after forwarding and journalization")
 
     # Notify about multiple active departments if any were encountered.
     if multi_department_info:
@@ -329,7 +361,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
         )
     if failures:
         failure_messages.append(
-            f"Could not forward {len(failures)} maindoc PDF attachment(s)"
+            f"Could not forward or journalize {len(failures)} maindoc PDF attachment(s)"
         )
     if failure_messages:
         raise AirflowFailException("; ".join(failure_messages))
