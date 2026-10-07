@@ -286,19 +286,6 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 continue
 
             try:
-                # Forward the original subject and the resolved body with the PDF.
-                email_sender.send_email(
-                    sender=sender_email,
-                    recipients=recipients,
-                    subject=build_safe_subject_header(raw_subject=subject),
-                    body=_resolve_forward_body(
-                        normalized_subject=subject_cf,
-                        original_body=get_message_body(message),
-                        config=absence_post_config,
-                    ),
-                    attachments=[(filename, pdf_bytes)],
-                )
-
                 sag_id = 0000  # Dummy sag ID for testing
                 client = SbsysClient(BaseHook.get_connection("sbsys_api_test"))
                 sag = client.get_emnesag(sag_id=sag_id)
@@ -328,6 +315,24 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 if not journalize_result:
                     raise AirflowFailException("SBSYS journalization returned no result")
                 logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
+
+                # Forward the email with the journalization information to the recipients
+                email_sender.send_email(
+                    sender=sender_email,
+                    recipients=recipients,
+                    subject=build_safe_subject_header(raw_subject=subject),
+                    body=(
+                        _resolve_forward_body(
+                            normalized_subject=subject_cf,
+                            original_body=get_message_body(message),
+                            config=absence_post_config,
+                        ).rstrip()
+                        + "\n\nDokumentet er blevet journaliseret under delforløbet 03 Andet fravær på SBSYS Sagsnummer: "
+                        f"{sag['Nummer']}\n\n"
+                        "Venlig hilsen Fravær - Løn og Personale"
+                    ),
+                    attachments=[],
+                )
 
             except Exception:
                 logger.exception(f"Could not forward and journalize {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
@@ -361,7 +366,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
         )
     if failures:
         failure_messages.append(
-            f"Could not forward or journalize {len(failures)} maindoc PDF attachment(s)"
+            f"Could not journalize or notify for {len(failures)} maindoc PDF attachment(s)"
         )
     if failure_messages:
         raise AirflowFailException("; ".join(failure_messages))
