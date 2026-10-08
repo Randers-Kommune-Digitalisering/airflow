@@ -20,6 +20,21 @@ from utils.mail_messages import get_message_body, build_safe_subject_header
 logger = logging.getLogger(__name__)
 
 
+def _resolve_delforloeb_title(
+    normalized_subject: str, mapping: dict,
+) -> str | None:
+    """Find the unique configured delforloeb for a mail subject."""
+    titles = {
+        title for fragment, title in mapping.items()
+        if fragment.casefold() in normalized_subject
+    }
+    if len(titles) > 1:
+        raise AirflowFailException(
+            "Mail subject matches conflicting Delforløb mappings"
+        )
+    return next(iter(titles), None)
+
+
 def _resolve_forward_body(
     normalized_subject: str | None,
     original_body: str,
@@ -176,6 +191,22 @@ def extract_cpr_from_maindoc_attachments() -> None:
         fragment.casefold() for fragment in allowed_subject_fragments
     ]
 
+    # Validate the subject_delforloeb_mapping configuration from the absence_post_config variable.
+    subject_delforloeb_mapping = absence_post_config.get("subject_delforloeb_mapping")
+    if (
+        not isinstance(subject_delforloeb_mapping, dict)
+        or not subject_delforloeb_mapping
+        or any(
+            not isinstance(fragment, str) or not fragment.strip()
+            or title not in ("3.1 Breve fra Udbetaling Danmark", "02 Sygdom")
+            for fragment, title in subject_delforloeb_mapping.items()
+        )
+    ):
+        raise AirflowFailException(
+            "'subject_delforloeb_mapping' must map non-empty subject "
+            "fragments to '3.1 Breve fra Udbetaling Danmark' or '02 Sygdom'"
+        )
+
     sender_email = absence_post_config.get("sender_email")
     smtp_server = absence_post_config.get("smtp_server")
     imap_server = absence_post_config.get("imap_server")
@@ -223,6 +254,20 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
         uid = getattr(message, "uid", None)
         uid_text = uid.decode(errors="ignore") if isinstance(uid, bytes) else str(uid)
+
+        try:
+            delforloeb_title = _resolve_delforloeb_title(
+                normalized_subject=subject_cf,
+                mapping=subject_delforloeb_mapping
+            )
+        except AirflowFailException:
+            # Skip this email if there is a conflicting Delforløb mapping
+            logger.warning(f"Conflicting Delforløb mapping for email uid={uid_text}" )
+            continue
+        if delforloeb_title is None:
+            # Skip this email if there is no Delforløb mapping
+            logger.warning(f"No Delforløb mapping for email uid={uid_text}")
+            continue
 
         forward_success = []
         for attachment in message.iter_attachments():
@@ -296,43 +341,33 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 #     or (sag.get("SagsStatus") or {}).get("Id") != 6  # 6 means active SagsStatus in SBSYS Test
                 # ):
                 #     raise AirflowFailException("No active SBSYS test Emnesag found")
-                #
+
                 # delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag_id)
-                # delforloeb_to_use = None
-                # if isinstance(delforloeb_result, list):
-                #     delforloeb_to_use = next(
-                #         (
-                #             item for item in delforloeb_result
-                #             if item.get("Titel") == "03 Andet fravær"
-                #         ),
-                #         None,
-                #     )
+                # if not isinstance(delforloeb_result, list):
+                #     raise AirflowFailException("Invalid SBSYS Delforløb response")
+                # delforloeb_to_use = next(
+                #     (
+                #         item for item in delforloeb_result
+                #         if item.get("Titel") == delforloeb_title
+                #     ),
+                #     None,
+                # )
+                # if delforloeb_to_use is None:
+                #     delforloeb_to_use = client.create_delforloeb(sag_id=sag_id, title=delforloeb_title)
+                #     logger.info(f"Created new Delforløb '{delforloeb_title}' for sag Id={sag_id}")
+                # if not isinstance(delforloeb_to_use, dict) or not isinstance(
+                #     delforloeb_to_use.get("ID"), int
+                # ):
+                #     raise AirflowFailException("SBSYS delforloeb has no valid ID")
+
                 # journalize_result = client.journalize(
                 #     file=pdf_bytes,
                 #     sag_id=sag_id,
-                #     delforloeb_id=(
-                #         delforloeb_to_use["ID"] if delforloeb_to_use else None
-                #     ),
+                #     delforloeb_id=delforloeb_to_use["ID"],
                 # )
                 # if not journalize_result:
                 #     raise AirflowFailException("SBSYS journalization returned no result")
-                # logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
-                #
-                # email_sender.send_email(
-                #     sender=sender_email,
-                #     recipients=recipients,
-                #     subject=build_safe_subject_header(raw_subject=subject),
-                #     body=(
-                #         _resolve_forward_body(
-                #             normalized_subject=subject_cf,
-                #             original_body=get_message_body(message),
-                #             config=absence_post_config,
-                #         ).rstrip()
-                #         + "\n\nDokumentet er blevet journaliseret på SBSYS Sagsnummer: "
-                #         f"{sag['Nummer']}\n\n"
-                #     ),
-                #     attachments=[],
-                # )
+                # logger.info(f"Journalization successful for sag Id={sag['Id']} on Delforløbet {delforloeb_title} for sagsnummer: {sag['Nummer']}")
 
                 client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
                 sag_result = client.get_personalesag(cpr=cpr)
@@ -346,15 +381,25 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 # Journalize each active sag in SBSYS Prod
                 for sag in active_sager:
                     delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag["Id"])
-                    delforloeb_to_use = None
-                    if isinstance(delforloeb_result, list):
-                        delforloeb_to_use = next(
-                            (
-                                item for item in delforloeb_result
-                                if item.get("Titel") == "03 Andet fravær"
-                            ),
-                            None,
-                        )
+                    if not isinstance(delforloeb_result, list):
+                        raise AirflowFailException("Invalid SBSYS delforloeb response")
+
+                    # Find the delforloeb with the matching title, or create it if it doesn't exist
+                    delforloeb_to_use = next(
+                        (
+                            item for item in delforloeb_result
+                            if item.get("Titel") == delforloeb_title
+                        ),
+                        None,
+                    )
+                    if delforloeb_to_use is None:
+                        delforloeb_to_use = client.create_delforloeb(sag_id=sag["Id"], title=delforloeb_title)
+                        logger.info(f"Created new Delforløb '{delforloeb_title}' for sag Id={sag['Id']}")
+                    if not isinstance(delforloeb_to_use, dict) or not isinstance(
+                        delforloeb_to_use.get("ID"), int
+                    ):
+                        raise AirflowFailException("SBSYS delforloeb has no valid ID")
+
                     journalize_result = client.journalize(
                         file=pdf_bytes,
                         sag_id=sag["Id"],
@@ -377,7 +422,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
                             original_body=get_message_body(message),
                             config=absence_post_config,
                         ).rstrip()
-                        + "\n\nDokumentet er blevet journaliseret under delforløbet 03 Andet fravær på SBSYS Sagsnummer: "
+                        + "\n\nDokumentet er blevet journaliseret under delforløbet "
+                        f"{delforloeb_title} på SBSYS Sagsnummer: "
                         f"{', '.join(sag['Nummer'] for sag in active_sager)}\n\n"
                         "Venlig hilsen Fravær - Løn og Personale"
                     ),
