@@ -80,6 +80,13 @@ class SbsysClient:
     def get_delforloeb_from_sagid(self, sag_id: int) -> list[dict]:
         return self.get_delforloeb(sag_id)
 
+    def create_delforloeb(self, sag_id: int, title: str) -> dict:
+        payload = {
+            "Sagid": sag_id,
+            "Titel": title,
+        }
+        return self._request("POST", "api/delforloeb", json=payload)
+
     def journalize(self, file: bytes, sag_id: int, delforloeb_id: int | None = None) -> dict:
         metadata = {
             "SagID": sag_id,
