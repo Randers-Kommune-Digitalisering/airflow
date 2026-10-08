@@ -286,35 +286,85 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 continue
 
             try:
-                sag_id = 0000  # Dummy sag ID for testing
-                client = SbsysClient(BaseHook.get_connection("sbsys_api_test"))
-                sag = client.get_emnesag(sag_id=sag_id)
-                if (
-                    not isinstance(sag, dict)
-                    or (sag.get("SagsStatus") or {}).get("Id") != 6  # 6 means active SagsStatus in SBSYS Test
-                ):
-                    raise AirflowFailException("No active SBSYS test Emnesag found")
+                # Emnesag test flow: comment out the personalesag block below
+                # before enabling this block for a manual test.
+                # sag_id = 0000  # Dummy sag ID for testing
+                # client = SbsysClient(BaseHook.get_connection("sbsys_api_test"))
+                # sag = client.get_emnesag(sag_id=sag_id)
+                # if (
+                #     not isinstance(sag, dict)
+                #     or (sag.get("SagsStatus") or {}).get("Id") != 6  # 6 means active SagsStatus in SBSYS Test
+                # ):
+                #     raise AirflowFailException("No active SBSYS test Emnesag found")
+                #
+                # delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag_id)
+                # delforloeb_to_use = None
+                # if isinstance(delforloeb_result, list):
+                #     delforloeb_to_use = next(
+                #         (
+                #             item for item in delforloeb_result
+                #             if item.get("Titel") == "03 Andet fravær"
+                #         ),
+                #         None,
+                #     )
+                # journalize_result = client.journalize(
+                #     file=pdf_bytes,
+                #     sag_id=sag_id,
+                #     delforloeb_id=(
+                #         delforloeb_to_use["ID"] if delforloeb_to_use else None
+                #     ),
+                # )
+                # if not journalize_result:
+                #     raise AirflowFailException("SBSYS journalization returned no result")
+                # logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
+                #
+                # email_sender.send_email(
+                #     sender=sender_email,
+                #     recipients=recipients,
+                #     subject=build_safe_subject_header(raw_subject=subject),
+                #     body=(
+                #         _resolve_forward_body(
+                #             normalized_subject=subject_cf,
+                #             original_body=get_message_body(message),
+                #             config=absence_post_config,
+                #         ).rstrip()
+                #         + "\n\nDokumentet er blevet journaliseret på SBSYS Sagsnummer: "
+                #         f"{sag['Nummer']}\n\n"
+                #     ),
+                #     attachments=[],
+                # )
 
-                delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag_id)
-                delforloeb_to_use = None
-                if isinstance(delforloeb_result, list):
-                    delforloeb_to_use = next(
-                        (
-                            item for item in delforloeb_result
-                            if item.get("Titel") == "03 Andet fravær"
+                client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
+                sag_result = client.get_personalesag(cpr=cpr)
+                active_sager = [
+                    sag for sag in sag_result
+                    if (sag.get("SagsStatus") or {}).get("Id") == 9  # 9 means active SagsStatus in SBSYS Prod
+                ] if isinstance(sag_result, list) else []
+                if not active_sager:
+                    raise AirflowFailException("No active SBSYS personalesag found")
+
+                # Journalize each active sag in SBSYS Prod
+                for sag in active_sager:
+                    delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag["Id"])
+                    delforloeb_to_use = None
+                    if isinstance(delforloeb_result, list):
+                        delforloeb_to_use = next(
+                            (
+                                item for item in delforloeb_result
+                                if item.get("Titel") == "03 Andet fravær"
+                            ),
+                            None,
+                        )
+                    journalize_result = client.journalize(
+                        file=pdf_bytes,
+                        sag_id=sag["Id"],
+                        delforloeb_id=(
+                            delforloeb_to_use["ID"] if delforloeb_to_use else None
                         ),
-                        None,
                     )
-                journalize_result = client.journalize(
-                    file=pdf_bytes,
-                    sag_id=sag_id,
-                    delforloeb_id=(
-                        delforloeb_to_use["ID"] if delforloeb_to_use else None
-                    ),
-                )
-                if not journalize_result:
-                    raise AirflowFailException("SBSYS journalization returned no result")
-                logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
+                    if not journalize_result:
+                        raise AirflowFailException("SBSYS journalization returned no result")
+                    logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
 
                 # Forward the email with the journalization information to the recipients
                 email_sender.send_email(
@@ -328,7 +378,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                             config=absence_post_config,
                         ).rstrip()
                         + "\n\nDokumentet er blevet journaliseret under delforløbet 03 Andet fravær på SBSYS Sagsnummer: "
-                        f"{sag['Nummer']}\n\n"
+                        f"{', '.join(sag['Nummer'] for sag in active_sager)}\n\n"
                         "Venlig hilsen Fravær - Løn og Personale"
                     ),
                     attachments=[],
