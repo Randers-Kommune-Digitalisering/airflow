@@ -64,7 +64,8 @@ Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsø
 
 - Jobbet kan køres i “dry-run” mode (styres af Airflow-variablen `NOVAX_DRY_RUN`), hvor der kun logges hvilke ændringer der ville blive skrevet, uden at opdatere Novax.
 - Jobbet kan filtrere specifikke CPR-numre fra via Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste af CPR-numre).
-- Adressevælger-opslag har retry ved midlertidige fejl (timeouts og 5xx; 404 behandles straks som "ikke fundet"), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
+- Adressevælger-opslag har retry ved midlertidige fejl (timeouts, 429 og 5xx; 404 behandles straks som "ikke fundet"), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
+- Øvrige 4xx-fejl (fx 400/401/403 ved ugyldigt eller udløbet token) får tasken til at fejle med det samme uden commit, så distrikter ikke ryddes ved fejl.
 - Batch-opdateringen i Novax udføres i én database-transaktion/session. Det betyder, at en fejl på én patient vil medføre, at hele transaktionen rulles tilbage, så enten bliver alle ændringer skrevet, eller også bliver ingen skrevet.
 - Hvis der findes patienter med ugyldigt CPR-format (ikke 10 cifre), logges de og tasken fejler til sidst med en fejl (så det ikke bliver en “silent skip”).
 

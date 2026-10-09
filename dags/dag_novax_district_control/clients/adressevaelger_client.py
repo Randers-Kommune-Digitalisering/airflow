@@ -3,6 +3,7 @@ import random
 import time
 
 import requests
+from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,17 @@ class AdressevaelgerClient:
                         adresse_id,
                     )
                     return None
+                if 400 <= response.status_code < 500 and response.status_code != 429:
+                    # Raised before raise_for_status so the message never contains the tokenized URL.
+                    raise AirflowFailException(
+                        f"Adressevælger lookup for adresse_id={adresse_id} failed with non-retryable HTTP {response.status_code}"
+                    )
                 response.raise_for_status()
                 return response.json()
+
+            except AirflowFailException:
+                raise
+
             except Exception as e:
                 # Do not log str(e): requests errors include the full URL with the token.
                 error_desc = type(e).__name__

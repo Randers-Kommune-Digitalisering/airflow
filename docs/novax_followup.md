@@ -43,7 +43,8 @@ Hvis adressen ikke kan valideres/returneres fra Adressevælger, ryddes distrikt 
 
 - Jobbet kan køres i “dry-run” mode (styres af Airflow-variablen `NOVAX_DRY_RUN`, default `True`). Ved dry-run logges hvilke ændringer der ville blive skrevet, men der commits ikke til databasen.
 - Jobbet kan filtrere specifikke CPR-numre fra via Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste af CPR-numre).
-- Adressevælger-opslag har retry ved midlertidige fejl (timeouts og 5xx; 404 behandles straks som "ikke fundet"), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
+- Adressevælger-opslag har retry ved midlertidige fejl (timeouts, 429 og 5xx; 404 behandles straks som "ikke fundet"), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
+- Øvrige 4xx-fejl (fx 400/401/403 ved ugyldigt eller udløbet token) får tasken til at fejle med det samme uden commit.
 - Opdateringer sker i én SQLAlchemy-session/transaction. Når `dry_run = False` commits ændringerne samlet til sidst.
 - Hvis der findes patienter med ugyldigt CPR-format (ikke 10 cifre), logges de og tasken fejler til sidst med en fejl (så det ikke bliver en “silent skip”).
 

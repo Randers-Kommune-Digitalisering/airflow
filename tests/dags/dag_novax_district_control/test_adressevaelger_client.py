@@ -3,6 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from airflow.exceptions import AirflowFailException
+
 from dag_novax_district_control.clients import adressevaelger_client as module
 from dag_novax_district_control.clients.adressevaelger_client import AdressevaelgerClient
 
@@ -129,6 +131,30 @@ def test_get_address_by_id_retries_then_succeeds(monkeypatch, client) -> None:
         monkeypatch,
         client,
         [_FakeResponse({}, status_code=503), _FakeResponse(SAMPLE_RESPONSE)],
+    )
+
+    assert client.get_address_by_id(ADDRESS_ID)["street_code"] == 850
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("status_code", [400, 401, 403])
+def test_get_address_by_id_raises_on_non_transient_4xx_without_retry(monkeypatch, client, status_code) -> None:
+    calls = _patch_get(monkeypatch, client, [_FakeResponse({}, status_code=status_code)])
+
+    with pytest.raises(AirflowFailException) as exc_info:
+        client.get_address_by_id(ADDRESS_ID)
+
+    assert len(calls) == 1
+    assert str(status_code) in str(exc_info.value)
+    assert "token" not in str(exc_info.value)
+    assert exc_info.value.__cause__ is None
+
+
+def test_get_address_by_id_retries_on_429(monkeypatch, client) -> None:
+    calls = _patch_get(
+        monkeypatch,
+        client,
+        [_FakeResponse({}, status_code=429), _FakeResponse(SAMPLE_RESPONSE)],
     )
 
     assert client.get_address_by_id(ADDRESS_ID)["street_code"] == 850
