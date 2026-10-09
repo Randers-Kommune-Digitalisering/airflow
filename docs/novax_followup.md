@@ -22,7 +22,7 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
     - “beskyttet adresse”-status
   - Opdaterer `NameDetails.BESKYTTETADRESSE` hvis CPR-status er ændret.
   - Slår adressen op i Adressevælger på CPR-adresse UUID.
-    - Hvis Adressevælger returnerer uventet/ingen data for adressen, logges det, og patientens distrikt ryddes (se nedenfor).
+    - Hvis Adressevælger returnerer uventet/ingen data for adressen, logges det, og patientens eksisterende adresse, distrikt og kommune-ID bevares uændret (se nedenfor).
   - Hvis Adressevælger giver en gyldig adresse:
     - Opdaterer `Name.ADRESSE` hvis den fulde adresse er ændret.
     - Når adressen ændres, oprettes en reminder i `REMIND` med kode `FLYTTET` og bemærkning om ny adresse; reminderen tildeles den aktuelle `AnsvarsShpl`.
@@ -33,11 +33,11 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
     - Vedligeholder distrikt historik-tabellen i `PERSONDISTRIKT` for person-distrikter ved at lukke eksisterende “åben” række og oprette en ny.
     - Kommune-ID opdateres i `Name.TS_KOMID` samt `NameDetails.TS_KOMID` og `NameDetails.KOMMUNE_OPR`.
 
-Hvis adressen ikke kan valideres/returneres fra Adressevælger, ryddes distrikt for patienten:
+Hvis adressen ikke kan valideres/returneres fra Adressevælger, springes adresse- og distriktsopdatering over for patienten:
 
-- Åben række i `PERSONDISTRIKT` lukkes (slutdato sættes til runtime)
-- `Name.DISTRIKT` sættes til tom streng
-- `NameDetails.TS_KOMID` sættes til tom streng
+- `Name.ADRESSE`, `Name.DISTRIKT` og historikken i `PERSONDISTRIKT` bevares uændret
+- `Name.TS_KOMID`, `NameDetails.TS_KOMID` og `NameDetails.KOMMUNE_OPR` bevares uændret
+- Beskyttet adresse-status opdateres stadig ud fra CPR
 
 **Drift / sikkerhed**
 

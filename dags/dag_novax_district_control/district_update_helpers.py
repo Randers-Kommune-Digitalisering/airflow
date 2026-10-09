@@ -183,7 +183,7 @@ def clear_district_due_to_missing_address(
     """
     Clear district when address lookup fails.
 
-    Closes any open-ended `PersonDistrict` rows and clears `entry.DISTRIKT`.
+    Closes any open-ended `PersonDistrict` rows, clears `entry.details.TS_KOMID` and clears `entry.DISTRIKT`.
 
     :param entry: Novax `Name` ORM object.
     :param now_dt: Current timestamp.
@@ -195,6 +195,11 @@ def clear_district_due_to_missing_address(
             d.DATETO = now_dt
             d.TS_UPDD = now_dt
             d.TS_UPDT = now_time
+
+    if str(entry.details.TS_KOMID).strip() != "":
+        entry.details.TS_KOMID = ""
+        entry.details.TS_UPDD = now_dt
+        entry.details.TS_UPDT = now_time
 
     if str(entry.DISTRIKT).strip() == "":
         return False

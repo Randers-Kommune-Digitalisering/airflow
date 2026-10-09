@@ -6,8 +6,23 @@ import pytest
 from dag_novax_district_control.district_update_helpers import (
     _addresses_are_equivalent,
     _parse_novax_address,
+    clear_district_due_to_missing_address,
     update_address_from_adressevaelger,
 )
+
+
+def test_clear_district_clears_details_ts_komid() -> None:
+    now_dt = datetime(2026, 1, 1, 12, 0, 0)
+    details = SimpleNamespace(TS_KOMID="730", TS_UPDD=None, TS_UPDT=None)
+    entry = SimpleNamespace(ID="name-1", DISTRIKT="Nord", person_districts=[], details=details)
+
+    changed = clear_district_due_to_missing_address(entry=entry, now_dt=now_dt, now_time="12:00")
+
+    assert changed is True
+    assert entry.DISTRIKT == ""
+    assert details.TS_KOMID == ""
+    assert details.TS_UPDD == now_dt
+    assert details.TS_UPDT == "12:00"
 
 
 def test_parse_novax_address_extracts_all_components() -> None:
