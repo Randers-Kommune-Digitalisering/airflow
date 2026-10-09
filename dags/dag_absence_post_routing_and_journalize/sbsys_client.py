@@ -140,10 +140,10 @@ class SbsysClient:
 
     def journalize(self, file: bytes, sag_id: int, delforloeb_id: int | None = None) -> dict:
         """
-        Journalize a PDF on a case or a specific delforloeb.
+        Journalize a PDF on a sag or a specific delforloeb.
 
         :param file: PDF content to journalize.
-        :param sag_id: ID of the case.
+        :param sag_id: ID of the sag.
         :param delforloeb_id: Optional ID of the target delforloeb.
         :return: The journalization response.
         """
