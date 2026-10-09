@@ -77,7 +77,7 @@ Uanset om der er detekteret ændringer i adresse/distrikt/telefon/termin, forsø
   Bruges som Connection id i Airflow til at hente host, database, bruger, adgangskode og port til Novax SQL-databasen.
 
 **Adressevælger API:**
-- **`adressevaelger`**  
+- **`adressevaelger_api`**  
   Bruges som Connection id i Airflow til at hente host (fx `https://adressevaelger.dk`) og token (gemt som password) til Adressevælger.
 
 **District Map API:**

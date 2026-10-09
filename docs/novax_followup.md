@@ -60,7 +60,7 @@ Hvis adressen ikke kan valideres/returneres fra Adressevælger, ryddes distrikt 
   Bruges som Connection id til Novax SQL-databasen (læse/skriv via SQLAlchemy engine).
 
 **Adressevælger API:**
-- **`adressevaelger`**  
+- **`adressevaelger_api`**  
   Connection id med host (fx `https://adressevaelger.dk`) og token (gemt som password).  
   Bruges til at slå CPR-adresse UUID op og hente felter som vejkode, kommunekode, postnr, koordinater m.m.
 
