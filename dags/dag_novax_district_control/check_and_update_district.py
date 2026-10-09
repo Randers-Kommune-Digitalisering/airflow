@@ -59,14 +59,14 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 and_(
                     Note.NAVNID == Godkommu.NAVNID,
                     Note.DATO == Godkommu.JOURNALDATO,
-                    # Note.NOTE.like('%>> Orientering - Gravid <<%')
+                    Note.NOTE.like('%>> Orientering - Gravid <<%')
                 )
             )
             .filter(
                 Godkommu.JOURNALDATO >= start_date,
                 Godkommu.JOURNALDATO < end_date,
                 func.trim(Godkommu.STATUS) == 'IND_MOD',
-                # Godkommu.EMNEBREV.like('%Orientering - Gravid%'),
+                Godkommu.EMNEBREV.like('%Orientering - Gravid%'),
                 Name.CPR.not_in(ignore_cprs)
             )
             .order_by(Godkommu.NAVNID, Godkommu.JOURNALDATO.desc(), func.trim(Godkommu.JOURNALTID).desc())
