@@ -209,13 +209,26 @@ def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool
         logger.info("Navigating to BOM login page...")
         page.goto(bom_url, wait_until="domcontentloaded", timeout=60000)
 
-        logger.info("Selecting kommune...")
-        kommune_select = page.locator("form div div div select").first
-        kommune_select.wait_for(state="visible", timeout=30000)
-        kommune_select.select_option(label="Randers Kommune (RPA)", timeout=30000)
+        logger.info("Log ind i KOMBIT Byg og Miljø loaded")
+        email_select = page.locator("#user-email")
+        email_select.wait_for(state="visible", timeout=30000)
+        email_select.click(timeout=30000)
+        email_select.fill("", timeout=30000)
+        email_select.press_sequentially(username, timeout=30000)
+        email_select.press("Tab")
+        logger.info("Email entered for KOMBIT Byg og Miljø landing page")
 
         logger.info("Clicking Fortsæt...")
-        page.locator("form div div a").first.click(timeout=30000)
+        fortsaet_button = page.locator("#btnNext")
+        fortsaet_button.wait_for(state="visible", timeout=30000)
+        page.wait_for_function(
+            "selector => document.querySelector(selector)?.disabled === false",
+            arg="#btnNext",
+            timeout=30000,
+        )
+        logger.info("Fortsæt button is enabled")
+        fortsaet_button.click(timeout=30000)
+        logger.info("Clicked Fortsæt on KOMBIT Byg og Miljø landing page")
 
         logger.info("Entering username/password...")
         page.locator("#userNameInput").fill(username, timeout=30000)
@@ -251,7 +264,7 @@ def open_servicemaal_context(page: Page) -> bool:
         page.locator("xpath=/html/body/div/header/div/div/div[2]/nav").click(timeout=30000)
         page.locator(
             "body > div > header > div > div > div.span4.offset2 > nav > ul > li > ul > "
-            "li:nth-child(4) > a"
+            "li:nth-child(3) > a"
         ).click(timeout=30000)
 
         logger.info("Setting Sagsområde = Byg...")
