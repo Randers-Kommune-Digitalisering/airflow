@@ -8,7 +8,7 @@ from dag_absence_post_routing_and_journalize.process_absence_post_routing_and_jo
 )
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args["retries"] = 1
+dag_args["retries"] = 0
 
 
 with DAG(

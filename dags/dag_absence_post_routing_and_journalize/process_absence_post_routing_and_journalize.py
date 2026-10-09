@@ -10,6 +10,7 @@ from dag_absence_post_routing_and_journalize.absence_post_routing_and_journalize
     build_department_email_map,
     extract_cpr_from_pdf,
 )
+from dag_absence_post_routing_and_journalize.sbsys_client import SbsysClient
 from dag_sd_delta.delta_client import DeltaClient
 from rkdigi.email_handling import EmailReader, EmailSender
 
@@ -17,6 +18,27 @@ from utils.mail_attachments import find_latest_attachment
 from utils.mail_messages import get_message_body, build_safe_subject_header
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_delforloeb_title(
+    normalized_subject: str, mapping: dict,
+) -> str | None:
+    """
+    Find the unique configured Delforløb for a mail subject.
+
+    :param normalized_subject: The normalized subject of the email
+    :param mapping: Subject fragments mapped to Delforløb titles.
+    :return: The matching Delforløb title, or None if no mapping matches.
+    """
+    titles = {
+        title for fragment, title in mapping.items()
+        if fragment.casefold() in normalized_subject
+    }
+    if len(titles) > 1:
+        raise AirflowFailException(
+            "Mail subject matches conflicting Delforløb mappings"
+        )
+    return next(iter(titles), None)
 
 
 def _resolve_forward_body(
@@ -121,14 +143,14 @@ def sync_sd_org_department_mapping() -> None:
     Sync the mapping between SD org departments and email addresses into an Airflow Variable.
     """
     logger.info("Starting to process absence_post_routing_and_journalize data...")
-    absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
+    sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
     if not isinstance(absence_post_config, dict):
         raise AirflowFailException("Variable 'absence_post_config' must be a JSON object")
 
     email_reader = EmailReader(
-        email=absence_post_imap_conn.login,
-        password=absence_post_imap_conn.password,
+        email=sd_org_mapping_conn.login,
+        password=sd_org_mapping_conn.password,
         imap_server=absence_post_config.get("imap_server")
     )
 
@@ -152,8 +174,9 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
-    # Replace this imap with the correct connection for Fravær Postkasse. Use absence_post_imap when testing locally
-    absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
+    # use sd_org_mapping_imap when testing locally instead of the real fravaer_post_imap
+    # sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
+    fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
     if not isinstance(absence_post_config, dict):
@@ -175,6 +198,22 @@ def extract_cpr_from_maindoc_attachments() -> None:
         fragment.casefold() for fragment in allowed_subject_fragments
     ]
 
+    # Validate the subject_delforloeb_mapping configuration from the absence_post_config variable.
+    subject_delforloeb_mapping = absence_post_config.get("subject_delforloeb_mapping")
+    if (
+        not isinstance(subject_delforloeb_mapping, dict)
+        or not subject_delforloeb_mapping
+        or any(
+            not isinstance(fragment, str) or not fragment.strip()
+            or title not in ("3.1 Breve fra Udbetaling Danmark", "02 Sygdom")
+            for fragment, title in subject_delforloeb_mapping.items()
+        )
+    ):
+        raise AirflowFailException(
+            "'subject_delforloeb_mapping' must map non-empty subject "
+            "fragments to '3.1 Breve fra Udbetaling Danmark' or '02 Sygdom'"
+        )
+
     sender_email = absence_post_config.get("sender_email")
     smtp_server = absence_post_config.get("smtp_server")
     imap_server = absence_post_config.get("imap_server")
@@ -192,8 +231,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
     }
 
     email_reader = EmailReader(
-        email=absence_post_imap_conn.login,
-        password=absence_post_imap_conn.password,
+        email=fravaer_post_conn.login,
+        password=fravaer_post_conn.password,
         imap_server=imap_server,
     )
     email_sender = EmailSender(smtp_server=smtp_server)
@@ -223,6 +262,20 @@ def extract_cpr_from_maindoc_attachments() -> None:
         uid = getattr(message, "uid", None)
         uid_text = uid.decode(errors="ignore") if isinstance(uid, bytes) else str(uid)
 
+        try:
+            delforloeb_title = _resolve_delforloeb_title(
+                normalized_subject=subject_cf,
+                mapping=subject_delforloeb_mapping
+            )
+        except AirflowFailException:
+            # Skip this email if there is a conflicting Delforløb mapping
+            logger.warning(f"Conflicting Delforløb mapping for email uid={uid_text}" )
+            continue
+        if delforloeb_title is None:
+            # Skip this email if there is no Delforløb mapping
+            logger.warning(f"No Delforløb mapping for email uid={uid_text}")
+            continue
+
         forward_success = []
         for attachment in message.iter_attachments():
             filename = attachment.get_filename() or ""
@@ -243,6 +296,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 cpr = extract_cpr_from_pdf(pdf_bytes=pdf_bytes)
             except ValueError as exc:
                 logger.warning(f"No usable CPR found in {filename} attachment uid={uid_text}: {exc}")
+                forward_success.append(False)
                 continue
 
             # Cache Delta lookups because a CPR can occur in multiple emails.
@@ -280,37 +334,123 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 skipped_attachments += 1
                 if cpr in multi_department_info:
                     multi_department_info[cpr]["attachments"].append((filename, pdf_bytes))
+                forward_success.append(False)
                 continue
 
             try:
-                # Forward the original subject and the resolved body with the PDF.
+                # Emnesag test flow: comment out the personalesag block below
+                # before enabling this block for a manual test.
+                # sag_id = 0000  # Dummy sag ID for testing
+                # client = SbsysClient(BaseHook.get_connection("sbsys_api_test"))
+                # sag = client.get_emnesag(sag_id=sag_id)
+                # if (
+                #     not isinstance(sag, dict)
+                #     or (sag.get("SagsStatus") or {}).get("Id") != 6  # 6 means active SagsStatus in SBSYS Test
+                # ):
+                #     raise AirflowFailException("No active SBSYS test Emnesag found")
+
+                # delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag_id)
+                # if not isinstance(delforloeb_result, list):
+                #     raise AirflowFailException("Invalid SBSYS Delforløb response")
+                # delforloeb_to_use = next(
+                #     (
+                #         item for item in delforloeb_result
+                #         if item.get("Titel") == delforloeb_title
+                #     ),
+                #     None,
+                # )
+                # if delforloeb_to_use is None:
+                #     delforloeb_to_use = client.create_delforloeb(sag_id=sag_id, title=delforloeb_title)
+                #     logger.info(f"Created new Delforløb '{delforloeb_title}' for sag Id={sag_id}")
+                # if not isinstance(delforloeb_to_use, dict) or not isinstance(
+                #     delforloeb_to_use.get("ID"), int
+                # ):
+                #     raise AirflowFailException("SBSYS delforloeb has no valid ID")
+
+                # journalize_result = client.journalize(
+                #     file=pdf_bytes,
+                #     sag_id=sag_id,
+                #     delforloeb_id=delforloeb_to_use["ID"],
+                # )
+                # if not journalize_result:
+                #     raise AirflowFailException("SBSYS journalization returned no result")
+                # logger.info(f"Journalization successful for sag Id={sag['Id']} on Delforløbet {delforloeb_title} for sagsnummer: {sag['Nummer']}")
+
+                sbsys_client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
+                sag_result = sbsys_client.get_personalesag(cpr=cpr)
+                active_sager = [
+                    sag for sag in sag_result
+                    if (sag.get("SagsStatus") or {}).get("Id") == 9  # 9 means active SagsStatus in SBSYS Prod
+                ] if isinstance(sag_result, list) else []
+                if not active_sager:
+                    raise AirflowFailException("No active SBSYS personalesag found")
+
+                # Journalize each active sag in SBSYS Prod
+                for sag in active_sager:
+                    delforloeb_result = sbsys_client.get_delforloeb_from_sagid(sag_id=sag["Id"])
+                    if not isinstance(delforloeb_result, list):
+                        raise AirflowFailException("Invalid SBSYS delforloeb response")
+
+                    # Find the delforloeb with the matching title, or create it if it doesn't exist
+                    delforloeb_to_use = next(
+                        (
+                            item for item in delforloeb_result
+                            if item.get("Titel") == delforloeb_title
+                        ),
+                        None,
+                    )
+                    if delforloeb_to_use is None:
+                        delforloeb_to_use = sbsys_client.create_delforloeb(sag_id=sag["Id"], title=delforloeb_title)
+                        logger.info(f"Created new Delforløb '{delforloeb_title}' for sag Id={sag['Id']}")
+                    if not isinstance(delforloeb_to_use, dict) or not isinstance(
+                        delforloeb_to_use.get("ID"), int
+                    ):
+                        raise AirflowFailException("SBSYS delforloeb has no valid ID")
+
+                    journalize_result = sbsys_client.journalize(
+                        file=pdf_bytes,
+                        sag_id=sag["Id"],
+                        delforloeb_id=(
+                            delforloeb_to_use["ID"] if delforloeb_to_use else None
+                        ),
+                    )
+                    if not journalize_result:
+                        raise AirflowFailException("SBSYS journalization returned no result")
+                    logger.info(f"Journalization successful for sag Id={sag['Id']} for sagsnummer: {sag['Nummer']}")
+
+                # Forward the email with the journalization information to the recipients
                 email_sender.send_email(
                     sender=sender_email,
                     recipients=recipients,
                     subject=build_safe_subject_header(raw_subject=subject),
-                    body=_resolve_forward_body(
-                        normalized_subject=subject_cf,
-                        original_body=get_message_body(message),
-                        config=absence_post_config,
+                    body=(
+                        _resolve_forward_body(
+                            normalized_subject=subject_cf,
+                            original_body=get_message_body(message),
+                            config=absence_post_config,
+                        ).rstrip()
+                        + "\n\nDokumentet er blevet journaliseret under delforløbet "
+                        f"{delforloeb_title} på SBSYS Sagsnummer: "
+                        f"{', '.join(sag['Nummer'] for sag in active_sager)}\n\n"
+                        "Venlig hilsen Fravær - Løn og Personale"
                     ),
-                    attachments=[(filename, pdf_bytes)],
+                    attachments=[],
                 )
 
             except Exception:
-                logger.exception(f"Could not forward {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
+                logger.exception(f"Could not forward and journalize {filename} uid={uid_text} to its department recipients: {recipients} from department: {department_code}")
                 failures.append(uid_text)
                 forward_success.append(False)
                 continue
 
             forward_success.append(True)
             routed_attachments += 1
-            logger.info(f"Forwarded {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
+            logger.info(f"Forwarded and journalized {filename} PDF attachment uid={uid_text} to {recipients} from department: {department_code}")
 
-        # Delete the original email after successfully forwarding the attachment(s).
-        # Journalize the email in the p-sag before deleting it from the inbox. This step is not yet implemented.
-        if all(forward_success):
+        # Delete only when every maindoc PDF was forwarded and journalized.
+        if forward_success and all(forward_success):
             email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
-            logger.info(f"Deleted {filename} email uid={uid_text} after forwarding.")
+            logger.info(f"Deleted email uid={uid_text} after forwarding and journalization")
 
     # Notify about multiple active departments if any were encountered.
     if multi_department_info:
@@ -329,7 +469,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
         )
     if failures:
         failure_messages.append(
-            f"Could not forward {len(failures)} maindoc PDF attachment(s)"
+            f"Could not journalize or notify for {len(failures)} maindoc PDF attachment(s)"
         )
     if failure_messages:
         raise AirflowFailException("; ".join(failure_messages))
