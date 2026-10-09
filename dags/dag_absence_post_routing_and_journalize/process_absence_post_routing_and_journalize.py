@@ -23,7 +23,13 @@ logger = logging.getLogger(__name__)
 def _resolve_delforloeb_title(
     normalized_subject: str, mapping: dict,
 ) -> str | None:
-    """Find the unique configured delforloeb for a mail subject."""
+    """
+    Find the unique configured Delforløb for a mail subject.
+
+    :param normalized_subject: The normalized subject of the email
+    :param mapping: Subject fragments mapped to Delforløb titles.
+    :return: The matching Delforløb title, or None if no mapping matches.
+    """
     titles = {
         title for fragment, title in mapping.items()
         if fragment.casefold() in normalized_subject
@@ -137,14 +143,14 @@ def sync_sd_org_department_mapping() -> None:
     Sync the mapping between SD org departments and email addresses into an Airflow Variable.
     """
     logger.info("Starting to process absence_post_routing_and_journalize data...")
-    absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
+    sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
     if not isinstance(absence_post_config, dict):
         raise AirflowFailException("Variable 'absence_post_config' must be a JSON object")
 
     email_reader = EmailReader(
-        email=absence_post_imap_conn.login,
-        password=absence_post_imap_conn.password,
+        email=sd_org_mapping_conn.login,
+        password=sd_org_mapping_conn.password,
         imap_server=absence_post_config.get("imap_server")
     )
 
@@ -168,8 +174,9 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
-    # Replace this imap with the correct connection for Fravær Postkasse. Use absence_post_imap when testing locally
-    absence_post_imap_conn = BaseHook.get_connection("absence_post_imap")
+    # use sd_org_mapping_imap when testing locally instead of the real fravaer_post_imap
+    # sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
+    fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
     if not isinstance(absence_post_config, dict):
@@ -224,8 +231,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
     }
 
     email_reader = EmailReader(
-        email=absence_post_imap_conn.login,
-        password=absence_post_imap_conn.password,
+        email=fravaer_post_conn.login,
+        password=fravaer_post_conn.password,
         imap_server=imap_server,
     )
     email_sender = EmailSender(smtp_server=smtp_server)
