@@ -183,7 +183,7 @@ def clear_district_due_to_missing_address(
     """
     Clear district when address lookup fails.
 
-    Closes any open-ended `PersonDistrict` rows and clears `entry.DISTRIKT`.
+    Closes any open-ended `PersonDistrict` rows, clears `entry.details.TS_KOMID` and clears `entry.DISTRIKT`.
 
     :param entry: Novax `Name` ORM object.
     :param now_dt: Current timestamp.
@@ -196,6 +196,11 @@ def clear_district_due_to_missing_address(
             d.TS_UPDD = now_dt
             d.TS_UPDT = now_time
 
+    if str(entry.details.TS_KOMID).strip() != "":
+        entry.details.TS_KOMID = ""
+        entry.details.TS_UPDD = now_dt
+        entry.details.TS_UPDT = now_time
+
     if str(entry.DISTRIKT).strip() == "":
         return False
 
@@ -204,7 +209,7 @@ def clear_district_due_to_missing_address(
     return True
 
 
-def update_address_from_dataforsyning(
+def update_address_from_adressevaelger(
     *,
     entry: Name,
     address_info: Mapping[str, Any],
@@ -223,7 +228,7 @@ def update_address_from_dataforsyning(
     new row is inserted starting at `new_from_dt`.
 
     :param entry: Novax `Name` ORM object with joined `addresses`.
-    :param address_info: Dataforsyning mapping (expects keys like `full_address`,
+    :param address_info: Adressevælger mapping (expects keys like `full_address`,
         `street_code`, `municipality_code`, `postal_code`, `town_name`, `number_floor`).
     :param reference_date: Date to validate against end date of existing address rows.
     :param close_to_dt: Timestamp/date to use when closing open-ended rows.

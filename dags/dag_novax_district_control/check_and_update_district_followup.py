@@ -3,13 +3,13 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
-from dag_novax_district_control.clients.dataforsyning_client import DataforsyningClient
+from dag_novax_district_control.clients.adressevaelger_client import AdressevaelgerClient
 from dag_novax_district_control.clients.district_map_client import DistrictMapDBClient
 from dag_novax_district_control.clients.cpr_client import CPRClient
 from dag_novax_district_control.model import Name, NameDetails, Remind
 from dag_novax_district_control.district_update_helpers import (
     is_valid_cpr,
-    update_address_from_dataforsyning,
+    update_address_from_adressevaelger,
     update_district_from_coordinates,
     update_kommunekode,
     update_protected_address_status,
@@ -30,7 +30,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
     logger.info("Querying all upcoming due dates from today (TERMIN >= %s)", today)
 
     # Initialize clients
-    dataforsyning_client = DataforsyningClient()
+    adressevaelger_client = AdressevaelgerClient()
     district_db_client = DistrictMapDBClient()
     cpr_client = CPRClient()
 
@@ -82,7 +82,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
             address_uuid = cpr_info['address_uuid']
             address_info = None
             if address_uuid is not None:
-                address_info = dataforsyning_client.get_address_by_id(address_uuid)
+                address_info = adressevaelger_client.get_address_by_id(address_uuid)
 
             # Address + district updates
             is_new_address_set = False
@@ -101,7 +101,7 @@ def check_and_update_district_followup(dry_run: bool, ignore_cprs: list, **conte
             else:
                 # Address update
                 new_full_address = address_info.get("full_address")
-                is_new_address_set = update_address_from_dataforsyning(
+                is_new_address_set = update_address_from_adressevaelger(
                     entry=entry,
                     address_info=address_info,
                     reference_date=today,
