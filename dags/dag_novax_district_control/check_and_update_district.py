@@ -2,7 +2,7 @@ import logging
 
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from airflow.providers.microsoft.mssql.hooks.mssql import MsSqlHook
 
 from dag_novax_district_control.clients.cpr_client import CPRClient
@@ -21,6 +21,8 @@ from dag_novax_district_control.district_update_helpers import (
 )
 
 logger = logging.getLogger(__name__)
+
+PREGNANCY_LETTER_TITLES = ("Orientering - Gravid", "Sundhedspleje, Gravid")
 
 
 def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
@@ -59,14 +61,21 @@ def check_and_update_district(dry_run: bool, ignore_cprs: list) -> None:
                 and_(
                     Note.NAVNID == Godkommu.NAVNID,
                     Note.DATO == Godkommu.JOURNALDATO,
-                    Note.NOTE.like('%>> Orientering - Gravid <<%')
+                    # Note title must match the Emnebrev title of the same row
+                    or_(*[
+                        and_(
+                            Godkommu.EMNEBREV.like(f'%{title}%'),
+                            Note.NOTE.like(f'%>> {title} <<%'),
+                        )
+                        for title in PREGNANCY_LETTER_TITLES
+                    ])
                 )
             )
             .filter(
                 Godkommu.JOURNALDATO >= start_date,
                 Godkommu.JOURNALDATO < end_date,
                 func.trim(Godkommu.STATUS) == 'IND_MOD',
-                Godkommu.EMNEBREV.like('%Orientering - Gravid%'),
+                or_(*[Godkommu.EMNEBREV.like(f'%{title}%') for title in PREGNANCY_LETTER_TITLES]),
                 Name.CPR.not_in(ignore_cprs)
             )
             .order_by(Godkommu.NAVNID, Godkommu.JOURNALDATO.desc(), func.trim(Godkommu.JOURNALTID).desc())

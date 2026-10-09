@@ -11,7 +11,7 @@ Formålet med jobbet er at hente og opdatere patienters adresse- og distriktsinf
 Koden består af et DAG-job, der (for et automatisk beregnet datointerval) udfører følgende trin:
 
 - Bestemmer datointerval automatisk baseret på sidste succesfulde scheduled DAG-run (kun `run_type = scheduled` og `state = success`). Intervallet beregnes fra sidste runs `data_interval_end` frem til det aktuelle runs `data_interval_end`.
-- Henter graviditetsjournaler fra Novax-databasen for intervallet ved at udvælge journalposter med emne som “Orientering - Gravid” og status `IND_MOD`.
+- Henter graviditetsjournaler fra Novax-databasen for intervallet ved at udvælge journalposter med emne som “Orientering - Gravid” eller “Sundhedspleje, Gravid” og status `IND_MOD`.
 - Filtrerer dubletter pr. patient (NAVNID) og beholder kun seneste journalindslag i perioden.
 - For hver patient:
   - Springer over hvis patientens CPR er angivet i Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste).
