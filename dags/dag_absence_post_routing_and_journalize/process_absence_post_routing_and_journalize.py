@@ -376,8 +376,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 #     raise AirflowFailException("SBSYS journalization returned no result")
                 # logger.info(f"Journalization successful for sag Id={sag['Id']} on Delforløbet {delforloeb_title} for sagsnummer: {sag['Nummer']}")
 
-                client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
-                sag_result = client.get_personalesag(cpr=cpr)
+                sbsys_client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
+                sag_result = sbsys_client.get_personalesag(cpr=cpr)
                 active_sager = [
                     sag for sag in sag_result
                     if (sag.get("SagsStatus") or {}).get("Id") == 9  # 9 means active SagsStatus in SBSYS Prod
@@ -387,7 +387,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
 
                 # Journalize each active sag in SBSYS Prod
                 for sag in active_sager:
-                    delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag["Id"])
+                    delforloeb_result = sbsys_client.get_delforloeb_from_sagid(sag_id=sag["Id"])
                     if not isinstance(delforloeb_result, list):
                         raise AirflowFailException("Invalid SBSYS delforloeb response")
 
@@ -400,14 +400,14 @@ def extract_cpr_from_maindoc_attachments() -> None:
                         None,
                     )
                     if delforloeb_to_use is None:
-                        delforloeb_to_use = client.create_delforloeb(sag_id=sag["Id"], title=delforloeb_title)
+                        delforloeb_to_use = sbsys_client.create_delforloeb(sag_id=sag["Id"], title=delforloeb_title)
                         logger.info(f"Created new Delforløb '{delforloeb_title}' for sag Id={sag['Id']}")
                     if not isinstance(delforloeb_to_use, dict) or not isinstance(
                         delforloeb_to_use.get("ID"), int
                     ):
                         raise AirflowFailException("SBSYS delforloeb has no valid ID")
 
-                    journalize_result = client.journalize(
+                    journalize_result = sbsys_client.journalize(
                         file=pdf_bytes,
                         sag_id=sag["Id"],
                         delforloeb_id=(
