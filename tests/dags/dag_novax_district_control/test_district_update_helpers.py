@@ -6,7 +6,7 @@ import pytest
 from dag_novax_district_control.district_update_helpers import (
     _addresses_are_equivalent,
     _parse_novax_address,
-    update_address_from_dataforsyning,
+    update_address_from_adressevaelger,
 )
 
 
@@ -67,7 +67,7 @@ def test_update_address_skips_change_when_only_format_differs() -> None:
         addresses=[],
     )
 
-    changed = update_address_from_dataforsyning(
+    changed = update_address_from_adressevaelger(
         entry=entry,
         address_info={"full_address": "John Doe Vej 6, 3. 65, 8930 Randers NØ"},
         reference_date=date(2026, 1, 1),

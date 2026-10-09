@@ -21,7 +21,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     description="Check and update Novax district records by querying relevant clients",
-    tags=['novax', 'district', 'dataforsyning', 'cpr'],
+    tags=['novax', 'district', 'adressevaelger', 'cpr'],
 ) as dag:
 
     task = PythonOperator(

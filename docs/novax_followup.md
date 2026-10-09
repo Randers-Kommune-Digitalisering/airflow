@@ -4,7 +4,7 @@
 
 ## Formål
 
-Formålet med followup-jobbet er at sikre, at patienter med kommende terminsdatoer (TERMIN) fortsat har korrekte adresse- og distriktsoplysninger i Novax. Jobbet kører periodisk og laver genopfølgning frem mod termin ved at genopslå CPR-adresse (inkl. beskyttet status), validere/normalisere adressen via Dataforsyningen og beregne distrikt via District Map.
+Formålet med followup-jobbet er at sikre, at patienter med kommende terminsdatoer (TERMIN) fortsat har korrekte adresse- og distriktsoplysninger i Novax. Jobbet kører periodisk og laver genopfølgning frem mod termin ved at genopslå CPR-adresse (inkl. beskyttet status), validere/normalisere adressen via Adressevælger og beregne distrikt via District Map.
 
 Jobbet er designet som et supplement til det primære Novax-job: hvor hovedjobbet primært reagerer på nye/ændrede journaldata, er followup-jobbet terminsdrevet og genbesøger borgere med kommende terminsdatoer.
 
@@ -18,12 +18,12 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
   - Springer over hvis patientens CPR er angivet i Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste).
   - Validerer CPR-nummer.
   - Slår CPR op for at hente:
-    - Adresse UUID (til Dataforsyningen)
+    - Adresse UUID (til Adressevælger)
     - “beskyttet adresse”-status
   - Opdaterer `NameDetails.BESKYTTETADRESSE` hvis CPR-status er ændret.
-  - Slår adressen op i Dataforsyningen på CPR-adresse UUID.
-    - Hvis Dataforsyningen returnerer uventet/ingen data for adressen, logges det, og patientens distrikt ryddes (se nedenfor).
-  - Hvis Dataforsyningen giver en gyldig adresse:
+  - Slår adressen op i Adressevælger på CPR-adresse UUID.
+    - Hvis Adressevælger returnerer uventet/ingen data for adressen, logges det, og patientens distrikt ryddes (se nedenfor).
+  - Hvis Adressevælger giver en gyldig adresse:
     - Opdaterer `Name.ADRESSE` hvis den fulde adresse er ændret.
     - Når adressen ændres, oprettes en reminder i `REMIND` med kode `FLYTTET` og bemærkning om ny adresse; reminderen tildeles den aktuelle `AnsvarsShpl`.
     - Sikrer at adressens historik-tabeller holdes konsistente:
@@ -33,7 +33,7 @@ Koden består af et DAG-job, der ved hvert run udfører følgende trin:
     - Vedligeholder distrikt historik-tabellen i `PERSONDISTRIKT` for person-distrikter ved at lukke eksisterende “åben” række og oprette en ny.
     - Kommune-ID opdateres i `Name.TS_KOMID` samt `NameDetails.TS_KOMID` og `NameDetails.KOMMUNE_OPR`.
 
-Hvis adressen ikke kan valideres/returneres fra Dataforsyningen, ryddes distrikt for patienten:
+Hvis adressen ikke kan valideres/returneres fra Adressevælger, ryddes distrikt for patienten:
 
 - Åben række i `PERSONDISTRIKT` lukkes (slutdato sættes til runtime)
 - `Name.DISTRIKT` sættes til tom streng
@@ -43,13 +43,13 @@ Hvis adressen ikke kan valideres/returneres fra Dataforsyningen, ryddes distrikt
 
 - Jobbet kan køres i “dry-run” mode (styres af Airflow-variablen `NOVAX_DRY_RUN`, default `True`). Ved dry-run logges hvilke ændringer der ville blive skrevet, men der commits ikke til databasen.
 - Jobbet kan filtrere specifikke CPR-numre fra via Airflow-variablen `NOVAX_IGNORE_CPRS` (kommasepareret liste af CPR-numre).
-- Dataforsyning-opslag har retry ved midlertidige fejl (timeouts og 5xx), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
+- Adressevælger-opslag har retry ved midlertidige fejl (timeouts og 5xx; 404 behandles straks som "ikke fundet"), og adressen behandles som “ikke fundet” hvis alle forsøg fejler.
 - Opdateringer sker i én SQLAlchemy-session/transaction. Når `dry_run = False` commits ændringerne samlet til sidst.
 - Hvis der findes patienter med ugyldigt CPR-format (ikke 10 cifre), logges de og tasken fejler til sidst med en fejl (så det ikke bliver en “silent skip”).
 
 **Dataflow:**
 
-- Data fra Novax DB (TERMIN + eksisterende stamdata) → Adresseopslag via CPR → Adresser/validering via Dataforsyningen → Distriktsopslag via District Map → Opdatering i Novax DB
+- Data fra Novax DB (TERMIN + eksisterende stamdata) → Adresseopslag via CPR → Adresser/validering via Adressevælger → Distriktsopslag via District Map → Opdatering i Novax DB
 
 ## Afhængigheder
 
@@ -59,9 +59,10 @@ Hvis adressen ikke kan valideres/returneres fra Dataforsyningen, ryddes distrikt
 - **`novax_sql`**  
   Bruges som Connection id til Novax SQL-databasen (læse/skriv via SQLAlchemy engine).
 
-**Dataforsyning API:**
-- **`dataforsyningen`**  
-  Bruges til at slå CPR-adresse UUID op i Dataforsyningen og hente felter som vejkode, kommunekode, postnr, koordinater m.m.
+**Adressevælger API:**
+- **`adressevaelger`**  
+  Connection id med host (fx `https://adressevaelger.dk`) og token (gemt som password).  
+  Bruges til at slå CPR-adresse UUID op og hente felter som vejkode, kommunekode, postnr, koordinater m.m.
 
 **District Map API/DB:**
 - **`gis_db_districts`**  
