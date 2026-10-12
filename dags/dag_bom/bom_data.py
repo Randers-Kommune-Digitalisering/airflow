@@ -4,6 +4,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pandas as pd
+from rkdigi.email_handling import EmailSender
 from playwright.sync_api import (
     Error as PlaywrightError,
     Page,
@@ -196,7 +197,13 @@ def _extract_noegletal_payload(page: Page, max_rows: int = 6) -> NoegletalPayloa
     }
 
 
-def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool:
+def login_to_bom(
+    page: Page,
+    bom_url: str,
+    username: str,
+    password: str,
+    screenshots: list[tuple[str, bytes]] | None = None,
+) -> bool:
     """
     Log into BOM and wait for the main navigation to be available.
 
@@ -235,6 +242,19 @@ def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool
         page.locator("#userNameInput").fill(username, timeout=30000)
         page.locator("#passwordInput").fill(password, timeout=30000)
 
+        try:
+            image = page.screenshot(
+                mask=[
+                    page.locator("#passwordInput"),
+                ],
+                timeout=10000,
+            )
+            if screenshots is not None:
+                screenshots.append(("bom-before-submit.png", image))
+            logger.info("Masked BOM pre-submit screenshot captured")
+        except PlaywrightError:
+            logger.warning("Could not capture masked BOM login screenshot")
+
         logger.info("Clicking Submit...")
         page.locator("#submitButton").click(timeout=30000)
 
@@ -269,7 +289,9 @@ def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool
         return False
 
 
-def open_servicemaal_context(page: Page) -> bool:
+def open_servicemaal_context(
+    page: Page, screenshots: list[tuple[str, bytes]] | None = None
+) -> bool:
     """
     Navigate to 'Statistik og Servicemål' and apply the Byg/Servicemål filters.
 
@@ -278,6 +300,14 @@ def open_servicemaal_context(page: Page) -> bool:
     """
     try:
         logger.info("Navigating to Statistik og Servicemål...")
+        try:
+            image = page.screenshot(timeout=10000)
+            if screenshots is not None:
+                screenshots.append(("bom-before-servicemaal.png", image))
+            logger.info("BOM navigation screenshot captured")
+        except PlaywrightError:
+            logger.warning("Could not capture BOM navigation screenshot")
+
         page.locator("xpath=/html/body/div/header/div/div/div[2]/nav").click(timeout=30000)
         page.locator(
             "body > div > header > div > div > div.span4.offset2 > nav > ul > li > ul > "
@@ -434,6 +464,9 @@ def run_bom_job(
     password: str,
     bom_url: str,
     run_date: datetime.date,
+    email_sender: EmailSender,
+    sender: str,
+    recipients: list[str],
     headless: bool = True,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """
@@ -443,6 +476,9 @@ def run_bom_job(
     :param password: ADFS password.
     :param bom_url: BOM login URL.
     :param run_date: Date of the Airflow DAG run (Europe/Copenhagen).
+    :param email_sender: Sender for BOM screenshots.
+    :param sender: Email address sending the screenshots.
+    :param recipients: Email addresses receiving the screenshots.
     :param headless: Whether to run browser headless.
     :return: Tuple (df_monthly, df_glidende), or (None, None) when the flow fails.
     """
@@ -459,16 +495,28 @@ def run_bom_job(
         page = context.new_page()
 
         try:
+            screenshots: list[tuple[str, bytes]] = []
             if not login_to_bom(
                 page=page,
                 bom_url=bom_url,
                 username=username,
                 password=password,
+                screenshots=screenshots,
             ):
                 return None, None
 
-            if not open_servicemaal_context(page=page):
+            if not open_servicemaal_context(page=page, screenshots=screenshots):
                 return None, None
+
+            if len(screenshots) != 2:
+                raise RuntimeError("Both BOM screenshots are required for email")
+            email_sender.send_email(
+                sender=sender,
+                recipients=recipients,
+                subject=f"BOM screenshots: {run_date}",
+                body="Vedhæftet er screenshots fra BOM-login og navigation.",
+                attachments=screenshots,
+            )
 
             payloads = fetch_bom_data(page=page, run_date=run_date)
             df_monthly, df_glidende = process_bom_payloads(payloads=payloads)
