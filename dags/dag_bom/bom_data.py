@@ -1,7 +1,6 @@
 import datetime
 import logging
 from typing import Any
-from urllib.parse import urlsplit
 
 import pandas as pd
 from rkdigi.email_handling import EmailSender
@@ -256,30 +255,35 @@ def login_to_bom(
             logger.warning("Could not capture masked BOM login screenshot")
 
         logger.info("Clicking Submit...")
-        page.locator("#submitButton").click(timeout=30000)
-
-        logger.info("Waiting for BOM navigation after login submit...")
-        nav_selector = "xpath=/html/body/div/header/div/div/div[2]/nav"
         try:
-            page.locator(nav_selector).wait_for(
-                state="visible",
-                timeout=60000,
-            )
-        except PlaywrightTimeoutError:
+            page.locator("#submitButton").click(timeout=30000)
+        finally:
             try:
-                logger.error(
-                    f"BOM navigation missing after login: host={urlsplit(page.url).hostname or 'unknown'}, "
-                    f"email_form_visible={page.locator('#user-email').is_visible()}, "
-                    f"adfs_form_visible={page.locator('#userNameInput').is_visible()}, "
-                    f"header_nav_visible={page.locator('header nav').is_visible()}, "
-                    f"expected_nav_count={page.locator(nav_selector).count()}, "
-                    f"frame_count={len(page.frames)}"
-                )
+                page.wait_for_timeout(2000)
             except PlaywrightError:
-                logger.warning("Could not inspect BOM page after timeout")
-            raise
+                pass
+            for attempt in range(2):
+                try:
+                    image = page.screenshot(
+                        mask=[page.locator("#passwordInput")],
+                        timeout=10000,
+                    )
+                    if screenshots is not None:
+                        screenshots.append(
+                            ("bom-before-servicemaal.png", image)
+                        )
+                    logger.info("BOM post-submit screenshot captured")
+                    break
+                except PlaywrightError:
+                    if attempt == 0:
+                        try:
+                            page.wait_for_timeout(1500)
+                        except PlaywrightError:
+                            pass
+                    else:
+                        logger.warning("Could not capture BOM screenshot")
 
-        logger.info("Login submit done; BOM loaded.")
+        logger.info("Login submit done; BOM screenshot captured if available.")
         return True
     except PlaywrightTimeoutError:
         logger.exception("Timeout during BOM login")
@@ -289,9 +293,7 @@ def login_to_bom(
         return False
 
 
-def open_servicemaal_context(
-    page: Page, screenshots: list[tuple[str, bytes]] | None = None
-) -> bool:
+def open_servicemaal_context(page: Page) -> bool:
     """
     Navigate to 'Statistik og Servicemål' and apply the Byg/Servicemål filters.
 
@@ -300,14 +302,6 @@ def open_servicemaal_context(
     """
     try:
         logger.info("Navigating to Statistik og Servicemål...")
-        try:
-            image = page.screenshot(timeout=10000)
-            if screenshots is not None:
-                screenshots.append(("bom-before-servicemaal.png", image))
-            logger.info("BOM navigation screenshot captured")
-        except PlaywrightError:
-            logger.warning("Could not capture BOM navigation screenshot")
-
         page.locator("xpath=/html/body/div/header/div/div/div[2]/nav").click(timeout=30000)
         page.locator(
             "body > div > header > div > div > div.span4.offset2 > nav > ul > li > ul > "
@@ -494,8 +488,8 @@ def run_bom_job(
         context = browser.new_context()
         page = context.new_page()
 
+        screenshots: list[tuple[str, bytes]] = []
         try:
-            screenshots: list[tuple[str, bytes]] = []
             if not login_to_bom(
                 page=page,
                 bom_url=bom_url,
@@ -505,18 +499,8 @@ def run_bom_job(
             ):
                 return None, None
 
-            if not open_servicemaal_context(page=page, screenshots=screenshots):
+            if not open_servicemaal_context(page=page):
                 return None, None
-
-            if len(screenshots) != 2:
-                raise RuntimeError("Both BOM screenshots are required for email")
-            email_sender.send_email(
-                sender=sender,
-                recipients=recipients,
-                subject=f"BOM screenshots: {run_date}",
-                body="Vedhæftet er screenshots fra BOM-login og navigation.",
-                attachments=screenshots,
-            )
 
             payloads = fetch_bom_data(page=page, run_date=run_date)
             df_monthly, df_glidende = process_bom_payloads(payloads=payloads)
@@ -524,5 +508,17 @@ def run_bom_job(
             logger.info("BOM browser flow completed")
             return df_monthly, df_glidende
         finally:
-            context.close()
-            browser.close()
+            try:
+                if screenshots:
+                    email_sender.send_email(
+                        sender=sender,
+                        recipients=recipients,
+                        subject=f"BOM screenshots: {run_date}",
+                        body="Vedhæftet er screenshots fra BOM-login.",
+                        attachments=screenshots,
+                    )
+                else:
+                    logger.warning("No BOM screenshots available to email")
+            finally:
+                context.close()
+                browser.close()
