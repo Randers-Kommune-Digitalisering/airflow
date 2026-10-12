@@ -1,6 +1,7 @@
 import datetime
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 import pandas as pd
 from playwright.sync_api import (
@@ -236,6 +237,27 @@ def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool
 
         logger.info("Clicking Submit...")
         page.locator("#submitButton").click(timeout=30000)
+
+        logger.info("Waiting for BOM navigation after login submit...")
+        nav_selector = "xpath=/html/body/div/header/div/div/div[2]/nav"
+        try:
+            page.locator(nav_selector).wait_for(
+                state="visible",
+                timeout=60000,
+            )
+        except PlaywrightTimeoutError:
+            try:
+                logger.error(
+                    f"BOM navigation missing after login: host={urlsplit(page.url).hostname or 'unknown'}, "
+                    f"email_form_visible={page.locator('#user-email').is_visible()}, "
+                    f"adfs_form_visible={page.locator('#userNameInput').is_visible()}, "
+                    f"header_nav_visible={page.locator('header nav').is_visible()}, "
+                    f"expected_nav_count={page.locator(nav_selector).count()}, "
+                    f"frame_count={len(page.frames)}"
+                )
+            except PlaywrightError:
+                logger.warning("Could not inspect BOM page after timeout")
+            raise
 
         logger.info("Login submit done; BOM loaded.")
         return True
