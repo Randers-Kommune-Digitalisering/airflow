@@ -237,11 +237,6 @@ def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool
         logger.info("Clicking Submit...")
         page.locator("#submitButton").click(timeout=30000)
 
-        logger.info("Waiting for BOM to load after login submit...")
-        page.locator("xpath=/html/body/div/header/div/div/div[2]/nav").wait_for(
-            state="visible",
-            timeout=60000,
-        )
         logger.info("Login submit done; BOM loaded.")
         return True
     except PlaywrightTimeoutError:
