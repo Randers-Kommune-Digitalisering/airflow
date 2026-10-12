@@ -3,9 +3,7 @@ import logging
 import pendulum
 from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
-from airflow.models import Variable
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from rkdigi.email_handling import EmailSender
 
 from dag_bom.bom_data import run_bom_job
 
@@ -28,21 +26,11 @@ def process_bom(data_interval_end: pendulum.DateTime, **_) -> None:
     if not username or not password or not bom_url:
         raise AirflowFailException("Connection 'bom_login' is missing login and/or password or bom_url")
 
-    mail_config = Variable.get("bom_runtime_config", deserialize_json=True)
-    sender = mail_config["sender_email"]
-    recipients = mail_config["recipient_emails"]
-    smtp_server = mail_config["smtp_server"]
-    if not sender or not recipients or not smtp_server:
-        raise AirflowFailException("BOM email configuration is incomplete")
-
     df_monthly, df_glidende = run_bom_job(
         username=username,
         password=password,
         bom_url=bom_url,
         run_date=run_date,
-        email_sender=EmailSender(smtp_server=smtp_server),
-        sender=sender,
-        recipients=recipients,
     )
     if df_monthly is None or df_glidende is None or df_monthly.empty or df_glidende.empty:
         raise AirflowFailException("BOM job failed to extract data")
