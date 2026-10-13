@@ -1,4 +1,5 @@
 import logging
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 import pandas as pd
 import re
@@ -11,6 +12,10 @@ from rkdigi.email_handling import EmailSender
 logger = logging.getLogger(__name__)
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def get_user_by_email(conn: Session, email: str):
     """
     Retrieve a BiMailUser record by email from the database.
@@ -21,7 +26,9 @@ def get_user_by_email(conn: Session, email: str):
     Returns:
         BiMailUser: The user record matching the email, or None if not found.
     """
-    return conn.query(BiMailUser).filter(BiMailUser.email == email).first()
+    return conn.query(BiMailUser).filter(
+        func.lower(func.trim(BiMailUser.email)) == normalize_email(email)
+    ).order_by(BiMailUser.email_sent.desc()).first()
 
 
 def add_user(conn: Session, user_data: dict) -> BiMailUser:
@@ -34,7 +41,7 @@ def add_user(conn: Session, user_data: dict) -> BiMailUser:
     Returns:
         BiMailUser: The newly created user record.
     """
-    new_user = BiMailUser(**user_data)
+    new_user = BiMailUser(**{**user_data, "email": normalize_email(user_data["email"])})
     conn.add(new_user)
     conn.commit()
 

@@ -12,6 +12,7 @@ from dag_bi_user_mails.bi_user_mails_data import (
     get_user_by_email,
     add_user,
     mark_email_sent,
+    normalize_email,
     send_mail
 )
 from airflow.exceptions import AirflowFailException
@@ -60,7 +61,6 @@ def process_bi_user_mail() -> None:
         airflow_connection_id="bi_user_mail_db",
         base_model=BiMailUser
     )
-    db_session = db_manager.get_session()
 
     logger.info("DatabaseManager initialized for profile: bi_user_mail_db")
 
@@ -78,6 +78,7 @@ def process_bi_user_mail() -> None:
                 logger.warning("Skipping record with missing email")
                 continue
 
+            record["email_adresse"] = normalize_email(str(email))
             user_existing = get_user_by_email(conn=db_session, email=record["email_adresse"])
 
             # Skip sending email if the user has already been notified
