@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 import pandas as pd
+from rkdigi.email_handling import EmailSender
 from playwright.sync_api import (
     Error as PlaywrightError,
     Page,
@@ -195,7 +196,13 @@ def _extract_noegletal_payload(page: Page, max_rows: int = 6) -> NoegletalPayloa
     }
 
 
-def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool:
+def login_to_bom(
+    page: Page,
+    bom_url: str,
+    username: str,
+    password: str,
+    screenshots: list[tuple[str, bytes]] | None = None,
+) -> bool:
     """
     Log into BOM and wait for the main navigation to be available.
 
@@ -234,15 +241,49 @@ def login_to_bom(page: Page, bom_url: str, username: str, password: str) -> bool
         page.locator("#userNameInput").fill(username, timeout=30000)
         page.locator("#passwordInput").fill(password, timeout=30000)
 
-        logger.info("Clicking Submit...")
-        page.locator("#submitButton").click(timeout=30000)
+        try:
+            image = page.screenshot(
+                mask=[
+                    page.locator("#passwordInput"),
+                ],
+                timeout=10000,
+            )
+            if screenshots is not None:
+                screenshots.append(("bom-before-submit.png", image))
+            logger.info("Masked BOM pre-submit screenshot captured")
+        except PlaywrightError:
+            logger.warning("Could not capture masked BOM login screenshot")
 
-        logger.info("Waiting for BOM to load after login submit...")
-        page.locator("xpath=/html/body/div/header/div/div/div[2]/nav").wait_for(
-            state="visible",
-            timeout=60000,
-        )
-        logger.info("Login submit done; BOM loaded.")
+        logger.info("Clicking Submit...")
+        try:
+            page.locator("#submitButton").click(timeout=30000)
+        finally:
+            try:
+                page.wait_for_timeout(2000)
+            except PlaywrightError:
+                pass
+            for attempt in range(2):
+                try:
+                    image = page.screenshot(
+                        mask=[page.locator("#passwordInput")],
+                        timeout=10000,
+                    )
+                    if screenshots is not None:
+                        screenshots.append(
+                            ("bom-before-servicemaal.png", image)
+                        )
+                    logger.info("BOM post-submit screenshot captured")
+                    break
+                except PlaywrightError:
+                    if attempt == 0:
+                        try:
+                            page.wait_for_timeout(1500)
+                        except PlaywrightError:
+                            pass
+                    else:
+                        logger.warning("Could not capture BOM screenshot")
+
+        logger.info("Login submit done; BOM screenshot captured if available.")
         return True
     except PlaywrightTimeoutError:
         logger.exception("Timeout during BOM login")
@@ -417,6 +458,9 @@ def run_bom_job(
     password: str,
     bom_url: str,
     run_date: datetime.date,
+    email_sender: EmailSender,
+    sender: str,
+    recipients: list[str],
     headless: bool = True,
 ) -> tuple[pd.DataFrame | None, pd.DataFrame | None]:
     """
@@ -426,6 +470,9 @@ def run_bom_job(
     :param password: ADFS password.
     :param bom_url: BOM login URL.
     :param run_date: Date of the Airflow DAG run (Europe/Copenhagen).
+    :param email_sender: Sender for BOM screenshots.
+    :param sender: Email address sending the screenshots.
+    :param recipients: Email addresses receiving the screenshots.
     :param headless: Whether to run browser headless.
     :return: Tuple (df_monthly, df_glidende), or (None, None) when the flow fails.
     """
@@ -441,12 +488,14 @@ def run_bom_job(
         context = browser.new_context()
         page = context.new_page()
 
+        screenshots: list[tuple[str, bytes]] = []
         try:
             if not login_to_bom(
                 page=page,
                 bom_url=bom_url,
                 username=username,
                 password=password,
+                screenshots=screenshots,
             ):
                 return None, None
 
@@ -459,5 +508,17 @@ def run_bom_job(
             logger.info("BOM browser flow completed")
             return df_monthly, df_glidende
         finally:
-            context.close()
-            browser.close()
+            try:
+                if screenshots:
+                    email_sender.send_email(
+                        sender=sender,
+                        recipients=recipients,
+                        subject=f"BOM screenshots: {run_date}",
+                        body="Vedhæftet er screenshots fra BOM-login.",
+                        attachments=screenshots,
+                    )
+                else:
+                    logger.warning("No BOM screenshots available to email")
+            finally:
+                context.close()
+                browser.close()
