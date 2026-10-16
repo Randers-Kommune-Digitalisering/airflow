@@ -94,7 +94,7 @@ def _notify_multiple_active_departments(
     sender_email: str | None,
     recipients: list[str] | None,
     multi_department_info: dict[str, dict],
-) -> None:
+) -> bool:
     """
     Notify recipients about persons with multiple active SD departments with department codes and the affected PDF attachments.
 
@@ -103,14 +103,14 @@ def _notify_multiple_active_departments(
     :param recipients: Email addresses receiving the notification.
     :param multi_department_info: Person names, department codes, and PDF
         attachments grouped by CPR.
-    :return: None.
+    :return: True if the notification was sent, otherwise False.
     """
     if not recipients or not all(isinstance(recipient, str) and recipient.strip() for recipient in recipients):
         logger.warning(
             "'multi_department_notification_recipients' is not configured; "
             f"skipping notification for {len(multi_department_info)} person(s) with multiple active departments."
         )
-        return
+        return False
 
     overview_lines = []
     attachments: list[tuple[str, bytes]] = []
@@ -136,6 +136,7 @@ def _notify_multiple_active_departments(
         attachments=attachments,
     )
     logger.info(f"Sent multiple-active-departments notification for {len(multi_department_info)} person(s) with {len(attachments)} attachment(s).")
+    return True
 
 
 def sync_sd_org_department_mapping() -> None:
@@ -174,7 +175,8 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
-    fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
+    # fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
+    sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
     if not isinstance(absence_post_config, dict):
@@ -230,8 +232,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
     }
 
     email_reader = EmailReader(
-        email=fravaer_post_conn.login,
-        password=fravaer_post_conn.password,
+        email=sd_org_mapping_conn.login,
+        password=sd_org_mapping_conn.password,
         imap_server=imap_server,
     )
     email_sender = EmailSender(smtp_server=smtp_server)
@@ -247,6 +249,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
     failures: list[str] = []
     department_by_cpr: dict[str, str | None] = {}
     multi_department_info: dict[str, dict] = {}
+    pending_manual_review: list[tuple[bytes, str]] = []
     delta_client = DeltaClient(BaseHook.get_connection("delta_prod"))
 
     for message in emails:
@@ -276,6 +279,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
             continue
 
         forward_success = []
+        manual_review_count = 0
         for attachment in message.iter_attachments():
             filename = attachment.get_filename() or ""
             normalized_filename = filename.strip().casefold()
@@ -333,6 +337,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 skipped_attachments += 1
                 if cpr in multi_department_info:
                     multi_department_info[cpr]["attachments"].append((filename, pdf_bytes))
+                    manual_review_count += 1
                 forward_success.append(False)
                 continue
 
@@ -412,15 +417,21 @@ def extract_cpr_from_maindoc_attachments() -> None:
         if forward_success and all(forward_success):
             email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
             logger.info(f"Deleted email uid={uid_text} after forwarding and journalization")
+        elif manual_review_count and sum(forward_success) + manual_review_count == len(forward_success):
+            pending_manual_review.append((uid, uid_text))
 
     # Notify about multiple active departments if any were encountered.
     if multi_department_info:
-        _notify_multiple_active_departments(
+        notification_sent = _notify_multiple_active_departments(
             email_sender=email_sender,
             sender_email=sender_email,
             recipients=multi_department_notification_recipients,
             multi_department_info=multi_department_info,
         )
+        if notification_sent:
+            for uid, uid_text in pending_manual_review:
+                email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+                logger.info(f"Deleted email uid={uid_text} after forwarding for manual review")
 
     logger.info(f"Checked {processed_attachments} attachment(s); forwarded {routed_attachments} attachment(s); skipped {skipped_attachments} attachment(s).")
     failure_messages = []
