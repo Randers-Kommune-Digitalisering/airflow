@@ -338,44 +338,6 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 continue
 
             try:
-                # Emnesag test flow: comment out the personalesag block below
-                # before enabling this block for a manual test.
-                # sag_id = 0000  # Dummy sag ID for testing
-                # client = SbsysClient(BaseHook.get_connection("sbsys_api_test"))
-                # sag = client.get_emnesag(sag_id=sag_id)
-                # if (
-                #     not isinstance(sag, dict)
-                #     or (sag.get("SagsStatus") or {}).get("Id") != 6  # 6 means active SagsStatus in SBSYS Test
-                # ):
-                #     raise AirflowFailException("No active SBSYS test Emnesag found")
-
-                # delforloeb_result = client.get_delforloeb_from_sagid(sag_id=sag_id)
-                # if not isinstance(delforloeb_result, list):
-                #     raise AirflowFailException("Invalid SBSYS Delforløb response")
-                # delforloeb_to_use = next(
-                #     (
-                #         item for item in delforloeb_result
-                #         if item.get("Titel") == delforloeb_title
-                #     ),
-                #     None,
-                # )
-                # if delforloeb_to_use is None:
-                #     delforloeb_to_use = client.create_delforloeb(sag_id=sag_id, title=delforloeb_title)
-                #     logger.info(f"Created new Delforløb '{delforloeb_title}' for sag Id={sag_id}")
-                # if not isinstance(delforloeb_to_use, dict) or not isinstance(
-                #     delforloeb_to_use.get("ID"), int
-                # ):
-                #     raise AirflowFailException("SBSYS delforloeb has no valid ID")
-
-                # journalize_result = client.journalize(
-                #     file=pdf_bytes,
-                #     sag_id=sag_id,
-                #     delforloeb_id=delforloeb_to_use["ID"],
-                # )
-                # if not journalize_result:
-                #     raise AirflowFailException("SBSYS journalization returned no result")
-                # logger.info(f"Journalization successful for sag Id={sag['Id']} on Delforløbet {delforloeb_title} for sagsnummer: {sag['Nummer']}")
-
                 sbsys_client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
                 sag_result = sbsys_client.get_personalesag(cpr=cpr)
                 active_sager = [
