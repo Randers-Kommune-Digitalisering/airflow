@@ -124,7 +124,7 @@ def _notify_multiple_active_departments(
 
     body = (
         "Følgende personer har mere end én aktiv SD-afdelingskode, "
-        "og deres vedhæftede dokument(er) er derfor ikke blevet videresendt automatisk:\n\n"
+        "og deres vedhæftede dokument(er) er derfor ikke blevet videresendt automatisk og journaliseret:\n\n"
         + "\n".join(overview_lines)
     )
 
