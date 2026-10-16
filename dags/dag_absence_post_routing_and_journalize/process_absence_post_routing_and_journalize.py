@@ -217,6 +217,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
     sender_email = absence_post_config.get("sender_email")
     smtp_server = absence_post_config.get("smtp_server")
     imap_server = absence_post_config.get("imap_server")
+    sbsys_sagsstatus_active = absence_post_config.get("sbsys_sagsstatus_active")
     multi_department_notification_recipients = absence_post_config.get("multi_department_notification_recipients")
 
     configured_recipients = Variable.get("absence_post_mapning", deserialize_json=True)
@@ -342,7 +343,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 sag_result = sbsys_client.get_personalesag(cpr=cpr)
                 active_sager = [
                     sag for sag in sag_result
-                    if (sag.get("SagsStatus") or {}).get("Id") == 9  # 9 means active SagsStatus in SBSYS Prod
+                    if (sag.get("SagsStatus") or {}).get("Id") == sbsys_sagsstatus_active  # 9 means active SagsStatus in SBSYS Prod
                 ] if isinstance(sag_result, list) else []
                 if not active_sager:
                     raise AirflowFailException("No active SBSYS personalesag found")
