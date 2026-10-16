@@ -174,8 +174,6 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
-    # use sd_org_mapping_imap when testing locally instead of the real fravaer_post_imap
-    # sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
     fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
