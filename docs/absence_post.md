@@ -33,7 +33,7 @@ DAG'en `absence_post_forward_mails` udfører følgende trin:
 - Finder afdelingens modtagere i Airflow Variablen `absence_post_mapning`
 - Slår personalesager op i SBSYS Produktion via CPR og journaliserer PDF'en på hver aktiv sag (status-id 9). Delforløbet vælges ud fra mailens emne via `subject_delforloeb_mapping`: kun Delforløbet `3.1 Breve fra Udbetaling Danmark` og `02 Sygdom` er tilladt at blive journaliseret på. Mailen bliver liggende ved manglende eller modstridende emnematch. Hvis delforløbet mangler på en aktiv sag, oprettes det før journalisering
 - Sender derefter en mail til afdelingens modtagere med det oprindelige emne, den konfigurerede brødtekst samt delforløbets titel og sagsnumrene for de journaliserede sager
-- Sletter kun den oprindelige email, når alle relevante PDF'er er journaliseret og deres modtagere er orienteret. Ved fejl bliver mailen liggende til manuel håndtering
+- Sletter kun den oprindelige email, når alle relevante PDF'er er håndteret. Enten journaliseret og videresendt eller sendt til manuel behandling ved flere aktive afdelinger. Ved andre fejl bliver mailen liggende til manuel håndtering
 
 Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokumentet ikke automatisk:
 
@@ -47,7 +47,7 @@ Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokum
 
 **Bemærk (datahåndtering):**
 
-- Den oprindelige email slettes først efter vellykket journalisering og afsendelse af orienteringsmailen. Emails med dokumenter, der springes over, forbliver i postkassen. 
+- Den oprindelige email slettes først, når alle dens relevante PDF'er er journaliseret og videresendt eller er afleveret i opsummeringsmailen til manuel behandling. Hvis opsummeringsmailen ikke sendes, eller andre dokumenter springes over, forbliver emailen i postkassen.
 - Opsummeringsmailen ved flere aktive afdelinger indeholder personnavne og de oprindelige PDF-filer. Her skal den ansvarlige tage stilling til hvad man gør med det
 
 **Forudsætning (manuel proces):**
@@ -127,6 +127,7 @@ Bruges til at test Emnesag flowet med lokalt
 - `sender_email`
 - `smtp_server`
 - `imap_server`
+- `sbsys_sagsstatus_active`
 - `allowed_subject_fragments` (ikke-tom liste af emnefragmenter; ekstra tekst i emnet er tilladt)
 - `subject_delforloeb_mapping` (JSON-objekt med emnefragmenter som nøgler og `3.1 Breve fra Udbetaling Danmark` eller `02 Sygdom` som værdier)
 

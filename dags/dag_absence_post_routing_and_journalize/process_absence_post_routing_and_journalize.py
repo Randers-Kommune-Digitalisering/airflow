@@ -175,8 +175,7 @@ def sync_sd_org_department_mapping() -> None:
 
 def extract_cpr_from_maindoc_attachments() -> None:
     """Check all maindoc PDF attachments for one valid CPR number each."""
-    # fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
-    sd_org_mapping_conn = BaseHook.get_connection("sd_org_mapping_imap")
+    fravaer_post_conn = BaseHook.get_connection("fravaer_post_imap")
 
     absence_post_config = Variable.get("absence_post_config", deserialize_json=True)
     if not isinstance(absence_post_config, dict):
@@ -232,8 +231,8 @@ def extract_cpr_from_maindoc_attachments() -> None:
     }
 
     email_reader = EmailReader(
-        email=sd_org_mapping_conn.login,
-        password=sd_org_mapping_conn.password,
+        email=fravaer_post_conn.login,
+        password=fravaer_post_conn.password,
         imap_server=imap_server,
     )
     email_sender = EmailSender(smtp_server=smtp_server)
