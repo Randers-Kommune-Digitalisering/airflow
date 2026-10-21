@@ -395,8 +395,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                             config=absence_post_config,
                         ).rstrip()
                         + "\n\nDokumentet er blevet journaliseret under delforløbet "
-                        f"{delforloeb_title} på SBSYS Sagsnummer: "
-                        f"{', '.join(sag['Nummer'] for sag in active_sager)}\n\n"
+                        f"{delforloeb_title}.\n\n"
                         "Venlig hilsen Fravær - Løn og Personale"
                     ),
                     attachments=[],
