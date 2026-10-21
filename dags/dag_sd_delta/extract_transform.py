@@ -504,6 +504,7 @@ def _enrich_row_with_snapshot(
     cpr = row.get("PersonCivilRegistrationIdentifier")
     employment_id = row.get("EmploymentIdentifier")
     activation_date = row.get("ActivationDate")
+    deactivation_date = row.get("DeactivationDate")
 
     if pd.isna(cpr) or pd.isna(employment_id) or pd.isna(activation_date):
         raise ValueError(
@@ -512,6 +513,11 @@ def _enrich_row_with_snapshot(
         )
 
     effective_date = activation_date
+    if pd.notna(deactivation_date):
+        if deactivation_date == date(9999, 12, 31):
+            effective_date = max(activation_date, datetime.now(ZoneInfo("Europe/Copenhagen")).date())
+        else:
+            effective_date = max(activation_date, deactivation_date - timedelta(days=1))
 
     employment_snapshot_df = get_employment_on_date_df(
         inst_id=inst_id,
