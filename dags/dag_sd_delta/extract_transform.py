@@ -438,6 +438,11 @@ def _filter_unchanged_department_periods(employment_changes_df: pd.DataFrame, in
             effective_date=activation_date - timedelta(days=1),
         )
         if previous_snapshot_df.empty:
+            logger.info(
+                "No previous-day employment snapshot for institution=%s employment=%s date=%s; "
+                "keeping change row for Delta output.",
+                inst_id, employment_id, activation_date - timedelta(days=1),
+            )
             continue
 
         previous_department_id = previous_snapshot_df.iloc[0].get("Department_DepartmentIdentifier")
@@ -527,6 +532,11 @@ def _enrich_row_with_snapshot(
     )
 
     if employment_snapshot_df.empty:
+        logger.warning(
+            "SD change row excluded from Delta Excel: no employment snapshot for "
+            "institution=%s employment=%s effective_date=%s period=%s..%s.",
+            inst_id, employment_id, effective_date, activation_date, deactivation_date,
+        )
         return employment_changes_df.drop(index=row_index)
 
     snapshot_row = employment_snapshot_df.iloc[0]
@@ -543,6 +553,11 @@ def _enrich_row_with_snapshot(
         )
 
         if person_snapshot_df.empty:
+            logger.warning(
+                "SD change row excluded from Delta Excel: no person snapshot for "
+                "institution=%s employment=%s effective_date=%s period=%s..%s.",
+                inst_id, employment_id, effective_date, activation_date, deactivation_date,
+            )
             return employment_changes_df.drop(index=row_index)
 
         person_snapshot_row = person_snapshot_df.iloc[0]
@@ -813,6 +828,12 @@ def _process_one_institution(
         logger.info(f"No employment changes found for institution {inst_id}")
         return pd.DataFrame(), []
 
+    source_employments = set(
+        employment_changes_df[
+            ["PersonCivilRegistrationIdentifier", "EmploymentIdentifier"]
+        ].dropna().itertuples(index=False, name=None)
+    ) if not employment_changes_df.empty else set()
+
     deleted_list = []
     if not employment_changes_deleted_df.empty:
         logger.info(f"{len(employment_changes_deleted_df)} deleted employment(s) found for institution {inst_id}")
@@ -856,6 +877,16 @@ def _process_one_institution(
             )
 
         logger.info(f"{len(out_df)} employment changes found for institution {inst_id}")
+        exported_employments = set(
+            out_df[["CPR-nummer", "Tjenestenummer"]].dropna().itertuples(index=False, name=None)
+        ) if not out_df.empty else set()
+        missing_employments = source_employments - exported_employments
+        for _, employment_id in sorted(missing_employments, key=lambda identity: str(identity[1])):
+            logger.warning(
+                "No non-deleted SD change included in Delta Excel for institution=%s employment=%s; "
+                "check preceding filter and snapshot logs for the reason.",
+                inst_id, employment_id,
+            )
     return out_df, deleted_list
 
 
