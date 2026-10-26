@@ -239,24 +239,9 @@ class NexusClient:
         except HTTPError as error:
             response = error.response
             if response is not None:
-                try:
-                    body = response.json()
-                except ValueError:
-                    body = None
-                response_format = "empty" if not response.content else "non-JSON" if body is None else f"JSON {type(body).__name__}"
-                details = [body] if isinstance(body, dict) else []
-                if details and isinstance(body.get("errors"), list):
-                    details.extend(item for item in body["errors"] if isinstance(item, dict))
-                codes = [
-                    code
-                    for detail in details
-                    for code in (detail.get("code"), detail.get("errorCode"))
-                    if isinstance(code, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,79}", code)
-                ]
-                error_fields = [key for key in ("errors", "error", "message", "detail", "title") if isinstance(body, dict) and key in body]
                 logger.error(
-                    "Nexus assignment rejected: HTTP %s, error codes: %s, response format: %s, error fields present: %s",
-                    response.status_code, codes or "<not provided>", response_format, error_fields,
+                    "Nexus assignment rejected: HTTP %s, response body: %s",
+                    response.status_code, response.text,
                 )
             raise
 
