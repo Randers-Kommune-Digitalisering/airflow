@@ -40,6 +40,7 @@ ASSISTIVE_TECHNOLOGY_ASSESSMENT_116_PATHWAY = "Boligindretning SEL § 116"
 ASSISTIVE_DEVICES_ASSIGNMENT_NAME = "PHJÆ Nye ansøgninger fra X-Flow"
 ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME = "HJÆ Nye ansøgninger fra X-Flow"
 ASSISTIVE_TECHNOLOGY_ASSIGNMENT_116_NAME = "HJÆ Nye ansøgninger fra X-Flow."
+ASSISTIVE_TECHNOLOGY_ASSIGNMENT_112_113_NAME = "Ansøgning NY/GENBEV."
 
 # Organizations / Ansvarlige organisationer
 ASSISTIVE_DEVICES_GROUP_NAME = "PHJÆ Nye ansøgninger fra X-Flow"
