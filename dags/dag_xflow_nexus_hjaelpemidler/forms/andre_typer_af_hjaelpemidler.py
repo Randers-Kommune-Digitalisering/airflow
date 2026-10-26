@@ -27,7 +27,7 @@ def generate_andre_typer_af_hjaelpemidler_fields(model_object: Any) -> list[Fiel
             value="Ja" if model_object.can_collect_data else "Nej",
         ),
         Field(label="Borger oplyst om ovenstående", field_type=FieldType.DROPDOWN, value="Skriftligt (Kvitteringsbrev"),
-        Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=model_object.device_name),
+        Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=model_object.device_name.strip() or "Andre typer af hjælpemidler"),
         Field(label="Type", field_type=FieldType.DROPDOWN, value="§ 112 Andet"),
         Field(label="Sagsbehandlingsfrister", field_type=FieldType.DROPDOWN, value="30 uger"),
         Field(label="Opgavefrist", field_type=FieldType.DROPDOWN, value="Lang"),

@@ -156,7 +156,7 @@ build_fields_by_table = {
     "stoette_til_bil": generate_stoette_til_bil_fields,
     "elscooter": generate_elscooter_fields,
     "hjaelpemiddel_til_barn": generate_hjaelpemiddel_til_barn_fields,
-    "kommunikationshjælpemiddel": generate_kommunikationshjaelpemiddel_fields,
+    "kommunikationshjaelpemiddel": generate_kommunikationshjaelpemiddel_fields,
     "servicehund": generate_servicehund_fields,
     "hjaelpemiddel_andre_typer_af_hjaelpemidler": generate_andre_typer_af_hjaelpemidler_fields,
 }
