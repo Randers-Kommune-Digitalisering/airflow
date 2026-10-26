@@ -4,6 +4,7 @@ import logging
 from urllib.parse import urljoin
 from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
+from requests.exceptions import HTTPError
 from airflow.hooks.base import BaseHook
 from rkdigi import ManagedOAuth2Session
 
@@ -233,7 +234,26 @@ class NexusClient:
         create_action = next((a for a in assignment.get("actions", []) if a.get("name") == CREATE_ACTION_NAME), None)
         if not create_action:
             raise ValueError(f"Could not find action '{CREATE_ACTION_NAME}' in assignment actions")
-        return self._follow(obj=create_action, rel="createAssignment", method="post", json=assignment)
+        try:
+            return self._follow(obj=create_action, rel="createAssignment", method="post", json=assignment)
+        except HTTPError as error:
+            response = error.response
+            if response is not None:
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = None
+                details = [body] if isinstance(body, dict) else []
+                if details and isinstance(body.get("errors"), list):
+                    details.extend(item for item in body["errors"] if isinstance(item, dict))
+                codes = [
+                    code
+                    for detail in details
+                    for code in (detail.get("code"), detail.get("errorCode"))
+                    if isinstance(code, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,79}", code)
+                ]
+                logger.error("Nexus assignment rejected: HTTP %s, error codes: %s", response.status_code, codes or "<not provided>")
+            raise
 
     def rollback_objects(self, created_docs: list[dict], created_form: dict | None, created_assignment: dict | None) -> None:
         """Delete already created objects in reverse order. Never raises, so the original error is kept."""

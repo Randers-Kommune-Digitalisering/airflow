@@ -58,7 +58,7 @@ FORM_CONFIG_BY_TABLE: dict[str, dict[str, Any]] = {
         "generate_assignment_title": lambda model_object: f"{model_object.device_name.strip() or 'Hjælpemiddel til barn'} {model_object.renewal_or_new_text}",
         "generate_due_date": lambda model_object: model_object.form_date + timedelta(weeks=30),
         "generate_extended_due_date": lambda model_object: model_object.form_date + timedelta(weeks=48),
-        "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_112_113_NAME,
+        "assignment_name": ASSISTIVE_TECHNOLOGY_ASSIGNMENT_NAME,
         "assignment_organization": ASSISTIVE_TECHNOLOGY_GROUP_NAME,
         "error_notification_recipient": "hjaelpemiddelvisitator@randers.dk",
     },
