@@ -88,7 +88,7 @@ def get_nexus_case(
     form_data = HjaelpemiddelFormData(model_object, normal_deadline, extended_deadline)
     fields = build_fields_by_table[table_name](model_object=form_data)
     documents = _build_documents(model_object=model_object, session=session)
-    assignment_title = config["generate_assignment_title"](model_object=model_object)
+    assignment_title = config["generate_assignment_title"](model_object=model_object)[:50]
     assignment = NexusAssignment(
         name=config["assignment_name"],
         organization=config["assignment_organization"],
