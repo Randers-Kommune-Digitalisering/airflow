@@ -15,6 +15,7 @@ from dag_sd_fleksjobrefusion.sd_fleksjobrefusion_data import (
 logger = logging.getLogger(__name__)
 
 MESSAGES_TABLE_SELECTOR = "#messages_data"
+DEPARTMENTS_PER_BROWSER = 10
 
 
 def open_error_and_control_messages_context(page: Page) -> bool:
@@ -296,63 +297,65 @@ def run_sd_control_and_error_list_review_job(
     :return: Tuple of success flag and matched codes per department.
     """
     logger.info("Starting SD Control and Error List Review browser flow")
+    matches: dict[str, list[str]] = {}
+    failed_departments: list[str] = []
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=headless,
-            args=[
-                "--incognito",
-                (
-                    "--disable-features=msImplicitSignIn,"
-                    "EnableWindowsGSAutoSignIn"
-                ),
-            ],
-        )
-        context = browser.new_context()
-        page = context.new_page()
-
-        try:
-            active_page = login_to_sd(
-                page=page,
-                sd_url=sd_url,
-                username=username,
-                password=password,
+        for start in range(0, len(department_codes), DEPARTMENTS_PER_BROWSER):
+            batch = department_codes[start:start + DEPARTMENTS_PER_BROWSER]
+            browser = playwright.chromium.launch(
+                headless=headless,
+                args=[
+                    "--incognito",
+                    (
+                        "--disable-features=msImplicitSignIn,"
+                        "EnableWindowsGSAutoSignIn"
+                    ),
+                ],
             )
-            if active_page is None:
-                return False, {}
+            try:
+                context = browser.new_context()
+                try:
+                    page = context.new_page()
+                    active_page = login_to_sd(
+                        page=page,
+                        sd_url=sd_url,
+                        username=username,
+                        password=password,
+                    )
+                    if active_page is None:
+                        return False, matches
 
-            if not open_error_and_control_messages_context(page=active_page):
-                return False, {}
+                    if not open_error_and_control_messages_context(page=active_page):
+                        return False, matches
 
-            matches: dict[str, list[str]] = {}
-            failed_departments: list[str] = []
+                    for department_code in batch:
+                        if not process_department(
+                            page=active_page,
+                            department_code=department_code,
+                        ):
+                            failed_departments.append(department_code)
+                            continue
 
-            for department_code in department_codes:
-                if not process_department(
-                    page=active_page,
-                    department_code=department_code,
-                ):
-                    failed_departments.append(department_code)
-                    continue
+                        relevant_codes = review_department_messages(
+                            page=active_page,
+                            allowed_codes=allowed_codes,
+                        )
+                        matches[department_code] = relevant_codes
 
-                relevant_codes = review_department_messages(
-                    page=active_page,
-                    allowed_codes=allowed_codes,
-                )
-                matches[department_code] = relevant_codes
+                        if relevant_codes:
+                            for position, code in enumerate(relevant_codes, start=1):
+                                logger.info(f"Department {department_code} match {position}/{len(relevant_codes)}: code {code}")
+                        else:
+                            logger.info(f"Department {department_code} has no relevant codes")
+                finally:
+                    context.close()
+            finally:
+                browser.close()
 
-                if relevant_codes:
-                    for position, code in enumerate(relevant_codes, start=1):
-                        logger.info(f"Department {department_code} match {position}/{len(relevant_codes)}: code {code}")
-                else:
-                    logger.info(f"Department {department_code} has no relevant codes")
+        if failed_departments:
+            logger.error(f"Failed to review department(s): {', '.join(failed_departments)}")
+            return False, matches
 
-            if failed_departments:
-                logger.error(f"Failed to review department(s): {', '.join(failed_departments)}")
-                return False, matches
-
-            logger.info("SD Control and Error List Review flow completed")
-            return True, matches
-        finally:
-            context.close()
-            browser.close()
+        logger.info("SD Control and Error List Review flow completed")
+        return True, matches
