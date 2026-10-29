@@ -1,6 +1,7 @@
 import logging
 import time
 from collections import Counter
+from urllib.parse import urlsplit
 from playwright.sync_api import (
     Error as PlaywrightError,
     Frame,
@@ -15,7 +16,7 @@ from dag_sd_fleksjobrefusion.sd_fleksjobrefusion_data import (
 logger = logging.getLogger(__name__)
 
 MESSAGES_TABLE_SELECTOR = "#messages_data"
-DEPARTMENTS_PER_BROWSER = 10
+DEPARTMENTS_PER_BROWSER = 50
 
 
 def open_error_and_control_messages_context(page: Page) -> bool:
@@ -299,6 +300,8 @@ def run_sd_control_and_error_list_review_job(
     logger.info("Starting SD Control and Error List Review browser flow")
     matches: dict[str, list[str]] = {}
     failed_departments: list[str] = []
+    storage_state = None
+    personaleweb_url = None
 
     with sync_playwright() as playwright:
         for start in range(0, len(department_codes), DEPARTMENTS_PER_BROWSER):
@@ -314,10 +317,35 @@ def run_sd_control_and_error_list_review_job(
                 ],
             )
             try:
-                context = browser.new_context()
-                try:
+                if storage_state is not None and personaleweb_url is not None:
+                    try:
+                        context = browser.new_context(storage_state=storage_state)
+                        try:
+                            page = context.new_page()
+                            page.goto(
+                                personaleweb_url,
+                                wait_until="domcontentloaded",
+                                timeout=15000,
+                            )
+                            page.frame_locator("#insideiframe").frame_locator(
+                                "xpath=//*[@id='jbFrameset']/frame"
+                            ).locator("#fe171").wait_for(
+                                state="visible", timeout=10000
+                            )
+                            logger.info("Reused SD login in new browser")
+                        except (PlaywrightTimeoutError, PlaywrightError):
+                            context.close()
+                            raise
+                    except (PlaywrightTimeoutError, PlaywrightError):
+                        logger.warning("Could not reuse SD login; signing in again")
+                        context = browser.new_context()
+                        page = context.new_page()
+                        storage_state = None
+                else:
+                    context = browser.new_context()
                     page = context.new_page()
-                    active_page = login_to_sd(
+                try:
+                    active_page = page if storage_state is not None else login_to_sd(
                         page=page,
                         sd_url=sd_url,
                         username=username,
@@ -348,6 +376,11 @@ def run_sd_control_and_error_list_review_job(
                                 logger.info(f"Department {department_code} match {position}/{len(relevant_codes)}: code {code}")
                         else:
                             logger.info(f"Department {department_code} has no relevant codes")
+
+                    personaleweb_url = urlsplit(active_page.url)._replace(
+                        query="", fragment=""
+                    ).geturl()
+                    storage_state = context.storage_state(indexed_db=True)
                 finally:
                     context.close()
             finally:
