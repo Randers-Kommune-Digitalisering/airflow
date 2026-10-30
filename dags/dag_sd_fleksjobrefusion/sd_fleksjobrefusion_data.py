@@ -258,18 +258,20 @@ def login_to_sd(
         ).first
         personaleweb_tile.wait_for(state="visible", timeout=30000)
 
-        before_personaleweb = list(personaleweb_host_page.context.pages)
         personaleweb_tile.click(timeout=30000)
-        personaleweb_host_page.wait_for_timeout(1200)
-        pw_pages = [
-            p
-            for p in personaleweb_host_page.context.pages
-            if p not in before_personaleweb
-        ]
-
-        personaleweb_page = (
-            pw_pages[-1] if pw_pages else personaleweb_host_page
+        personaleweb_page = _find_page_with_selector(
+            context=personaleweb_host_page.context,
+            selector="#insideiframe",
+            timeout_ms=90000,
         )
+        if personaleweb_page is None:
+            _log_open_pages(
+                context=personaleweb_host_page.context,
+                prefix="Personaleweb page lookup failed",
+            )
+            raise PlaywrightTimeoutError(
+                "Could not find a Personaleweb page containing #insideiframe"
+            )
         personaleweb_page.wait_for_load_state(
             "domcontentloaded",
             timeout=30000,
