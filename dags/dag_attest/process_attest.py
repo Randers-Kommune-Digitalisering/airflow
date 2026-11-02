@@ -11,6 +11,7 @@ from dag_attest.attest_data import (
     extract_cpr,
     extract_email_body,
     extract_pdf_attachments,
+    extract_requester_email,
     find_matching_orders,
     find_received_record,
     is_clean_attest,
@@ -25,6 +26,7 @@ from dag_attest.model import (
     ReceivedRecord,
     RecordOutcome,
 )
+from dag_attest.sbsys_client import SbsysClient
 from rkdigi.email_handling import EmailReader
 from rkdigi.database_manager import DatabaseManager
 
@@ -32,6 +34,30 @@ logger = logging.getLogger(__name__)
 
 _MAILBOX = "INBOX"
 _ACTOR = "airflow:dag_attest"
+_DOCUMENT_NAMES = {0: "Offentlig straffeattest", 1: "Privat straffeattest"}
+
+
+def _ensure_notification(
+    session,
+    order_id: str,
+    notification_type: NotificationType,
+) -> None:
+    existing = (
+        session.query(Notification.notification_id)
+        .filter(
+            Notification.order_id == order_id,
+            Notification.notification_type == notification_type,
+        )
+        .first()
+    )
+
+    if existing is None:
+        session.add(
+            Notification(
+                order_id=order_id,
+                notification_type=notification_type,
+            )
+        )
 
 
 def _mark_email_seen(email_reader: EmailReader, uid: bytes | str) -> None:
@@ -65,12 +91,11 @@ def _get_sbsys_targets(
         sbsys_client,
         subject_cpr: str,
         attest_types: set[int],
-) -> tuple[int, int | None] | None:
-    # Børneattest delforløbstitel er endnu ikke verificeret
+) -> tuple[int, str | None, int | None] | None:
     if attest_types == {2}:
         return None
 
-    if not attest_types or not attest_types.issubset({0,1}):
+    if not attest_types or not attest_types.issubset({0, 1}):
         raise AirflowFailException("Unexpected attest type IDs")
 
     cases = sbsys_client.get_personalesag(subject_cpr)
@@ -92,7 +117,9 @@ def _get_sbsys_targets(
     if len(active_cases) != 1:
         return None
 
-    sag_id = _parse_sbsys_id(active_cases[0].get("Id"), "case Id")
+    sag = active_cases[0]
+    sag_id = _parse_sbsys_id(sag.get("Id"), "case Id")
+    sag_nummer = sag.get("Nummer")
 
     subcases = sbsys_client.get_delforloeb(sag_id)
     if subcases is None or not isinstance(subcases, list):
@@ -112,13 +139,144 @@ def _get_sbsys_targets(
         )
 
     if not matching_subcases:
-        return sag_id, None
+        return sag_id, sag_nummer, None
 
     delforloeb_id = _parse_sbsys_id(
         matching_subcases[0].get("ID"),
         "subcase ID",
     )
-    return sag_id, delforloeb_id
+    return sag_id, sag_nummer, delforloeb_id
+
+
+def _send_to_manual_review(session, record, mail_uid: str, reason: str) -> None:
+    if record.order is None:
+        # Withour an order the current model cannot hold a notification;
+        # the email stays unread so it can be handled manually from the mailbox.
+        raise AirflowFailException(
+            f"Attest email uid={mail_uid!r} needs manual handling ({reason}) "
+            "and has no matching order"
+        )
+
+    _ensure_notification(
+        session,
+        order_id=record.order.order_id,
+        notification_type=NotificationType.RECORD_REQUIRES_REVIEW,
+    )
+    session.commit()
+    logger.info("Attest email uid=%r sent to manual review (%s)", mail_uid, reason)
+
+
+def _process_email(message, mail_uid: str, db_manager, sbsys_client):
+    try:
+        body = extract_email_body(message)
+        subject_cpr = extract_cpr(body)
+
+        pdfs = extract_pdf_attachments(message)
+        if not pdfs:
+            raise AttestParseError("Email has no PDF attachments")
+
+        pdf_bytes, pdf_text = pdfs[0]
+        if not pdf_text.strip():
+            raise AttestParseError("Could not extract text from PDF")
+
+        attest_types = to_attest_type_ids(
+            detect_attest_types(pdf_text, message.get("Subject"))
+        )
+    except AttestParseError as exc:
+        raise AirflowFailException(
+            f"Could not parse attest email uid={mail_uid!r}"
+        ) from exc
+
+    try:
+        requester_email = extract_requester_email(body)
+    except AttestParseError:
+        requester_email = None
+
+    clean = is_clean_attest(pdf_text)
+
+    with db_manager.get_session() as session:
+        record = find_received_record(session, mail_uid)
+        if record is not None and record.outcome is not None:
+            logger.info("Attest email uid=%r has already been processed, skipping", mail_uid)
+            return
+
+        if record is None:
+            orders = find_matching_orders(session, subject_cpr, attest_types)
+            record = ReceivedRecord(mail_uid=mail_uid, is_clean=clean)
+            session.add(record)
+
+            if len(orders) == 1:
+                order = orders [0]
+                order.status = OrderStatus.UNDER_REVIEW
+                record.order = order
+                session.add(OrderEvent(
+                    order=order,
+                    status=OrderStatus.UNDER_REVIEW,
+                    actor=_ACTOR
+                ))
+
+            session.commit()
+
+        if record.sbsys_sags_id is not None:
+            raise AirflowFailException(
+                f"Attest email uid={mail_uid!r} may already be journalized in SBSYS; check manually"
+            )
+
+        if requester_email is None:
+            _send_to_manual_review(session, record, mail_uid, "no unique requester in email")
+            return
+
+        if (
+            record.order is not None
+            and record.order.request.requester_email.casefol() != requester_email
+        ):
+            _send_to_manual_review(session, record, mail_uid, "requester does not match order")
+            return
+
+        targets = _get_sbsys_targets(sbsys_client, subject_cpr, attest_types)
+        if targets is None:
+            _send_to_manual_review(session, record, mail_uid, "no unique personalesag")
+            return
+        sag_id, sag_nummer, delforloeb_id = targets
+
+        record.sbsys_sags_id = sag_id
+        session.commit()
+
+        document_name = _DOCUMENT_NAMES[next(iter(attest_types))]
+        result = sbsys_client.journalize(
+            pdf_bytes=pdf_bytes,
+            sag_id=sag_id,
+            delforloeb_id=delforloeb_id,
+            document_name=document_name,
+            description=f"{document_name} automatisk journaliseret fra attest-postkassen.", 
+        )
+        document_id = result.get("Id") if isinstance(result, dict) else None  # TODO: verificér feltnavn mod SBSYS svar
+        if document_id is None:
+            raise AirflowFailException(
+                f"SBSYS journalization returned no document id for email uid={mail_uid!r}"
+            )
+
+        record.outcome = RecordOutcome.JOURNALIZED
+        record.processed_at = datetime.now(timezone.utc)
+        record.sbsys_sags_nr = sag_nummer
+        record.sbsys_document_id = str(document_id)
+
+        if record.order is not None:
+            record.order.status = OrderStatus.JOURNALIZED
+            session.add(OrderEvent(order=record.order, status=OrderStatus.JOURNALIZED, actor=_ACTOR))
+            _ensure_notification(
+                session,
+                order_id=record.order.order_id,
+                notification_type=NotificationType.RECORD_JOURNALIZED
+            )
+        else:
+            logger.warning(
+                "Attest email uid=%r was journalized without a matcing order; no notification created",
+                mail_uid,
+            )
+        session.commit()
+
+        logger.info("Journalized attest email uid=%r (%s)", mail_uid, "clean" if clean else "not clean")
 
 
 def process_attest() -> None:
@@ -161,78 +319,30 @@ def process_attest() -> None:
             f"Could not fetch {len(failed_ids)} email(s) from the attest mailbox"
         )
 
+    sbsys_client = SbsysClient(BaseHook.get_connection("attest_sbsys"))
+
+    failed: list[str] = []
+
     for message in emails:
         uid = getattr(message, "uid", None)
         if uid is None:
-            raise AirflowFailException("Fetched attest email has no UID")
+            logger.error("Fetched attest email has no UID; skipping")
+            failed.append("<no uid>")
+            continue
         mail_uid = uid.decode("ascii") if isinstance(uid, bytes) else str(uid)
 
         try:
-            subject_cpr = extract_cpr(extract_email_body(message))
+            _process_email(message, mail_uid, db_manager, sbsys_client)
+        except Exception as exc:
+            # Only our own messages are logged; others may contain response data
+            detail = str(exc) if isinstance(exc, AirflowFailException) else type(exc).__name__
+            logger.error("Attest email uid=%r was not processed: %s", mail_uid, detail)
+            failed.append(mail_uid)
+            continue
 
-            pdfs = extract_pdf_attachments(message)
-            if not pdfs:
-                raise AttestParseError("Email has no PDF attachments")
-
-            pdf_bytes, pdf_text = pdfs[0]
-            if not pdf_text.strip():
-                raise AttestParseError("Could not extract text from PDF")
-
-            attest_types = to_attest_type_ids(
-                detect_attest_types(pdf_text, message.get("Subject"))
-            )
-        except AttestParseError as exc:
-            raise AirflowFailException(
-                f"Could not parse attest email uid={mail_uid!r}"
-            ) from exc
-
-        clean = is_clean_attest(pdf_text)
-
-        with db_manager.get_session() as session:
-            existing_record = find_received_record(session, mail_uid)
-            if existing_record is not None:
-                logger.info(
-                    "Attest email uid=%r is already loaded; skipping",
-                    mail_uid
-                )
-            else:
-                orders = find_matching_orders(session, subject_cpr, attest_types)
-
-                record = ReceivedRecord(
-                    mail_uid=mail_uid,
-                    is_clean=clean,
-                )
-                session.add(record)
-
-                if len(orders) == 1:
-                    order = orders[0]
-                    order.status = OrderStatus.UNDER_REVIEW
-                    record.order = order
-                    session.add(
-                        OrderEvent(
-                            order=order,
-                            status=OrderStatus.UNDER_REVIEW,
-                            actor=_ACTOR,
-                        )
-                    )
-
-                session.commit()
-
-                targets = _get_sbsys_targets(
-                    sbsys_client,
-                    subject_cpr,
-                    attest_types
-                )
-                if targets is None:
-                    raise AirflowFailException(
-                        f"SBSYS returned no matching targets for email uid={mail_uid!r}"
-                    )
-                sag_id, delforloeb_id = targets
-                
-                logger.info(
-                    "Loaded attest email uid=%r: %d matching order(s), %s",
-                    mail_uid,
-                    len(orders),
-                    "clean" if clean else "not clean",
-                )
         _mark_email_seen(email_reader, uid)
+
+    if failed:
+        raise AirflowFailException(
+            f"{len(failed)} attest email(s) need manual handling: {', '.join(failed)}"
+        )

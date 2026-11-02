@@ -200,7 +200,6 @@ def extract_email_body(message: Message) -> str:
     raise AttestParseError("Email body has an unsupported character encoding")
 
 
-
 def find_received_record(
         session: Session,
         mail_uid: str,
