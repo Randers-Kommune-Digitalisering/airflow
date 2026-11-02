@@ -6,10 +6,8 @@ STATE_DEAD_TYPE_ID = "DEAD"
 COMPLETED_ACTION_NAME = "Udfyldt"
 
 # Dashboards / overblik
-ASSISTIVE_DEVICES_DASHBOARD_NAME = "Dokumentation - Personlige hjælpemidler"
-# ASSISTIVE_DEVICES_DASHBOARD_NAME = ".NY Dokumentation - Personlige hjælpemidler"  # Review env
-ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME = "Dokumentation - Hjælpemidler Visitation"
-# ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME = ".NY Dokumentation - Hjælpemidler Visitation"  # Review env
+ASSISTIVE_DEVICES_DASHBOARD_NAME = ".NY Dokumentation - Personlige hjælpemidler"
+ASSISTIVE_TECHNOLOGY_ASSESSMENT_DASHBOARD_NAME = ".NY Dokumentation - Hjælpemidler Visitation"
 
 # Widgets 
 ASSISTIVE_DEVICES_DOCUMENT_WIDGET_NAME = "Breve og dokumenter Personlige hjælpemidler"
