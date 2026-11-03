@@ -6,6 +6,7 @@ from rkdigi.token_session import ManagedOAuth2Session
 
 
 logger = logging.getLogger(__name__)
+RANDERS_KOMMUNE_SYNC_ID = "ec7a13a3-3d44-46eb-a462-93d2443681b3"
 
 
 class ProfessionalStsSkipped(Exception):
@@ -96,29 +97,29 @@ class NexusClient:
             return result
         return response.json() if response.content else {}
 
-    def _set_identity_fields(self, config: dict, person: DeltaPerson) -> bool:
-        """Update identity fields in the configuration and report whether they changed."""
+    def _set_identity_fields(self, config: dict, person: DeltaPerson) -> list[str]:
+        """Update identity fields and describe the changes for the report."""
 
-        identity_changed = False
+        changes = []
         old_identifier = config.get("primaryIdentifier")
         new_identifier = person.user.username.lower()
         if not isinstance(old_identifier, str) or old_identifier.casefold() != new_identifier.casefold():
             logger.info(f"Identity change pending primaryIdentifier: {old_identifier!r} -> {new_identifier!r}")
             config["primaryIdentifier"] = new_identifier
-            identity_changed = True
+            changes.append(f"Brugernavn ændret: {old_identifier or 'ikke angivet'} → {new_identifier}")
         old_identity_id = config.get("identityId")
         new_identity_id = person.user.upn.lower()
         if not isinstance(old_identity_id, str) or old_identity_id.casefold() != new_identity_id.casefold():
             logger.info(f"Identity change pending identityId: {old_identity_id!r} -> {new_identity_id!r}")
             config["identityId"] = new_identity_id
-            identity_changed = True
+            changes.append(f"Identitet ændret: {old_identity_id or 'ikke angivet'} → {new_identity_id}")
         old_upn = config["activeDirectoryConfiguration"].get("upn")
         new_upn = person.user.upn.lower()
         if not isinstance(old_upn, str) or old_upn.casefold() != new_upn.casefold():
             logger.info(f"Identity change pending activeDirectoryConfiguration.upn: {old_upn!r} -> {new_upn!r}")
             config["activeDirectoryConfiguration"]["upn"] = new_upn
-            identity_changed = True
-        return identity_changed
+            changes.append(f"UPN ændret: {old_upn or 'ikke angivet'} → {new_upn}")
+        return changes
 
     # Private helpers for specific Nexus API endpoints.
     def _get_home(self) -> dict:
@@ -227,7 +228,7 @@ class NexusClient:
             raise ValueError("Professional lookup did not return a professional")
         if "create" in professional.get("_links", {}):
             logger.warning("Professional should be created - SKIPPING")
-            raise RuntimeError("STS import or linking did not return a professional")
+            raise RuntimeError("Professional creation is disabled")
             if not isinstance(professional.get("activeDirectoryConfiguration"), dict):
                 raise ValueError("Professional configuration cannot be updated")
             logger.info("Creating professional")
@@ -246,20 +247,14 @@ class NexusClient:
         return professional
 
     # Public methods for updating professionals
-    def update_existing_professional(self, person: DeltaPerson) -> bool:
-        """Import missing professionals and synchronize identity, organizations, supplier and job title.
-
-        Lookup uses Delta ADGUID. Preview-only creation raises PreviewCreationSkipped.
-        """
+    def update_existing_professional(self, person: DeltaPerson) -> list[str]:
+        """Describe proposed changes to an existing professional in Danish."""
         logger.info(f"Handling: {person.name}")
-        try:
-            professional = self._get_professional(person)
-        except ProfessionalStsSkipped:
-            logger.warning("Professional skipped after repeated STS lookup failure")
-            return True
+        professional = self._get_professional(person)
+        changes = []
 
         org_by_sync_id = {org["syncId"]: org for org in self._organizations}
-        desired_sync_ids = {org.uuid for org in person.adm_units}
+        desired_sync_ids = {org.uuid for org in person.adm_units} | {RANDERS_KOMMUNE_SYNC_ID}
         missing_sync_ids = desired_sync_ids - org_by_sync_id.keys()
         if missing_sync_ids:
             raise ValueError("Delta organization is not present in active organizations")
@@ -286,7 +281,9 @@ class NexusClient:
         if added_ids or removed_ids:
             added_names = [org_by_sync_id[sync_id].get("name") or sync_id for sync_id in added_sync_ids]
             removed_names = [current_by_sync_id[sync_id].get("name") or sync_id for sync_id in removed_sync_ids]
-            logger.info(f"Organization update pending\n adding: {added_names}\n removing: {removed_names}")
+            logger.info(f"Organization update pending - adding: {added_names}, removing: {removed_names}")
+            changes.extend(f"Organisation tilføjet: {name}" for name in added_names)
+            changes.extend(f"Organisation fjernet: {name}" for name in removed_names)
             # self._follow(professional, "updateOrganizations", method="post", json={"added": added_ids, "removed": removed_ids})
             # logger.info("Organizations updated")
 
@@ -294,7 +291,9 @@ class NexusClient:
         if not isinstance(config, dict) or not isinstance(config.get("activeDirectoryConfiguration"), dict):
             raise ValueError("Professional configuration cannot be updated")
 
-        config_changed = self._set_identity_fields(config, person)
+        identity_changes = self._set_identity_fields(config, person)
+        changes.extend(identity_changes)
+        config_changed = bool(identity_changes)
 
         if person.job_function:
             jobs = self._follow(self._home, "professionalJobs")
@@ -303,16 +302,19 @@ class NexusClient:
             job = next((item for item in jobs if isinstance(item, dict) and item.get("active") and isinstance(item.get("name"), str) and item["name"].casefold() == person.job_function.casefold()), None)
             if job is None:
                 logger.warning(f"Job title not found: {person.job_function!r}")
+                changes.append(f"Stillingsbetegnelse kunne ikke ændres: {person.job_function} findes ikke i Nexus.")
             elif config.get("professionalJob") != job:
                 old_job = config.get("professionalJob")
                 logger.info(f"Job title change pending: {(old_job.get('name') if isinstance(old_job, dict) else None)!r} -> {job['name']!r}")
                 config["professionalJob"] = job
                 config_changed = True
+                changes.append(f"Stillingsbetegnelse ændret: {(old_job.get('name') if isinstance(old_job, dict) else None) or 'ikke angivet'} → {job['name']}")
 
         if primary:
             primary_organization = current_by_sync_id.get(primary.uuid)
             if primary_organization is None:
                 logger.error(f"Delta primary organization not found among professional's organizations: {primary.uuid}")
+                changes.append("Primær organisation kunne ikke ændres: organisationen findes ikke på Nexus-brugeren.")
             else:
                 old_primary = config.get("primaryOrganization")
                 old_primary_id = old_primary.get("id") if isinstance(old_primary, dict) else None
@@ -321,6 +323,7 @@ class NexusClient:
                     logger.info(f"Primary organization change pending: {old_primary_name!r} -> {primary_organization.get('name')!r}")
                     config["primaryOrganization"] = primary_organization
                     config_changed = True
+                    changes.append(f"Primær organisation ændret: {old_primary_name or 'ikke angivet'} → {primary_organization.get('name') or primary.uuid}")
 
         supplier = org_by_sync_id[primary.uuid].get("supplier") if primary else None
         old_supplier = config.get("defaultOrganizationSupplier") or {}
@@ -328,9 +331,10 @@ class NexusClient:
             logger.info(f"Supplier change pending: {old_supplier.get('name')!r} -> {supplier.get('name')!r}")
             config["defaultOrganizationSupplier"] = supplier
             config_changed = True
+            changes.append(f"Standardleverandør ændret: {old_supplier.get('name') or 'ikke angivet'} → {supplier.get('name') or supplier['id']}")
 
         if config_changed:
             # self._follow(config, "update", method="put", json=config)
             # logger.info("Configuration updated")
             pass
-        return True
+        return changes

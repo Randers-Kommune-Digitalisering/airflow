@@ -9,17 +9,30 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
 from dag_delta_nexus.delta import DeltaClient
-from dag_delta_nexus.nexus import NexusClient, DeltaPerson
+from dag_delta_nexus.nexus import NexusClient, DeltaPerson, ProfessionalStsSkipped
 from utils.config import DEFAULT_DAG_ARGS
-from utils.custom_log import get_log_collector, get_styled_log_lines
 
 
 logger = logging.getLogger(__name__)
 dag_args = {**DEFAULT_DAG_ARGS, "retries": 2, "retry_delay": timedelta(minutes=2)}
 
 
+def failure_reason(error: Exception) -> str:
+    if isinstance(error, ProfessionalStsSkipped):
+        return "Brugeren kunne ikke hentes fra støttesystemet efter gentagne forsøg. Flere brugere?"
+    reasons = {
+        "Professional lookup returned multiple matches": "Flere Nexus-brugere matcher brugerens ADGUID.",
+        "STS import or linking did not return a professional": "Brugeren kunne ikke importeres eller tilknyttes fra støttesystemet.",
+        "Professional creation is disabled": "Brugeren findes ikke i Nexus, og oprettelse er slået fra.",
+        "Delta organization is not present in active organizations": "En Delta-organisation findes ikke blandt de aktive Nexus-organisationer.",
+        "Delta primary organization is not present in active organizations": "Den primære Delta-organisation findes ikke blandt de aktive Nexus-organisationer.",
+        "Professional configuration cannot be updated": "Nexus-brugerens konfiguration kunne ikke hentes.",
+    }
+    return reasons.get(str(error), f"Uventet fejl under behandlingen ({type(error).__name__}).")
+
+
 def fetch_user_details(**context) -> None:
-    """Process selected Nexus users and email the client log."""
+    """Process selected Nexus users and email a Danish change report."""
     conf = context["dag_run"].conf or {}
     user_uuids = conf.get("user_uuids")
     if not isinstance(user_uuids, list) or not user_uuids or not all(
@@ -38,11 +51,6 @@ def fetch_user_details(**context) -> None:
 
     user_details = delta_client.get_user_details(user_uuids, valid_date)
     nexus_persons = [DeltaPerson.from_dict(user) for user in user_details]
-    log_collector = get_log_collector()
-    log_collector.setLevel(logging.INFO)
-    client_logger = logging.getLogger(NexusClient.__module__)
-    client_logger.addHandler(log_collector)
-    logger.addHandler(log_collector)
     failed_users = []
     report_items = []
 
@@ -54,30 +62,23 @@ def fetch_user_details(**context) -> None:
         client_secret=nexus_conn.password,
     )
 
-    try:
-        for person in nexus_persons:
-            log_start = len(log_collector.entries)
-            try:
-                updated = nexus_client.update_existing_professional(person=person)
-            except Exception as error:
-                failed_users.append(person.user.ad_guid)
-                logger.error(f"Professional update failed ({type(error).__name__})")
-            else:
-                if updated is not True:
-                    failed_users.append(person.user.ad_guid)
-                    logger.error("Professional update did not succeed")
-            person_logs = get_styled_log_lines(log_collector.entries[log_start:])
-            details = "<ul>" + "".join("<li>" + line.replace("\n", "<br>") + "</li>" for line in person_logs) + "</ul>" if person_logs else ""
-            report_items.append(f"<li>Handling: {escape(person.name)}{details}</li>")
-    finally:
-        client_logger.removeHandler(log_collector)
-        logger.removeHandler(log_collector)
+    for person in nexus_persons:
+        try:
+            changes = nexus_client.update_existing_professional(person=person)
+        except Exception as error:
+            failed_users.append(person.user.ad_guid)
+            logger.error("Professional update failed (%s)", type(error).__name__)
+            changes = [f"Behandling mislykkedes: {failure_reason(error)}"]
+        if not changes:
+            changes = ["Ingen ændringer."]
+        details = "<ul>" + "".join(f"<li>{escape(change)}</li>" for change in changes) + "</ul>"
+        report_items.append(f"<li>{escape(person.name)} ({escape(person.user.username)}){details}</li>")
 
     if report_items:
         sent_at = pendulum.now("Europe/Copenhagen").strftime("%H:%M %d-%m-%Y")
         send_email(
             to=["rune.aagaard.keena@randers.dk"],  # , "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
-            subject=f"NO CHANGES MADE - Delta Nexus processing - {sent_at}",
+            subject=f"Delta Nexus - ændringsrapport - {sent_at}",
             html_content="<ul>" + "".join(report_items) + "</ul>",
         )
 
