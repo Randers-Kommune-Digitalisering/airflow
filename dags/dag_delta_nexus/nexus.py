@@ -8,6 +8,10 @@ from rkdigi.token_session import ManagedOAuth2Session
 logger = logging.getLogger(__name__)
 
 
+class PreviewCreationSkipped(Exception):
+    """A new professional was deliberately not created in preview mode."""
+
+
 @dataclass(frozen=True)
 class DeltaUser:
     """User identifiers supplied by Delta for Nexus synchronization."""
@@ -210,15 +214,15 @@ class NexusClient:
             raise ValueError("Professional lookup returned multiple matches")
         if not matches:
             professional = self._import_professional(person)
+            if professional is None:
+                raise RuntimeError("STS import or linking did not return a professional")
         else:
             professional = self._follow(matches[0], "self")
-        if professional is None:
-            return None
         if not isinstance(professional, dict):
             raise ValueError("Professional lookup did not return a professional")
         if "create" in professional.get("_links", {}):
             logger.warning("Professional should be created - SKIPPING")
-            return None
+            raise PreviewCreationSkipped()
             if not isinstance(professional.get("activeDirectoryConfiguration"), dict):
                 raise ValueError("Professional configuration cannot be updated")
             logger.info("Creating professional")
@@ -240,11 +244,9 @@ class NexusClient:
     def update_existing_professional(self, person: DeltaPerson) -> bool:
         """Import missing professionals and synchronize identity, organizations, supplier and job title.
 
-        Lookup uses Delta ADGUID. Primary organization assignment is pending.
+        Lookup uses Delta ADGUID. Preview-only creation raises PreviewCreationSkipped.
         """
         professional = self._get_professional(person)
-        if professional is None:
-            return False
 
         org_by_sync_id = {org["syncId"]: org for org in self._organizations}
         desired_sync_ids = {org.uuid for org in person.adm_units}

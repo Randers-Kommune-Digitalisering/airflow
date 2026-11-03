@@ -8,7 +8,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
 from dag_delta_nexus.delta import DeltaClient
-from dag_delta_nexus.nexus import NexusClient, DeltaPerson
+from dag_delta_nexus.nexus import NexusClient, DeltaPerson, PreviewCreationSkipped
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
 
@@ -42,6 +42,7 @@ def fetch_user_details(**context) -> None:
     client_logger = logging.getLogger(NexusClient.__module__)
     client_logger.addHandler(log_collector)
     logger.addHandler(log_collector)
+    failed_users = []
     try:
         nexus_conn = BaseHook.get_connection("nexus_prod")
         nexus_client = NexusClient(
@@ -52,7 +53,17 @@ def fetch_user_details(**context) -> None:
         )
         for person in nexus_persons:
             logger.info(f"Handling: {person.name}")
-            nexus_client.update_existing_professional(person=person)
+            try:
+                updated = nexus_client.update_existing_professional(person=person)
+            except PreviewCreationSkipped:
+                logger.warning("Professional creation intentionally skipped in preview mode")
+            except Exception as error:
+                failed_users.append(person.user.ad_guid)
+                logger.error(f"Professional update failed ({type(error).__name__})")
+            else:
+                if updated is not True:
+                    failed_users.append(person.user.ad_guid)
+                    logger.error("Professional update did not succeed")
     finally:
         client_logger.removeHandler(log_collector)
         logger.removeHandler(log_collector)
@@ -64,6 +75,9 @@ def fetch_user_details(**context) -> None:
             subject=f"NO CHANGES MADE - Delta Nexus processing - {sent_at}",
             html_content=f"<pre>{get_styled_log_html(log_collector)}</pre>",
         )
+
+    if failed_users:
+        raise RuntimeError(f"Failed to update {len(failed_users)} Nexus professionals")
 
 
 with DAG(
