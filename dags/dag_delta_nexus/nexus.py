@@ -8,8 +8,8 @@ from rkdigi.token_session import ManagedOAuth2Session
 logger = logging.getLogger(__name__)
 
 
-class PreviewCreationSkipped(Exception):
-    """A new professional was deliberately not created in preview mode."""
+class ProfessionalStsSkipped(Exception):
+    """An existing professional could not be fetched from STS after a retry."""
 
 
 @dataclass(frozen=True)
@@ -167,8 +167,12 @@ class NexusClient:
             json={"type": "cpr", "identifier": broken_object["details"]["cpr"]},
         )
         if isinstance(linked, dict) and linked.get("reason") == "ProfessionalWithStsSnNotFetched":
-            logger.error("Professional not found in STS while linking")
-            return None
+            linked = self._follow(
+                self._home, "stsLinkUpdates", expected_reason="ProfessionalWithStsSnNotFetched", method="put",
+                json={"type": "cpr", "identifier": broken_object["details"]["cpr"]},
+            )
+            if isinstance(linked, dict) and linked.get("reason") == "ProfessionalWithStsSnNotFetched":
+                raise ProfessionalStsSkipped()
         if not isinstance(linked, dict) or not linked.get("primaryIdentifier"):
             logger.error("Unable to link existing professional to STS")
             return None
@@ -180,8 +184,9 @@ class NexusClient:
         professional = matches[0]
         config = self._follow(professional, "configuration", expected_reason="ProfessionalWithStsSnNotFetched")
         if isinstance(config, dict) and config.get("reason") == "ProfessionalWithStsSnNotFetched":
-            logger.error("Professional not found in STS while fetching configuration")
-            return None
+            config = self._follow(professional, "configuration", expected_reason="ProfessionalWithStsSnNotFetched")
+            if isinstance(config, dict) and config.get("reason") == "ProfessionalWithStsSnNotFetched":
+                raise ProfessionalStsSkipped()
         if not isinstance(config, dict) or not isinstance(config.get("activeDirectoryConfiguration"), dict):
             logger.error("Existing professional has no configuration")
             return None
@@ -222,7 +227,7 @@ class NexusClient:
             raise ValueError("Professional lookup did not return a professional")
         if "create" in professional.get("_links", {}):
             logger.warning("Professional should be created - SKIPPING")
-            raise PreviewCreationSkipped()
+            raise RuntimeError("STS import or linking did not return a professional")
             if not isinstance(professional.get("activeDirectoryConfiguration"), dict):
                 raise ValueError("Professional configuration cannot be updated")
             logger.info("Creating professional")
@@ -246,7 +251,12 @@ class NexusClient:
 
         Lookup uses Delta ADGUID. Preview-only creation raises PreviewCreationSkipped.
         """
-        professional = self._get_professional(person)
+        logger.info(f"Handling: {person.name}")
+        try:
+            professional = self._get_professional(person)
+        except ProfessionalStsSkipped:
+            logger.warning("Professional skipped after repeated STS lookup failure")
+            return True
 
         org_by_sync_id = {org["syncId"]: org for org in self._organizations}
         desired_sync_ids = {org.uuid for org in person.adm_units}

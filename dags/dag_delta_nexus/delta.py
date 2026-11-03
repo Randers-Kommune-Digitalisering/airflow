@@ -33,22 +33,22 @@ class DeltaClient:
         response.raise_for_status()
         return response.json()["queryResultList"][0]["registrationList"]
 
-    def get_engagement_uuids_valid_from(self, changes_date: date) -> list[str]:
+    def get_engagement_uuids_valid_from(self, changes_date: date) -> list[dict]:
         """Return engagement UUIDs effective on the date; registrations may repeat UUIDs."""
         registrations = self._get_engagement_history({"validFrom": changes_date.isoformat()})
         return [
-            reg["objectUuid"] for reg in registrations
+            {"id": reg["id"], "objectUuid": reg["objectUuid"]} for reg in registrations
             if reg.get("validityDate") == changes_date.isoformat() and reg.get("objectUuid")
         ]
 
-    def get_engagement_uuids_changed_since(self, from_time: datetime, valid_date: date) -> list[str]:
+    def get_engagement_uuids_changed_since(self, from_time: datetime, valid_date: date) -> list[dict]:
         """Return UUIDs changed since an aware instant and effective by valid_date; duplicates may occur."""
         if from_time.tzinfo is None or from_time.utcoffset() is None:
             raise ValueError("from_time must be timezone-aware")
         timestamp = from_time.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         registrations = self._get_engagement_history({"from": timestamp})
         return [
-            reg["objectUuid"] for reg in registrations
+            {"id": reg["id"], "objectUuid": reg["objectUuid"]} for reg in registrations
             if reg.get("validityDate") and date.fromisoformat(reg["validityDate"]) <= valid_date and reg.get("objectUuid")
         ]
 

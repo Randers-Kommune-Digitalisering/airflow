@@ -1,25 +1,25 @@
-# Delta Nexus synkronisering `README.md`
+# Delta Nexus synkronisering
 [**Formål**](#formål) | [**Dataflow**](#dataflow) | [**Beskrivelse**](#beskrivelse) | [**Afhængigheder**](#afhængigheder) | [**Schedule**](#schedule)
 
 ## Formål
 
-Synkronisere Nexus-brugere og deres organisationstilknytninger, identitetsfelter, primære organisation, standardleverandør og stillingsbetegnelse på baggrund af ændringer i Delta.
+Finde Nexus-brugere på baggrund af ændringer i Delta og rapportere foreslåede ændringer i deres organisationstilknytninger, identitetsfelter, primære organisation, standardleverandør og stillingsbetegnelse. Oprettelse og opdatering af Nexus-konfiguration er foreløbig slået fra.
 
 ## Dataflow
 
-Delta engagementshistorik → aktive engagementer og brugere med Nexus-rolle → bruger-UUID'er via Airflow til behandlings-DAG → person- og organisationsoplysninger fra Delta → oprettelse eller opdatering i Nexus → lograpport via email.
+Delta engagementshistorik → aktive engagementer og brugere med Nexus-rolle → registrerings-ID'er, bruger-UUID'er og gyldighedsdato via Airflow til behandlings-DAG → person- og organisationsoplysninger fra Delta → kontrol af foreslåede Nexus-ændringer → lograpport via email.
 
-Kun UUID'er og gyldighedsdato sendes mellem de to DAGs; personoplysninger hentes først i behandlings-DAG'en.
+Kun registrerings-ID'er, bruger-UUID'er og gyldighedsdato sendes mellem de to DAGs; personoplysninger hentes først i behandlings-DAG'en. Registrerings-ID'er opbevares også i Airflows kørselsmetadata for at undgå at udløse samme registrering igen.
 
 ## Beskrivelse
 
-**`delta_nexus_polling`** finder engagementer, der træder i kraft på relevante datoer, eller som er ændret siden sidste vellykkede polling. Den bruger UTC-datoen ved dataintervallets slutning som gyldighedsdato, fjerner dubletter og udvælger aktive brugere knyttet til aktive engagementer med en Nexus-produktionsrolle (ikke Review). Hvis der ikke findes brugere, springes behandlingen over. Ellers udløses `delta_nexus_processing` med en liste over bruger-UUID'er og gyldighedsdatoen. Pollingen venter på resultatet af behandlingen.
+**`delta_nexus_polling`** foretager én `from`-forespørgsel fra det tidligste af seneste vellykkede datainterval og en time før det aktuelle dataintervals slutning. For hver lokal dato, der er passeret siden sidste vellykkede polling, foretager den én `validFrom`-forespørgsel; i den første time efter lokal midnat forespørges den aktuelle dato også. Tidsstempler er i UTC, mens gyldighedsdatoen følger `Europe/Copenhagen` (CET/CEST). Pollingen fjerner dubletter på registrerings-ID og fravælger ID'er, der allerede findes i en behandlingskørsels konfiguration, også hvis behandlingen fejlede. Den finder aktive Nexus-produktionsrolle-brugere (ikke Review) pr. aktivt engagement. Hvis ingen findes, springes behandlingen over; ellers udløses én samlet `delta_nexus_processing`-kørsel med de valgte registrerings-ID'er, unikke bruger-UUID'er og gyldighedsdatoen. Pollingen venter på resultatet.
 
-Ved første kørsel uden en tidligere vellykket polling starter søgningen ved det aktuelle dataintervals start. `catchup=False` betyder, at en senere aktivering ikke automatisk gennemgår alle tidligere 10-minutters intervaller.
+Uden en tidligere vellykket polling starter `from`-søgningen en time før dataintervallets slutning. `catchup=False` betyder, at en senere aktivering ikke automatisk gennemgår alle tidligere 10-minutters intervaller. Når der findes en tidligere vellykket kørsel, genlæses ændringer siden denne og alle mellemliggende gyldighedsdatoer. Registreringer uden Nexus-rolle kan genfindes i de efterfølgende pollinger, så længe de indgår i søgevinduet.
 
-**`delta_nexus_processing`** henter de valgte brugeres personoplysninger, aktive engagementer, administrative enheder og jobfunktion fra Delta på gyldighedsdatoen. Nexus' STS-organisationer synkroniseres, og brugeren findes via ADGUID eller importeres/oprettes fra STS. Organisationer tilføjes eller fjernes efter Delta, og identitetsfelter, stillingsbetegnelse, primær organisation og standardleverandør opdateres, når værdierne afviger. Primær organisation vælges blandt brugerens Nexus-organisationer.
+**`delta_nexus_processing`** henter de valgte brugeres personoplysninger, aktive engagementer, administrative enheder og jobfunktion fra Delta på gyldighedsdatoen. Nexus-klienten synkroniserer STS-organisationer og finder brugeren via ADGUID; STS-import eller tilknytning af en eksisterende professionel kan stadig udføre API-kald med sideeffekter. Oprettelse af en ny professionel springes over. Foreslåede ændringer i organisationer, identitetsfelter, stillingsbetegnelse, primær organisation og standardleverandør logges, men kald til opdatering af organisationer og konfiguration er slået fra. En eksisterende primær organisation vælges fra brugerens Nexus-organisationer.
 
-Behandlings-DAG'en samler logbeskeder fra Nexus-klienten og sender de seneste 400 linjer som en HTML-rapport via Airflows konfigurerede email-backend. Rapporten kan indeholde navne, brugernavne og UPN'er. Modtagerne angives i DAG-koden og skal være godkendte og adgangsbegrænsede. Anvend kommunens gældende processer for risikovurdering, sikker transport og opbevaring af både emails og Airflow-logs.
+Behandlings-DAG'en samler logbeskeder og sender en HTML-rapport med ét punkt pr. person og højst 400 logposter pr. person. Rapporten sendes også før opgaven fejler, hvis enkelte personer ikke kunne behandles. Rapporten kan indeholde navne, brugernavne og UPN'er. Modtagerne angives i DAG-koden og skal være godkendte og adgangsbegrænsede. Anvend kommunens gældende processer for risikovurdering, sikker transport og opbevaring af emails, Airflow-logs og kørselsmetadata.
 
 ## Afhængigheder
 
@@ -41,4 +41,4 @@ Airflows email-backend skal være konfigureret til at sende behandlingsrapporten
 
 - **`delta_nexus_polling`:** `*/10 * * * *` (hvert 10. minut, UTC).
 - **`delta_nexus_processing`:** Ingen selvstændig tidsplan; udløses kun af polling-DAG'en.
-- Begge DAGs har startdato 3. november 2026 kl. 00:00 UTC, `catchup=False`, højst én aktiv kørsel og to retries med to minutters mellemrum. De er sat til at være pauseret ved oprettelse.
+- Begge DAGs har startdato 3. november 2026 kl. 00:00 UTC, `catchup=False`, højst én aktiv kørsel og som udgangspunkt to retries med to minutters mellemrum. Pollingens udløseropgave har dog nul retries og genstarter ikke en eksisterende behandlingskørsel. DAG'ene er sat til at være pauseret ved oprettelse.

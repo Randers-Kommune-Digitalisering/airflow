@@ -20,7 +20,7 @@ def get_log_collector() -> logging.Handler:
     return log_collector
 
 
-def get_styled_log_html(log_collector: logging.Handler, max_lines: int = 400) -> str:
+def get_styled_log_lines(entries: list[tuple[int, str]], max_lines: int = 400) -> list[str]:
     level_styles = {
         logging.CRITICAL: "color: #b91c1c; font-weight: 700;",
         logging.ERROR: "color: #d66a6a; font-weight: 700;",
@@ -40,8 +40,11 @@ def get_styled_log_html(log_collector: logging.Handler, max_lines: int = 400) ->
             return level_styles[logging.INFO]
         return level_styles[logging.DEBUG]
 
-    styled_log_lines = [
+    return [
         f"<span style='{_style_for_level(levelno)}'>{escape(line)}</span>"
-        for levelno, line in log_collector.entries[-max_lines:]
+        for levelno, line in entries[-max_lines:]
     ]
-    return "\n".join(styled_log_lines)
+
+
+def get_styled_log_html(log_collector: logging.Handler, max_lines: int = 400) -> str:
+    return "\n".join(get_styled_log_lines(log_collector.entries, max_lines))

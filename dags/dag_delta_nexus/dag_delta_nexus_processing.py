@@ -1,5 +1,6 @@
 import logging
 from datetime import date, timedelta
+from html import escape
 
 import pendulum
 from airflow import DAG
@@ -8,9 +9,9 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
 from dag_delta_nexus.delta import DeltaClient
-from dag_delta_nexus.nexus import NexusClient, DeltaPerson, PreviewCreationSkipped
+from dag_delta_nexus.nexus import NexusClient, DeltaPerson
 from utils.config import DEFAULT_DAG_ARGS
-from utils.custom_log import get_log_collector, get_styled_log_html
+from utils.custom_log import get_log_collector, get_styled_log_lines
 
 
 logger = logging.getLogger(__name__)
@@ -43,20 +44,21 @@ def fetch_user_details(**context) -> None:
     client_logger.addHandler(log_collector)
     logger.addHandler(log_collector)
     failed_users = []
+    report_items = []
+
+    nexus_conn = BaseHook.get_connection("nexus_prod")
+    nexus_client = NexusClient(
+        base_url=nexus_conn.host,
+        token_url=nexus_conn.extra_dejson["token_url"],
+        client_id=nexus_conn.login,
+        client_secret=nexus_conn.password,
+    )
+
     try:
-        nexus_conn = BaseHook.get_connection("nexus_prod")
-        nexus_client = NexusClient(
-            base_url=nexus_conn.host,
-            token_url=nexus_conn.extra_dejson["token_url"],
-            client_id=nexus_conn.login,
-            client_secret=nexus_conn.password,
-        )
         for person in nexus_persons:
-            logger.info(f"Handling: {person.name}")
+            log_start = len(log_collector.entries)
             try:
                 updated = nexus_client.update_existing_professional(person=person)
-            except PreviewCreationSkipped:
-                logger.warning("Professional creation intentionally skipped in preview mode")
             except Exception as error:
                 failed_users.append(person.user.ad_guid)
                 logger.error(f"Professional update failed ({type(error).__name__})")
@@ -64,16 +66,19 @@ def fetch_user_details(**context) -> None:
                 if updated is not True:
                     failed_users.append(person.user.ad_guid)
                     logger.error("Professional update did not succeed")
+            person_logs = get_styled_log_lines(log_collector.entries[log_start:])
+            details = "<ul>" + "".join("<li>" + line.replace("\n", "<br>") + "</li>" for line in person_logs) + "</ul>" if person_logs else ""
+            report_items.append(f"<li>Handling: {escape(person.name)}{details}</li>")
     finally:
         client_logger.removeHandler(log_collector)
         logger.removeHandler(log_collector)
 
-    if log_collector.entries:
+    if report_items:
         sent_at = pendulum.now("Europe/Copenhagen").strftime("%H:%M %d-%m-%Y")
         send_email(
-            to=["rune.aagaard.keena@randers.dk", "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
+            to=["rune.aagaard.keena@randers.dk"],  # , "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
             subject=f"NO CHANGES MADE - Delta Nexus processing - {sent_at}",
-            html_content=get_styled_log_html(log_collector).replace("\n", "<br>"),
+            html_content="<ul>" + "".join(report_items) + "</ul>",
         )
 
     if failed_users:
