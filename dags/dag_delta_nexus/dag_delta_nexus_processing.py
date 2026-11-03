@@ -5,6 +5,7 @@ from html import escape
 import pendulum
 from airflow import DAG
 from airflow.hooks.base import BaseHook
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
@@ -51,6 +52,7 @@ def fetch_user_details(**context) -> None:
 
     user_details = delta_client.get_user_details(user_uuids, valid_date)
     nexus_persons = [DeltaPerson.from_dict(user) for user in user_details]
+    show_failed_only = Variable.get("DELTA_NEXUS_SHOW_FAILED_ONLY", default_var="false").strip().lower() == "true"
     failed_users = []
     report_items = []
 
@@ -63,16 +65,21 @@ def fetch_user_details(**context) -> None:
     )
 
     for person in nexus_persons:
+        failed = False
         try:
             changes = nexus_client.update_existing_professional(person=person)
         except Exception as error:
+            failed = True
             failed_users.append(person.user.ad_guid)
             logger.error("Professional update failed (%s)", type(error).__name__)
             changes = [f"Behandling mislykkedes: {failure_reason(error)}"]
         if not changes:
             changes = ["Ingen ændringer."]
-        details = "<ul>" + "".join(f"<li>{escape(change)}</li>" for change in changes) + "</ul>"
-        report_items.append(f"<li>{escape(person.name)} ({escape(person.user.username)}){details}</li>")
+        sublist_style = ' style="color: #000; font-weight: normal;"' if failed else ""
+        details = f"<ul{sublist_style}>" + "".join(f"<li>{escape(change)}</li>" for change in changes) + "</ul>"
+        item_style = ' style="color: #b91c1c; font-weight: bold;"' if failed else ""
+        if not show_failed_only or failed:
+            report_items.append(f"<li{item_style}>{escape(person.name)} ({escape(person.user.username)}){details}</li>")
 
     if report_items:
         sent_at = pendulum.now("Europe/Copenhagen").strftime("%H:%M %d-%m-%Y")

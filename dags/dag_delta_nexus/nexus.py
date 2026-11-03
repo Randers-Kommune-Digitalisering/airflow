@@ -282,8 +282,10 @@ class NexusClient:
             added_names = [org_by_sync_id[sync_id].get("name") or sync_id for sync_id in added_sync_ids]
             removed_names = [current_by_sync_id[sync_id].get("name") or sync_id for sync_id in removed_sync_ids]
             logger.info(f"Organization update pending - adding: {added_names}, removing: {removed_names}")
-            changes.extend(f"Organisation tilføjet: {name}" for name in added_names)
-            changes.extend(f"Organisation fjernet: {name}" for name in removed_names)
+            if added_names:
+                changes.append(f"Tilføjet: {', '.join(added_names)}")
+            if removed_names:
+                changes.append(f"Fjernet: {', '.join(removed_names)}")
             # self._follow(professional, "updateOrganizations", method="post", json={"added": added_ids, "removed": removed_ids})
             # logger.info("Organizations updated")
 
