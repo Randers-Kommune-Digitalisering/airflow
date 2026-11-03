@@ -394,7 +394,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                             original_body=get_message_body(message),
                             config=absence_post_config,
                         ).rstrip()
-                        + "\n\nDokumentet er blevet journaliseret under delforløbet "
+                        + "\n\nDokumentet er blevet journaliseret på personalesagen under delforløbet "
                         f"{delforloeb_title}.\n\n"
                         "Venlig hilsen Fravær - Løn og Personale"
                     ),
