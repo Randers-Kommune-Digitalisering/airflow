@@ -73,7 +73,7 @@ def fetch_user_details(**context) -> None:
         send_email(
             to=["rune.aagaard.keena@randers.dk", "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
             subject=f"NO CHANGES MADE - Delta Nexus processing - {sent_at}",
-            html_content=f"<pre>{get_styled_log_html(log_collector)}</pre>",
+            html_content=get_styled_log_html(log_collector).replace("\n", "<br>"),
         )
 
     if failed_users:
