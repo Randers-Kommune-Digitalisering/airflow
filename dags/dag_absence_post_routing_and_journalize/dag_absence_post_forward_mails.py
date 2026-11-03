@@ -14,7 +14,7 @@ dag_args["retries"] = 0
 with DAG(
     dag_id="absence_post_forward_mails",
     start_date=datetime(year=2026, month=9, day=14, tz=timezone("Europe/Copenhagen")),
-    schedule="0 9 * * *",
+    schedule=None,
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
