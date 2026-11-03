@@ -81,6 +81,9 @@ def fetch_user_details(**context) -> None:
         if not show_failed_only or failed:
             report_items.append(f"<li{item_style}>{escape(person.name)} ({escape(person.user.username)}){details}</li>")
 
+    if failed_users:
+        raise RuntimeError(f"Failed to update {len(failed_users)} Nexus professionals")
+
     if report_items:
         sent_at = pendulum.now("Europe/Copenhagen").strftime("%H:%M %d-%m-%Y")
         send_email(
@@ -88,9 +91,6 @@ def fetch_user_details(**context) -> None:
             subject=f"Delta Nexus - ændringsrapport - {sent_at}",
             html_content="<ul>" + "".join(report_items) + "</ul>",
         )
-
-    if failed_users:
-        raise RuntimeError(f"Failed to update {len(failed_users)} Nexus professionals")
 
 
 with DAG(

@@ -7,6 +7,8 @@ from airflow.hooks.base import BaseHook
 from airflow.models import DagRun
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.sensors.python import PythonSensor
+from airflow.utils.session import provide_session
 
 from dag_delta_nexus.delta import DeltaClient
 from utils.config import DEFAULT_DAG_ARGS
@@ -14,6 +16,15 @@ from utils.config import DEFAULT_DAG_ARGS
 
 logger = logging.getLogger(__name__)
 dag_args = {**DEFAULT_DAG_ARGS, "retries": 2, "retry_delay": timedelta(minutes=2)}
+
+
+@provide_session
+def processing_cooldown_elapsed(session) -> bool:
+    cutoff = pendulum.now("UTC").subtract(minutes=10)
+    return session.query(DagRun.id).filter(
+        DagRun.dag_id == "delta_nexus_processing",
+        DagRun.start_date >= cutoff,
+    ).first() is None
 
 
 def discover_nexus_users(**context) -> dict:
@@ -89,6 +100,12 @@ with DAG(
     description="Poll Delta - trigger processing only for changed engagements with Nexus users",
     tags=["delta", "nexus", "polling", "user"],
 ) as dag:
+    processing_cooldown = PythonSensor(
+        task_id="processing_cooldown",
+        python_callable=processing_cooldown_elapsed,
+        mode="reschedule",
+        poke_interval=30,
+    )
     discovery = PythonOperator(
         task_id="discover_nexus_users",
         python_callable=discover_nexus_users,
@@ -113,4 +130,4 @@ with DAG(
         skip_when_already_exists=True,
         retries=0,
     )
-    discovery >> users_found >> trigger_processing
+    processing_cooldown >> discovery >> users_found >> trigger_processing
