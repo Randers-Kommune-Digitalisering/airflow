@@ -156,6 +156,8 @@ class DeltaClient:
                     if assigned_role_ref.get("refObjTypeUserKey") != "APOS-Types-AssignedIdmRole":
                         continue
                     assigned_role = assigned_role_ref.get("targetObject") or {}
+                    if assigned_role.get("state") != "STATE_ACTIVE":
+                        continue
                     for role_ref in assigned_role.get("typeRefs", []):
                         if role_ref.get("refObjTypeUserKey") != "APOS-Types-IdmRole":
                             continue
@@ -325,7 +327,7 @@ class DeltaClient:
                         is_additional_association = relation.get("refObjTypeUserKey") == "APOS-Types-AdditionalAssociation"
                         if relation.get("refObjTypeUserKey") == "APOS-Types-AdministrativeUnit":
                             adm_roots = [target]
-                        elif is_additional_association:
+                        elif is_additional_association and target.get("state") == "STATE_ACTIVE":
                             adm_roots = [
                                 adm_ref.get("targetObject") or {}
                                 for adm_ref in target.get("typeRefs", [])

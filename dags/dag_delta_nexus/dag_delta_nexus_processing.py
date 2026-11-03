@@ -8,7 +8,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
 from dag_delta_nexus.delta import DeltaClient
-from dags.dag_delta_nexus.nexus import NexusClient, DeltaPerson
+from dag_delta_nexus.nexus import NexusClient, DeltaPerson
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
 
