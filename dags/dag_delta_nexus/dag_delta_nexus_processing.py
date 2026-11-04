@@ -25,8 +25,6 @@ def failure_reason(error: Exception) -> str:
         "Professional lookup returned multiple matches": "Flere Nexus-brugere matcher brugerens ADGUID.",
         "STS import or linking did not return a professional": "Brugeren kunne ikke importeres eller tilknyttes fra støttesystemet.",
         "Professional creation is disabled": "Brugeren findes ikke i Nexus, og oprettelse er slået fra.",
-        "Delta organization is not present in active organizations": "En Delta-organisation findes ikke blandt de aktive Nexus-organisationer.",
-        "Delta primary organization is not present in active organizations": "Den primære Delta-organisation findes ikke blandt de aktive Nexus-organisationer.",
         "Professional configuration cannot be updated": "Nexus-brugerens konfiguration kunne ikke hentes.",
     }
     return reasons.get(str(error), f"Uventet fejl under behandlingen ({type(error).__name__}).")

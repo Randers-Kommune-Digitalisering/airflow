@@ -1,3 +1,4 @@
+import json
 import logging
 from dataclasses import dataclass
 
@@ -257,11 +258,21 @@ class NexusClient:
         desired_sync_ids = {org.uuid for org in person.adm_units} | {RANDERS_KOMMUNE_SYNC_ID}
         missing_sync_ids = desired_sync_ids - org_by_sync_id.keys()
         if missing_sync_ids:
-            raise ValueError("Delta organization is not present in active organizations")
+            missing_names = [org.name for org in person.adm_units if org.uuid in missing_sync_ids]
+            if RANDERS_KOMMUNE_SYNC_ID in missing_sync_ids:
+                missing_names.append("Randers Kommune")
+            quoted_names = ", ".join(
+                json.dumps(name, ensure_ascii=False) for name in missing_names
+            )
+            logger.error("Delta organizations not found among active Nexus organizations: %s", quoted_names)
+            changes.append("Delta-organisationer findes ikke blandt aktive Nexus-organisationer: " + quoted_names)
+            desired_sync_ids -= missing_sync_ids
 
         primary = person.primary_adm_unit
-        if primary and primary.uuid not in org_by_sync_id:
-            raise ValueError("Delta primary organization is not present in active organizations")
+        if primary and primary.uuid not in org_by_sync_id and primary.uuid not in missing_sync_ids:
+            message = f"Primær Delta-organisation findes ikke blandt aktive Nexus-organisationer: {json.dumps(primary.name, ensure_ascii=False)}"
+            logger.error("Delta primary organization not found among active Nexus organizations: %s", primary.name)
+            changes.append(message)
 
         current_orgs = self._follow(professional, "organizations")
         if isinstance(current_orgs, dict):
@@ -283,9 +294,9 @@ class NexusClient:
             removed_names = [current_by_sync_id[sync_id].get("name") or sync_id for sync_id in removed_sync_ids]
             logger.info(f"Organization update pending - adding: {added_names}, removing: {removed_names}")
             if added_names:
-                changes.append(f"Tilføjet: {', '.join(added_names)}")
+                changes.append("Tilføjet: " + ", ".join(json.dumps(name, ensure_ascii=False) for name in added_names))
             if removed_names:
-                changes.append(f"Fjernet: {', '.join(removed_names)}")
+                changes.append("Fjernet: " + ", ".join(json.dumps(name, ensure_ascii=False) for name in removed_names))
             # self._follow(professional, "updateOrganizations", method="post", json={"added": added_ids, "removed": removed_ids})
             # logger.info("Organizations updated")
 
@@ -312,11 +323,11 @@ class NexusClient:
                 config_changed = True
                 changes.append(f"Stillingsbetegnelse ændret: {(old_job.get('name') if isinstance(old_job, dict) else None) or 'ikke angivet'} → {job['name']}")
 
-        if primary:
+        if primary and primary.uuid in org_by_sync_id:
             primary_organization = current_by_sync_id.get(primary.uuid)
             if primary_organization is None:
-                logger.error(f"Delta primary organization not found among professional's organizations: {primary.uuid}")
-                changes.append("Primær organisation kunne ikke ændres: organisationen findes ikke på Nexus-brugeren.")
+                logger.error("Primary organization not found on Nexus professional: %s", primary.name)
+                changes.append(f"Primær organisation kunne ikke ændres: {json.dumps(primary.name, ensure_ascii=False)} findes ikke på Nexus-brugeren.")
             else:
                 old_primary = config.get("primaryOrganization")
                 old_primary_id = old_primary.get("id") if isinstance(old_primary, dict) else None
@@ -327,7 +338,7 @@ class NexusClient:
                     config_changed = True
                     changes.append(f"Primær organisation ændret: {old_primary_name or 'ikke angivet'} → {primary_organization.get('name') or primary.uuid}")
 
-        supplier = org_by_sync_id[primary.uuid].get("supplier") if primary else None
+        supplier = org_by_sync_id[primary.uuid].get("supplier") if primary and primary.uuid in org_by_sync_id else None
         old_supplier = config.get("defaultOrganizationSupplier") or {}
         if supplier is not None and old_supplier.get("id") != supplier["id"]:
             logger.info(f"Supplier change pending: {old_supplier.get('name')!r} -> {supplier.get('name')!r}")
