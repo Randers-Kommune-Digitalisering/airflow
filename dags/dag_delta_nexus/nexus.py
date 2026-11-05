@@ -84,6 +84,9 @@ class NexusClient:
             response.raise_for_status()
         except HTTPError as error:
             if expected_reason is None and not accept_error_reason:
+                logger.error(f"Nexus request failed: {method.upper()} {rel} (HTTP {response.status_code})")
+                if response.content:
+                    logger.error(f"Nexus response content: {response.text!r}")
                 raise
             if error.response is None:
                 raise
