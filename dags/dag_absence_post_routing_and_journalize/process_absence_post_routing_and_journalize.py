@@ -247,6 +247,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
     skipped_attachments = 0
     failures: list[str] = []
     department_by_cpr: dict[str, str | None] = {}
+    person_name_by_cpr: dict[str, str | None] = {}
     multi_department_info: dict[str, dict] = {}
     pending_manual_review: list[tuple[bytes, str]] = []
     delta_client = DeltaClient(BaseHook.get_connection("delta_prod"))
@@ -305,15 +306,17 @@ def extract_cpr_from_maindoc_attachments() -> None:
             if cpr not in department_by_cpr:
                 engagements = delta_client.get_sd_unit_codes_by_cpr(cpr=cpr, valid_date=date.today())
                 department_codes = {e["department_id"] for e in engagements if e["department_id"]}
+                person_name = next(
+                    (name.strip() for e in engagements
+                     if isinstance(name := e.get("person_name"), str) and name.strip()),
+                    None,
+                )
                 if len(department_codes) == 1:
                     department_by_cpr[cpr] = department_codes.pop()
+                    person_name_by_cpr[cpr] = person_name
                 elif len(department_codes) > 1:
                     logger.warning(
                         f"Multiple active SD departments: {department_codes} found for {filename} uid={uid_text}; attachment will not be forwarded."
-                    )
-                    person_name = next(
-                        (e["person_name"] for e in engagements if e["person_name"]),
-                        None,
                     )
                     if person_name is None:
                         raise AirflowFailException("No person name found for multiple active SD departments")
@@ -341,6 +344,10 @@ def extract_cpr_from_maindoc_attachments() -> None:
                 continue
 
             try:
+                person_name = person_name_by_cpr[cpr]
+                if person_name is None:
+                    raise AirflowFailException("No person name found for the active SD department")
+
                 sbsys_client = SbsysClient(BaseHook.get_connection("sbsys_api_prod"))
                 sag_result = sbsys_client.get_personalesag(cpr=cpr)
                 active_sager = [
@@ -394,7 +401,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                             original_body=get_message_body(message),
                             config=absence_post_config,
                         ).rstrip()
-                        + "\n\nDokumentet er blevet journaliseret på personalesagen under delforløbet "
+                        + f"\n\nDokumentet er blevet journaliseret på personalesagen for {person_name} under delforløbet "
                         f"{delforloeb_title}.\n\n"
                         "Venlig hilsen Fravær - Løn og Personale"
                     ),
