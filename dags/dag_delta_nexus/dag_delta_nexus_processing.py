@@ -89,7 +89,7 @@ def fetch_user_details(**context) -> None:
     if report_items:
         sent_at = pendulum.now("Europe/Copenhagen").strftime("%H:%M %d-%m-%Y")
         send_email(
-            to=["rune.aagaard.keena@randers.dk"],  # , "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
+            to=["rune.aagaard.keena@randers.dk" , "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
             subject=f"Delta Nexus - ændringsrapport - {sent_at}",
             html_content="<ul>" + "".join(report_items) + "</ul>",
         )
