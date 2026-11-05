@@ -3,16 +3,16 @@ from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
 
 from utils.config import DEFAULT_DAG_ARGS
-from dag_attest.process_attest import process_attest
+from dags.dag_attest.process_attest_journalize import process_attest_journalize
 
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 
 
 with DAG(
-    dag_id="dag_attest",
+    dag_id="dag_attest_journalize",
     start_date=datetime(year=2026, month=10, day=26, tz=timezone("Europe/Copenhagen")),
-    schedule="@weekly",
+    schedule="@daily",
     catchup=False,
     max_active_runs=1,
     default_args=dag_args,
@@ -22,5 +22,5 @@ with DAG(
 
     run_attest = PythonOperator(
         task_id="process_attest_task",
-        python_callable=process_attest,
+        python_callable=process_attest_journalize,
     )

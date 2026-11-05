@@ -4,11 +4,16 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from email.message import EmailMessage
+
+from datetime import datetime, timezone
+
 from dag_attest.attest_data import (
     find_matching_orders,
     AttestParseError,
     extract_cpr,
     is_clean_attest,
+    extract_pdf_attachments
 )
 from dag_attest.model import (
     AttestationOrder,
@@ -40,21 +45,23 @@ def add_order(
         status: OrderStatus,
         requester_email: str = "rekvirent@example.test",
 ) -> AttestationOrder:
-    request = AttestationRequest(
+        request = AttestationRequest(
         requester_dq="test-dq",
         requester_name="Test Rekvirent",
         requester_email=requester_email,
         subject_cpr=subject_cpr,
         is_approved=True,
-    )
-    order = AttestationOrder(
-        request=request,
-        attest_type=attest_type,
-        status=status,
-    )
-    session.add(order)
-    session.flush()
-    return order
+        requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        order = AttestationOrder(
+            request=request,
+            attest_type=attest_type,
+            status=status,
+            ordered_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+        )
+        session.add(order)
+        session.flush()
+        return order
 
 
 def test_find_matching_orders_returns_empty_when_nothing_matches(
@@ -157,12 +164,12 @@ def test_find_matching_orders_returns_all_matches_for_manual_review(
 
 
 def test_extract_cpr_accepts_cpr_with_and_without_dash() -> None:
-    assert extract_cpr("010190-1234") == "0101901234"
-    assert extract_cpr("0101901234") == "0101901234"
+    assert extract_cpr("CPR: 010190-1234") == "0101901234"
+    assert extract_cpr("CPR: 0101901234") == "0101901234"
 
 
 def test_extract_cpr_accepts_same_cpr_repeated() -> None:
-    assert extract_cpr("010190-1234 ... 0101901234") == "0101901234"
+    assert extract_cpr("CPR: 010190-1234<br>CPR: 0101901234") == "0101901234"
 
 
 def test_extract_cpr_fails_when_missing() -> None:
@@ -172,7 +179,7 @@ def test_extract_cpr_fails_when_missing() -> None:
 
 def test_extract_cpr_fails_when_multiple_different_cprs() -> None:
     with pytest.raises(AttestParseError):
-        extract_cpr("010190-1234 og 020290-5678")
+        extract_cpr("CPR: 010190-1234 og CPR: 020290-5678")
 
 
 def test_extract_cpr_ignores_longer_numbers() -> None:
@@ -194,3 +201,31 @@ def test_attest_type_ids_match_from_configuration() -> None:
     assert to_attest_type_ids({AttestType.OFFENTLIG_STRAFFEATTEST}) == {0}
     assert to_attest_type_ids({AttestType.PRIVAT_STRAFFEATTEST}) == {1}
     assert to_attest_type_ids({AttestType.BOERNEATTEST}) == {2}
+
+
+def test_extract_pdf_attachments_wraps_invalid_pdf_as_parse_error() -> None:
+    message = EmailMessage()
+    message.add_attachment(
+        b"not a valid PDF",
+        maintype="application",
+        subtype="pdf",
+        filename="broken.pdf"
+    )
+    with pytest.raises(
+        AttestParseError,
+        match="Could not parse PDF attachment"):
+        extract_pdf_attachments(message)
+
+
+def test_extract_pdf_attachments_rejects_empty_pdf() -> None:
+    message = EmailMessage()
+    message.add_attachment(
+        b"",
+        maintype="application",
+        subtype="pdf",
+        filename="empty.pdf"
+    )
+    with pytest.raises(
+        AttestParseError,
+        match="PDF attachment is empty or could not be decoded"):
+        extract_pdf_attachments(message)

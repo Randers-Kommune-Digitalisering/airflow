@@ -56,6 +56,20 @@ RecordOutcomeType = Enum(
 )
 
 
+class ForwardStatus(str, enum.Enum):
+    PENDING = "pending"
+    SENT = "sent"
+
+ForwardStatusType = Enum(
+    ForwardStatus,
+    name="forward_status",
+    native_enum=False,
+    create_constraint=True,
+    length=16,
+    values_callable=lambda members: [member.value for member in members],
+)
+
+
 class NotificationType(str, enum.Enum):
     """Reason a notification is sent to the requester."""
 
@@ -174,7 +188,7 @@ class ReceivedRecord(Base):
     record_id = Column(String(36), primary_key=True, default=_new_uuid)
     # Nullable so unmatched records can be stored and matched manually.
     order_id = Column(String(36), ForeignKey("attestation_order.order_id", ondelete="RESTRICT"), unique=True)
-    is_clean = Column(Boolean, nullable=False)
+    is_clean = Column(Boolean, nullable=True)
     mail_uid = Column(String(36), nullable=False, unique=True)
     received_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     # NULL until the record has been processed.
@@ -185,6 +199,8 @@ class ReceivedRecord(Base):
     sbsys_sags_id = Column(Integer)
     sbsys_document_id = Column(String(50))
     order = relationship("AttestationOrder", back_populates="received_record")
+    forward_recipient = Column(String(255))
+    forward_status = Column(ForwardStatusType, index=True)
 
 
 class OrderEvent(Base):

@@ -25,6 +25,7 @@ from dag_attest.model import (
     OrderStatus,
     ReceivedRecord,
     RecordOutcome,
+    ForwardStatus,
 )
 from dag_attest.sbsys_client import SbsysClient
 from rkdigi.email_handling import EmailReader
@@ -33,8 +34,15 @@ from rkdigi.database_manager import DatabaseManager
 logger = logging.getLogger(__name__)
 
 _MAILBOX = "INBOX"
+_MAIN_POSTBOX = "randers.kommune@randers.dk"
 _ACTOR = "airflow:dag_attest"
 _DOCUMENT_NAMES = {0: "Offentlig straffeattest", 1: "Privat straffeattest"}
+
+
+def _queue_forward(session, record, recipient: str) -> None:
+    record.forward_recipient = recipient
+    record.forward_status = ForwardStatus.PENDING
+    session.commit()
 
 
 def _ensure_notification(
@@ -183,9 +191,24 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
             detect_attest_types(pdf_text, message.get("Subject"))
         )
     except AttestParseError as exc:
-        raise AirflowFailException(
-            f"Could not parse attest email uid={mail_uid!r}"
-        ) from exc
+        with db_manager.get_session() as session:
+            record = find_received_record(session, mail_uid)
+            if record is None:
+                record = ReceivedRecord(
+                    mail_uid=mail_uid,
+                    is_clean=None,
+                )
+                session.add(record)
+
+            if record.outcome is None and record.forward_status is None:
+                _queue_forward(
+                    session,
+                    record,
+                    _MAIN_POSTBOX,
+                )
+
+        logger.warning("Attest email uid=%r could not be parsed; queued for manual handling", mail_uid)
+        return
 
     try:
         requester_email = extract_requester_email(body)
@@ -200,22 +223,46 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
             logger.info("Attest email uid=%r has already been processed, skipping", mail_uid)
             return
 
+        orders = find_matching_orders(
+            session,
+            subject_cpr,
+            attest_types,
+        )
         if record is None:
-            orders = find_matching_orders(session, subject_cpr, attest_types)
-            record = ReceivedRecord(mail_uid=mail_uid, is_clean=clean)
+            record = ReceivedRecord(
+                mail_uid=mail_uid,
+                is_clean=clean,
+            )
             session.add(record)
 
-            if len(orders) == 1:
-                order = orders [0]
-                order.status = OrderStatus.UNDER_REVIEW
-                record.order = order
-                session.add(OrderEvent(
+        if not orders:
+            _queue_forward(
+                session,
+                record,
+                "randers.kommune@randers.dk"
+            )
+            return
+
+        if len(orders) > 1:
+            _queue_forward(
+                session,
+                record,
+                "randers.kommune@randers.dk",
+            )
+            return
+
+        order = orders[0]
+        record.order = order
+
+        if order.status != OrderStatus.UNDER_REVIEW:
+            order.status = OrderStatus.UNDER_REVIEW
+            session.add(
+                OrderEvent(
                     order=order,
                     status=OrderStatus.UNDER_REVIEW,
                     actor=_ACTOR
-                ))
-
-            session.commit()
+                )
+            )
 
         if record.sbsys_sags_id is not None:
             raise AirflowFailException(
@@ -223,20 +270,58 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
             )
 
         if requester_email is None:
-            _send_to_manual_review(session, record, mail_uid, "no unique requester in email")
+            _send_to_manual_review(
+                session,
+                record,
+                mail_uid, "no unique requester in email",
+            )
+            _queue_forward(
+                session,
+                record,
+                _MAIN_POSTBOX
+            )
             return
 
         if (
             record.order is not None
-            and record.order.request.requester_email.casefol() != requester_email
+            and record.order.request.requester_email.casefold() != requester_email
         ):
-            _send_to_manual_review(session, record, mail_uid, "requester does not match order")
+            _send_to_manual_review(
+                session,
+                record,
+                mail_uid,
+                "requester does not match order",
+            )
+            _queue_forward(
+                session,
+                record,
+                _MAIN_POSTBOX
+            )
             return
 
         targets = _get_sbsys_targets(sbsys_client, subject_cpr, attest_types)
         if targets is None:
-            _send_to_manual_review(session, record, mail_uid, "no unique personalesag")
+            if clean:
+                _ensure_notification(
+                    session,
+                    order.order_id,
+                    NotificationType.RECORD_ATTACHED,
+                )
+            else:
+                _ensure_notification(
+                    session,
+                    order.order_id,
+                    NotificationType.RECORD_UNDER_REVIEW
+                )
+                _ensure_notification(
+                    session,
+                    order.order_id,
+                    NotificationType.RECORD_REQUIRES_REVIEW
+                )
+
+            _queue_forward(session, record, _MAIN_POSTBOX)
             return
+
         sag_id, sag_nummer, delforloeb_id = targets
 
         record.sbsys_sags_id = sag_id
@@ -248,7 +333,7 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
             sag_id=sag_id,
             delforloeb_id=delforloeb_id,
             document_name=document_name,
-            description=f"{document_name} automatisk journaliseret fra attest-postkassen.", 
+            description=f"{document_name} automatisk journaliseret fra attest-postkassen.",
         )
         document_id = result.get("Id") if isinstance(result, dict) else None  # TODO: verificér feltnavn mod SBSYS svar
         if document_id is None:
@@ -263,12 +348,26 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
 
         if record.order is not None:
             record.order.status = OrderStatus.JOURNALIZED
-            session.add(OrderEvent(order=record.order, status=OrderStatus.JOURNALIZED, actor=_ACTOR))
+            session.add(
+                OrderEvent(
+                    order=record.order,
+                    status=OrderStatus.JOURNALIZED,
+                    actor=_ACTOR,
+                )
+            )
+
             _ensure_notification(
                 session,
                 order_id=record.order.order_id,
                 notification_type=NotificationType.RECORD_JOURNALIZED
             )
+
+            if not clean:
+                _ensure_notification(
+                    session,
+                    order_id=record.order.order_id,
+                    notification_type=NotificationType.RECORD_REQUIRES_REVIEW
+                )
         else:
             logger.warning(
                 "Attest email uid=%r was journalized without a matcing order; no notification created",
@@ -279,7 +378,7 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
         logger.info("Journalized attest email uid=%r (%s)", mail_uid, "clean" if clean else "not clean")
 
 
-def process_attest() -> None:
+def process_attest_journalize() -> None:
     logger.info("Starting to process attest data...")
 
     imap_conn = BaseHook.get_connection("attest_imap")
@@ -299,8 +398,7 @@ def process_attest() -> None:
 
     email_reader = EmailReader(**email_reader_kwargs)
 
-
-    # TODO: Create this Airflow Connection with the same ID and correct connection type and details
+    #  TODO: Create this Airflow Connection with the same ID and correct connection type and details
     db_manager = DatabaseManager(
         profile_name="attest_db",
         db_type="postgres",

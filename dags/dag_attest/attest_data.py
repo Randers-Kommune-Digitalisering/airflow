@@ -57,8 +57,11 @@ def extract_pdf_attachments(message: Message) -> list[tuple[bytes, str]]:
         if not payload:
             raise AttestParseError(f"PDF attachment is empty or could not be decoded")
 
-        with fitz.open(stream=payload, filetype="pdf") as document:
-            text = "\n".join(page.get_text() for page in document)
+        try:
+            with fitz.open(stream=payload, filetype="pdf") as document:
+                text = "\n".join(page.get_text() for page in document)
+        except (fitz.FileDataError, RuntimeError) as exc:
+            raise AttestParseError("Could not parse PDF attachment") from exc
 
         pdfs.append((payload, text))
 
@@ -67,24 +70,28 @@ def extract_pdf_attachments(message: Message) -> list[tuple[bytes, str]]:
 
 def extract_cpr(text: str) -> str:
     lines = re.split(r"<br\s*/?>", text, flags=re.IGNORECASE)
-    
+    found: set[str] = set()
+
     for line in lines:
         plain_line = html.unescape(re.sub(r"<[^>]+>", " ", line))
-        if "cpr" not in plain_line.casefold() or ":" not in plain_line:
+        if ":" not in plain_line:
             continue
 
         label, value = plain_line.split(":", 1)
         if "cpr" not in label.casefold():
             continue
 
-        value = value.strip()
-        if not value:
-            break
+        found.update(
+            match.group().replace("-", "")
+            for match in _CPR_PATTERN.finditer(value)
+        )
 
-        # Keep CPR without dash internal
-        return value.replace("-", "").strip()
+    if len(found) != 1:
+        raise AttestParseError(
+            "Expected exactly one unique CPR number"
+        )
 
-    raise AttestParseError("No CPR field found")
+    return found.pop()
 
 
 def extract_requester_email(text: str) -> str:
@@ -151,17 +158,17 @@ def find_matching_orders(
     :param session: SQLAlchemy session
     :param subject_cpr: CPR number of the subject
     :param attest_types: Types of attestation
+    :param mail_received_at: Timestamp when the email was received
     :return: List of matching AttestationOrder objects
     """
-    cutoff = datetime.now(timezone.utc) - timedelta(days=1)
 
     return (
         session.query(AttestationOrder)
         .join(AttestationRequest)
         .filter(
             AttestationRequest.subject_cpr == subject_cpr,
-            AttestationRequest.requested_at >= cutoff,
             AttestationOrder.attest_type.in_(attest_types),
+            AttestationRequest.requested_at < AttestationOrder.ordered_at,
             AttestationOrder.status == OrderStatus.ORDERED,
         )
         .all()
