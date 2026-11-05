@@ -156,24 +156,6 @@ def _get_sbsys_targets(
     return sag_id, sag_nummer, delforloeb_id
 
 
-def _send_to_manual_review(session, record, mail_uid: str, reason: str) -> None:
-    if record.order is None:
-        # Withour an order the current model cannot hold a notification;
-        # the email stays unread so it can be handled manually from the mailbox.
-        raise AirflowFailException(
-            f"Attest email uid={mail_uid!r} needs manual handling ({reason}) "
-            "and has no matching order"
-        )
-
-    _ensure_notification(
-        session,
-        order_id=record.order.order_id,
-        notification_type=NotificationType.RECORD_REQUIRES_REVIEW,
-    )
-    session.commit()
-    logger.info("Attest email uid=%r sent to manual review (%s)", mail_uid, reason)
-
-
 def _process_email(message, mail_uid: str, db_manager, sbsys_client):
     try:
         body = extract_email_body(message)
@@ -270,11 +252,6 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
             )
 
         if requester_email is None:
-            _send_to_manual_review(
-                session,
-                record,
-                mail_uid, "no unique requester in email",
-            )
             _queue_forward(
                 session,
                 record,
@@ -286,12 +263,6 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
             record.order is not None
             and record.order.request.requester_email.casefold() != requester_email
         ):
-            _send_to_manual_review(
-                session,
-                record,
-                mail_uid,
-                "requester does not match order",
-            )
             _queue_forward(
                 session,
                 record,
