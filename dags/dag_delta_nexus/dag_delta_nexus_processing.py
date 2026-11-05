@@ -97,7 +97,7 @@ def fetch_user_details(**context) -> None:
 
 with DAG(
     dag_id="delta_nexus_processing",
-    start_date=pendulum.datetime(2026, 11, 3, tz="UTC"),
+    start_date=pendulum.datetime(2026, 11, 5, tz="UTC"),
     schedule=None,
     default_args=dag_args,
     catchup=False,

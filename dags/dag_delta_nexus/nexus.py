@@ -14,6 +14,10 @@ class ProfessionalStsSkipped(Exception):
     """An existing professional could not be fetched from STS after a retry."""
 
 
+class ProfessionalImportSkipped(Exception):
+    """STS import was denied by a downstream service."""
+
+
 @dataclass(frozen=True)
 class DeltaUser:
     """User identifiers supplied by Delta for Nexus synchronization."""
@@ -208,7 +212,20 @@ class NexusClient:
     def _import_professional(self, person: DeltaPerson) -> dict | None:
         """Import a professional from STS or link one that already exists."""
 
-        external = self._follow(self._home, "importProfessionalFromSts", accept_error_reason=True, params={"query": person.user.username})
+        try:
+            external = self._follow(self._home, "importProfessionalFromSts", accept_error_reason=True, params={"query": person.user.username})
+        except HTTPError as error:
+            response = error.response
+            if response is None or response.status_code != 400:
+                raise
+            try:
+                content = response.json()
+            except ValueError:
+                raise error from None
+            message = content.get("message") if isinstance(content, dict) else None
+            if not isinstance(message, str) or "org.springframework.web.client.HttpClientErrorException$Forbidden: 403 : [no body]" not in message:
+                raise
+            raise ProfessionalImportSkipped() from error
         if not isinstance(external, dict):
             logger.error("Unable to import professional from STS")
             return None
@@ -259,7 +276,11 @@ class NexusClient:
     def update_existing_professional(self, person: DeltaPerson) -> list[str]:
         """Describe proposed changes to an existing professional in Danish."""
         logger.info(f"Handling: {person.name}")
-        professional = self._get_professional(person)
+        try:
+            professional = self._get_professional(person)
+        except ProfessionalImportSkipped:
+            logger.warning("Professional skipped: downstream STS import forbidden")
+            return ["Import fra støttesystemet blev sprunget over (adgang nægtet)."]
         changes = []
 
         org_by_sync_id = {org["syncId"]: org for org in self._organizations}
