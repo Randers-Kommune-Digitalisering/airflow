@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from html import escape
 
 import pendulum
+from requests.exceptions import HTTPError
 from airflow import DAG
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
@@ -69,7 +70,10 @@ def fetch_user_details(**context) -> None:
         except Exception as error:
             failed = True
             failed_users.append(person.user.ad_guid)
-            logger.error("Professional update failed (%s)", type(error).__name__)
+            if isinstance(error, HTTPError) and error.response is not None:
+                logger.error(f"Professional update failed (HTTP {error.response.status_code}, content={error.response.text!r})")
+            else:
+                logger.error("Professional update failed (%s)", type(error).__name__)
             changes = [f"Behandling mislykkedes: {failure_reason(error)}"]
         if not changes:
             changes = ["Ingen ændringer."]
