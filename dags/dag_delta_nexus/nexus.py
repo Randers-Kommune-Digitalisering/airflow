@@ -326,8 +326,8 @@ class NexusClient:
                 changes.append("Tilføjet: " + ", ".join(json.dumps(name, ensure_ascii=False) for name in added_names))
             if removed_names:
                 changes.append("Fjernet: " + ", ".join(json.dumps(name, ensure_ascii=False) for name in removed_names))
-            self._follow(professional, "updateOrganizations", method="post", json={"added": added_ids, "removed": removed_ids})
-            logger.info("Organizations updated")
+            # self._follow(professional, "updateOrganizations", method="post", json={"added": added_ids, "removed": removed_ids})
+            # logger.info("Organizations updated")
 
         config = self._follow(professional, "configuration")
         if not isinstance(config, dict) or not isinstance(config.get("activeDirectoryConfiguration"), dict):
@@ -376,7 +376,7 @@ class NexusClient:
             changes.append(f"Standardleverandør ændret: {old_supplier.get('name') or 'ikke angivet'} → {supplier.get('name') or supplier['id']}")
 
         if config_changed:
-            self._follow(config, "update", method="put", json=config)
-            logger.info("Configuration updated")
-            # pass
+            # self._follow(config, "update", method="put", json=config)
+            # logger.info("Configuration updated")
+            pass
         return changes

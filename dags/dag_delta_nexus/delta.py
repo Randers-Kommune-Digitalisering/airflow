@@ -338,16 +338,16 @@ class DeltaClient:
 
                         for adm_root in adm_roots:
                             has_leaf_child = False
-                            for child in adm_root.get("childrenObjects", []):
-                                if child.get("childrenObjects", []):
-                                    continue
-                                identity = child.get("identity") or {}
-                                if identity.get("uuid") and identity.get("name"):
-                                    has_leaf_child = True
-                                    adm_units[identity["uuid"]] = {
-                                        "uuid": identity["uuid"],
-                                        "name": identity["name"]
-                                    }
+                            children = adm_root.get("childrenObjects", [])
+                            if not any(child.get("childrenObjects", []) for child in children):
+                                for child in children:
+                                    identity = child.get("identity") or {}
+                                    if identity.get("uuid") and identity.get("name"):
+                                        has_leaf_child = True
+                                        adm_units[identity["uuid"]] = {
+                                            "uuid": identity["uuid"],
+                                            "name": identity["name"]
+                                        }
                             parent_identity = adm_root.get("identity") or {}
                             if parent_identity.get("uuid") and parent_identity.get("name"):
                                 parent = {"uuid": parent_identity["uuid"], "name": parent_identity["name"]}
