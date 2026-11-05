@@ -83,20 +83,25 @@ class NexusClient:
         try:
             response.raise_for_status()
         except HTTPError as error:
+            failure_context = f"Nexus request failed: {method.upper()} {rel} (HTTP {response.status_code})"
             if expected_reason is None and not accept_error_reason:
-                logger.error(f"Nexus request failed: {method.upper()} {rel} (HTTP {response.status_code})")
+                logger.error(failure_context)
                 if response.content:
                     logger.error(f"Nexus response content: {response.text!r}")
                 raise
             if error.response is None:
+                logger.error(failure_context)
                 raise
             try:
                 result = error.response.json()
             except ValueError:
+                logger.error(failure_context)
                 raise error from None
             if not isinstance(result, dict) or not result.get("reason"):
+                logger.error(failure_context)
                 raise
             if expected_reason is not None and result["reason"] != expected_reason:
+                logger.error(failure_context)
                 raise
             return result
         return response.json() if response.content else {}
