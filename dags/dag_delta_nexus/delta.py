@@ -351,7 +351,7 @@ class DeltaClient:
                             parent_identity = adm_root.get("identity") or {}
                             if parent_identity.get("uuid") and parent_identity.get("name"):
                                 parent = {"uuid": parent_identity["uuid"], "name": parent_identity["name"]}
-                                if has_leaf_child:
+                                if has_leaf_child or not children:
                                     adm_units[parent["uuid"]] = parent
                                 if first_adm_unit is None:
                                     first_adm_unit = parent
