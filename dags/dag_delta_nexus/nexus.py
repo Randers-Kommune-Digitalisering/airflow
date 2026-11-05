@@ -378,5 +378,4 @@ class NexusClient:
         if config_changed:
             self._follow(config, "update", method="put", json=config)
             logger.info("Configuration updated")
-            # pass
         return changes

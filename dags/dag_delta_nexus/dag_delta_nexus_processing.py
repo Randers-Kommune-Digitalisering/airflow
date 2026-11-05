@@ -16,7 +16,7 @@ from utils.config import DEFAULT_DAG_ARGS
 
 
 logger = logging.getLogger(__name__)
-dag_args = {**DEFAULT_DAG_ARGS, "retries": 2, "retry_delay": timedelta(minutes=2)}
+dag_args = {**DEFAULT_DAG_ARGS, "retries": 1, "retry_delay": timedelta(minutes=5)}
 
 
 def failure_reason(error: Exception) -> str:
