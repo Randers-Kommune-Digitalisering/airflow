@@ -123,6 +123,21 @@ def write_social_frikort_report_excel_bytes(
 ) -> bytes:
     """Create an Excel report containing only the income information worksheet."""
     report_df = pd.DataFrame(rows, columns=social_frikort_report_columns(report_fields))
+    if not report_df.empty:
+        separator = report_df.isna().all(axis=1)
+        report_df = pd.concat(
+            (
+                group.sort_values(
+                    "IndkomstPersonGruppeDispositionDato",
+                    ascending=False,
+                    kind="stable",
+                    na_position="last",
+                    key=lambda dates: pd.to_datetime(dates, format="%Y-%m-%d", errors="raise"),
+                )
+                for _, group in report_df.groupby(separator.shift(fill_value=False).cumsum(), sort=False)
+            ),
+            ignore_index=True,
+        )
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         report_df.to_excel(writer, index=False, sheet_name="Indkomstoplysninger")

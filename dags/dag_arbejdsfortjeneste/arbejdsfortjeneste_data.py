@@ -430,6 +430,21 @@ def write_arbejdsfortjeneste_report_excel_bytes(indkomst_df: pd.DataFrame, diff_
     :param diff_df: Month-to-month diff dataframe.
     :return: Excel file as bytes.
     """
+    if not indkomst_df.empty:
+        separator = indkomst_df.isna().all(axis=1)
+        indkomst_df = pd.concat(
+            (
+                group.sort_values(
+                    "IndkomstPersonGruppeDispositionDato",
+                    ascending=False,
+                    kind="stable",
+                    na_position="last",
+                    key=lambda dates: pd.to_datetime(dates, format="%Y-%m-%d", errors="raise"),
+                )
+                for _, group in indkomst_df.groupby(separator.shift(fill_value=False).cumsum(), sort=False)
+            ),
+            ignore_index=True,
+        )
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         indkomst_df.to_excel(writer, index=False, sheet_name="Indkomstoplysninger")
