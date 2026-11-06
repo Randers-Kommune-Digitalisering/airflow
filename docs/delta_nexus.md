@@ -3,11 +3,11 @@
 
 ## Formål
 
-Finde Nexus-brugere på baggrund af ændringer i Delta og rapportere foreslåede ændringer i deres organisationstilknytninger, identitetsfelter, primære organisation, standardleverandør og stillingsbetegnelse. Oprettelse og opdatering af Nexus-konfiguration er foreløbig slået fra.
+Finde Nexus-brugere på baggrund af ændringer i Delta, opdatere deres organisationstilknytninger, identitetsfelter, primære organisation, standardleverandør og stillingsbetegnelse i Nexus og rapportere ændringerne.
 
 ## Dataflow
 
-Delta engagementshistorik → aktive engagementer og brugere med Nexus-rolle → registrerings-ID'er, bruger-UUID'er og gyldighedsdato via Airflow til behandlings-DAG → person- og organisationsoplysninger fra Delta → kontrol af foreslåede Nexus-ændringer → dansk ændringsrapport via email.
+Delta engagementshistorik → aktive engagementer og brugere med Nexus-rolle → registrerings-ID'er, bruger-UUID'er og gyldighedsdato via Airflow til behandlings-DAG → person- og organisationsoplysninger fra Delta → opdatering af Nexus → dansk ændringsrapport via email.
 
 Kun registrerings-ID'er, bruger-UUID'er og gyldighedsdato sendes mellem de to DAGs; personoplysninger hentes først i behandlings-DAG'en. Registrerings-ID'er opbevares også i Airflows kørselsmetadata for at undgå at udløse samme registrering igen.
 
@@ -17,7 +17,7 @@ Kun registrerings-ID'er, bruger-UUID'er og gyldighedsdato sendes mellem de to DA
 
 Uden en tidligere vellykket polling starter `from`-søgningen en time før dataintervallets slutning. `catchup=False` betyder, at en senere aktivering ikke automatisk gennemgår alle tidligere 10-minutters intervaller. Når der findes en tidligere vellykket kørsel, genlæses ændringer siden denne og alle mellemliggende gyldighedsdatoer. Registreringer uden Nexus-rolle kan genfindes i de efterfølgende pollinger, så længe de indgår i søgevinduet.
 
-**`delta_nexus_processing`** henter de valgte brugeres personoplysninger, aktive engagementer, administrative enheder og jobfunktion fra Delta på gyldighedsdatoen. Nexus-klienten synkroniserer STS-organisationer og finder brugeren via ADGUID; STS-import eller tilknytning af en eksisterende professionel kan stadig udføre API-kald med sideeffekter. Oprettelse af en ny professionel springes over. Delta-organisationer, der ikke findes blandt aktive Nexus-organisationer, logges ved navn og beskrives i rapporten; de springes over uden at fejle brugerens behandling. Foreslåede ændringer i øvrige organisationer, identitetsfelter, stillingsbetegnelse, primær organisation og standardleverandør beskrives i rapporten som ændringer, men kald til opdatering af organisationer og konfiguration er slået fra. En eksisterende primær organisation vælges fra brugerens Nexus-organisationer.
+**`delta_nexus_processing`** henter de valgte brugeres personoplysninger, aktive engagementer, administrative enheder og jobfunktion fra Delta på gyldighedsdatoen. Nexus-klienten synkroniserer STS-organisationer og finder brugeren via ADGUID; STS-import eller tilknytning af en eksisterende professionel kan udføre API-kald med sideeffekter, og en ny professionel kan oprettes. Delta-organisationer, der ikke findes blandt aktive Nexus-organisationer, logges ved navn og beskrives i rapporten; de springes over uden at fejle brugerens behandling. Øvrige organisationstilknytninger opdateres i Nexus efter Delta-enhedernes UUID'er, mens rapportens navne for tilføjede organisationer hentes fra Nexus. Efter en opdatering genlæses brugerens Nexus-organisationer, før den primære organisation vælges og konfigurationen opdateres. Ændringer i identitetsfelter, stillingsbetegnelse og standardleverandør gemmes ligeledes i Nexus og beskrives i rapporten.
 
 Behandlings-DAG'en sender en HTML-rapport på dansk med ét hovedpunkt pr. person og et underpunkt for hver foreslået ændring. Uændrede personer får punktet "Ingen ændringer". Rapporten sendes kun, når alle personer er behandlet uden fejl; fejlede forsøg sender ingen email, heller ikke ved genforsøg. Airflow-variablen `DELTA_NEXUS_SHOW_FAILED_ONLY` filtrerer rapporten til fejlede personer, når den er `true`. Da fejlede kørsler ikke sender email, giver `true` i praksis ingen rapport; `false` (standard) sender alle personer ved succes. Rapporten kan indeholde navne, brugernavne og UPN'er. Modtagerne angives i DAG-koden og skal være godkendte og adgangsbegrænsede. Anvend kommunens gældende processer for risikovurdering, sikker transport og opbevaring af emails, Airflow-logs og kørselsmetadata.
 

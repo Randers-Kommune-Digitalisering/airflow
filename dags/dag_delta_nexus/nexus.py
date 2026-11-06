@@ -273,6 +273,20 @@ class NexusClient:
         return professional
 
     # Public methods for updating professionals
+    def _get_professional_organizations_by_sync_id(self, professional: dict) -> dict:
+        """Fetch the professional's organizations, including children, keyed by syncId."""
+        current_orgs = self._follow(professional, "organizations")
+        if isinstance(current_orgs, dict):
+            current_orgs = [current_orgs]
+        pending = list(current_orgs)
+        current_by_sync_id = {}
+        while pending:
+            org = pending.pop()
+            pending.extend(child for child in org.get("children", []) if isinstance(child, dict))
+            if org.get("syncId") and org.get("id") is not None:
+                current_by_sync_id[org["syncId"]] = org
+        return current_by_sync_id
+
     def update_existing_professional(self, person: DeltaPerson) -> list[str]:
         """Describe proposed changes to an existing professional in Danish."""
         logger.info(f"Handling: {person.name}")
@@ -303,16 +317,7 @@ class NexusClient:
             logger.error("Delta primary organization not found among active Nexus organizations: %s", primary.name)
             changes.append(message)
 
-        current_orgs = self._follow(professional, "organizations")
-        if isinstance(current_orgs, dict):
-            current_orgs = [current_orgs]
-        pending = list(current_orgs)
-        current_by_sync_id = {}
-        while pending:
-            org = pending.pop()
-            pending.extend(child for child in org.get("children", []) if isinstance(child, dict))
-            if org.get("syncId") and org.get("id") is not None:
-                current_by_sync_id[org["syncId"]] = org
+        current_by_sync_id = self._get_professional_organizations_by_sync_id(professional)
 
         added_sync_ids = sorted(desired_sync_ids - current_by_sync_id.keys())
         removed_sync_ids = sorted((current_by_sync_id.keys() - desired_sync_ids) & org_by_sync_id.keys())
@@ -328,6 +333,7 @@ class NexusClient:
                 changes.append("Fjernet: " + ", ".join(json.dumps(name, ensure_ascii=False) for name in removed_names))
             self._follow(professional, "updateOrganizations", method="post", json={"added": added_ids, "removed": removed_ids})
             logger.info("Organizations updated")
+            current_by_sync_id = self._get_professional_organizations_by_sync_id(professional)
 
         config = self._follow(professional, "configuration")
         if not isinstance(config, dict) or not isinstance(config.get("activeDirectoryConfiguration"), dict):
