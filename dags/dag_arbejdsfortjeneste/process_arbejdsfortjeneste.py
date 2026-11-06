@@ -11,12 +11,12 @@ from dag_arbejdsfortjeneste.arbejdsfortjeneste_data import (
     get_report_field_to_blanket_field_id,
     get_change_report_key_columns,
     build_diff_table,
-    extract_cprs,
     extract_rows_from_serviceplatform_response,
     iter_months,
     write_arbejdsfortjeneste_report_excel_bytes,
 )
 from utils.mail_attachments import find_latest_attachment
+from utils.cpr_excel import extract_cprs
 
 logger = logging.getLogger(__name__)
 
