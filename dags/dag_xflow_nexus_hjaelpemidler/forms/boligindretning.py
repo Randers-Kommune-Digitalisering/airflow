@@ -25,7 +25,7 @@ def generate_boligindretning_fields(model_object: Any) -> list[Field]:
             value="Ja" if model_object.can_collect_data else "Nej",
         ),
         Field(label="Borger oplyst om ovenstående", field_type=FieldType.DROPDOWN, value="Skriftligt (Kvitteringsbrev"),
-        Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=model_object.device_name),
+        Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=f"{model_object.device_name}, digital ansøgning"),
         Field(label="Type", field_type=FieldType.DROPDOWN, value="§ 116 Boligindretning store"),
         Field(label="Sagsbehandlingsfrister", field_type=FieldType.DROPDOWN, value="12 måneder"),
         Field(label="Opgavefrist", field_type=FieldType.DROPDOWN, value="Lang")

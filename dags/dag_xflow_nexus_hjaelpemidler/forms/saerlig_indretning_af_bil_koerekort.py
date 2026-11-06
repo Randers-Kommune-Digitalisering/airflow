@@ -25,7 +25,7 @@ def generate_saerlig_indretning_af_bil_koerekort_fields(model_object: Any) -> li
             value="Ja" if model_object.can_collect_data else "Nej",
         ),
         Field(label="Borger oplyst om ovenstående", field_type=FieldType.DROPDOWN, value="Skriftligt (Kvitteringsbrev"),
-        Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=model_object.device_name),
+        Field(label="Hvad søges der om", field_type=FieldType.TEXT, value=f"{model_object.device_name}, digital ansøgning"),
         Field(label="Type", field_type=FieldType.DROPDOWN, value="§ 114 særlig indretning"),
         Field(label="Opgavefrist", field_type=FieldType.DROPDOWN, value="Lang")
     ]
