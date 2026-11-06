@@ -90,7 +90,7 @@ def has_nexus_users(**context) -> bool:
 
 with DAG(
     dag_id="delta_nexus_polling",
-    start_date=pendulum.datetime(2026, 11, 6, tz="UTC"),
+    start_date=pendulum.datetime(2026, 11, 9, tz="UTC"),
     schedule="*/10 * * * *",
     default_args=dag_args,
     catchup=False,

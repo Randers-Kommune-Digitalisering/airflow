@@ -28,8 +28,8 @@ def set_adm_org_var():
 
 with DAG(
     dag_id="nexus_set_adm_org_dict",
-    start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
-    end_date=datetime(year=2026, month=11, day=5, hour=23, minute=59),
+    start_date=datetime(year=2026, month=11, day=5, tz=timezone("Europe/Copenhagen")),
+    end_date=datetime(year=2026, month=11, day=8, hour=23, minute=59),
     schedule="@daily",
     default_args=dag_args,
     catchup=False,

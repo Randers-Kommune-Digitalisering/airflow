@@ -77,8 +77,8 @@ def get_config_start_main_flow(**context):
 
 with DAG(
     dag_id="nexus_user_permission_sync",
-    start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
-    end_date=datetime(year=2026, month=11, day=5, hour=23, minute=59),
+    start_date=datetime(year=2026, month=11, day=5, tz=timezone("Europe/Copenhagen")),
+    end_date=datetime(year=2026, month=11, day=8, hour=23, minute=59),
     schedule="*/10 * * * *",
     default_args=dag_args,
     catchup=False,
