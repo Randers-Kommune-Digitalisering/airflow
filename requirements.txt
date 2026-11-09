@@ -21,3 +21,5 @@ scrapy-playwright==0.0.43
 Twisted==25.5.0
 holidays==0.105
 prophet==1.4.0
+SQLAlchemy>=2.0
+attest-data-model @ git+https://github.com/Randers-Kommune-Digitalisering/attest-data-model.git@45559a4388132b01f384ebf60e8d72d610962741
