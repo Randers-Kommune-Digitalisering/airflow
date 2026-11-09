@@ -11,7 +11,7 @@ RANDERS_KOMMUNE_SYNC_ID = "ec7a13a3-3d44-46eb-a462-93d2443681b3"
 
 
 class ProfessionalStsSkipped(Exception):
-    """An existing professional could not be fetched from STS after a retry."""
+    """A professional could not be fetched from STS after a retry."""
 
 
 class ProfessionalImportSkipped(Exception):
@@ -226,6 +226,10 @@ class NexusClient:
             if not isinstance(message, str) or "org.springframework.web.client.HttpClientErrorException$Forbidden: 403 : [no body]" not in message:
                 raise
             raise ProfessionalImportSkipped() from error
+        if isinstance(external, dict) and external.get("reason") == "ProfessionalWithStsSnNotFetched":
+            external = self._follow(self._home, "importProfessionalFromSts", accept_error_reason=True, params={"query": person.user.username})
+            if isinstance(external, dict) and external.get("reason") == "ProfessionalWithStsSnNotFetched":
+                raise ProfessionalStsSkipped()
         if not isinstance(external, dict):
             logger.error("Unable to import professional from STS")
             return None
