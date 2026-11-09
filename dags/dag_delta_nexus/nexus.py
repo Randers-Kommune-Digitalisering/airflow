@@ -289,7 +289,7 @@ class NexusClient:
 
     def update_existing_professional(self, person: DeltaPerson) -> list[str]:
         """Describe proposed changes to an existing professional in Danish."""
-        logger.info(f"Handling: {person.name}")
+        logger.info(f"Handling: {person.name} ({person.user.username})")
         try:
             professional = self._get_professional(person)
         except ProfessionalImportSkipped:
