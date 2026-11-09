@@ -4,6 +4,7 @@ from airflow.hooks.base import BaseHook
 from airflow.exceptions import AirflowFailException
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from dag_attest.attest_data import (
     AttestParseError,
@@ -18,7 +19,7 @@ from dag_attest.attest_data import (
     to_attest_type_ids,
 )
 
-from dag_attest.model import (
+from attest_data_model import (
     Notification,
     NotificationType,
     OrderEvent,
@@ -40,6 +41,13 @@ _DOCUMENT_NAMES = {0: "Offentlig straffeattest", 1: "Privat straffeattest"}
 
 
 def _queue_forward(session, record, recipient: str) -> None:
+    """
+    Queue a forward for the given record to the specified recipient.
+    
+    :param session: SQLAlchemy session
+    :param record: The record to forward
+    :param recipient: The recipient email address
+    """
     record.forward_recipient = recipient
     record.forward_status = ForwardStatus.PENDING
     session.commit()
@@ -50,6 +58,13 @@ def _ensure_notification(
     order_id: str,
     notification_type: NotificationType,
 ) -> None:
+    """
+    Ensure that a notification of the specified type exists for the given order.
+    
+    :param session: SQLAlchemy session
+    :param order_id: The ID of the order to check
+    :param notification_type: The type of notification to ensure
+    """
     existing = (
         session.query(Notification.notification_id)
         .filter(
@@ -69,6 +84,12 @@ def _ensure_notification(
 
 
 def _mark_email_seen(email_reader: EmailReader, uid: bytes | str) -> None:
+    """
+    Mark the email with the given UID as seen in the mailbox.
+    
+    :param email_reader: The EmailReader instance to use for marking the email.
+    :param uid: The UID of the email to mark as seen.
+    """
     uid_text = uid.decode(errors="ignore") if isinstance(uid, bytes) else str(uid)
     marked, _ = email_reader.get_emails(
         mailbox=_MAILBOX,
@@ -82,6 +103,14 @@ def _mark_email_seen(email_reader: EmailReader, uid: bytes | str) -> None:
 
 
 def _parse_sbsys_id(value: object, field_name: str) -> int:
+    """
+    Parse and validate an SBSYS ID from the given value.
+    
+    :param value: The value to parse as an SBSYS ID.
+    :param field_name: The name of the field being parsed (for error messages).
+    :return: The parsed SBSYS ID as an integer.
+    :raises AirflowFailException: If the value is not a valid SBSYS ID.
+    """
     if isinstance(value, bool):
         raise AirflowFailException(
             f"SBSYS response has an invalid {field_name}"
@@ -100,6 +129,15 @@ def _get_sbsys_targets(
         subject_cpr: str,
         attest_types: set[int],
 ) -> tuple[int, str | None, int | None] | None:
+    """
+    Get the SBSYS targets for the given subject CPR and attest types.
+    
+    :param sbsys_client: The SBSYS client to use for API calls.
+    :param subject_cpr: The CPR number of the subject.
+    :param attest_types: Set of attest type IDs.
+    :return: A tuple containing the case ID, case number, and subcase ID, or None if no matching case is found.
+    :raises AirflowFailException: If the SBSYS API returns unexpected data or multiple matching subcases are found.
+    """
     if attest_types == {2}:
         return None
 
@@ -157,6 +195,14 @@ def _get_sbsys_targets(
 
 
 def _process_email(message, mail_uid: str, db_manager, sbsys_client):
+    """
+    Process an attest email message.
+    
+    :param message: The email message to process.
+    :param mail_uid: The UID of the email message.
+    :param db_manager: The database manager for session handling.
+    :param sbsys_client: The SBSYS client for API calls.
+    """
     try:
         body = extract_email_body(message)
         subject_cpr = extract_cpr(body)
@@ -165,6 +211,9 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
         if not pdfs:
             raise AttestParseError("Email has no PDF attachments")
 
+        # TODO: confirm that you only look at the first PDF attachment and
+        # if there are more PDF attachments, they will be ignored for now.
+        # The current flow only processes the first PDF attachment.
         pdf_bytes, pdf_text = pdfs[0]
         if not pdf_text.strip():
             raise AttestParseError("Could not extract text from PDF")
@@ -172,7 +221,7 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
         attest_types = to_attest_type_ids(
             detect_attest_types(pdf_text, message.get("Subject"))
         )
-    except AttestParseError as exc:
+    except AttestParseError:
         with db_manager.get_session() as session:
             record = find_received_record(session, mail_uid)
             if record is None:
@@ -298,15 +347,19 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
         record.sbsys_sags_id = sag_id
         session.commit()
 
-        document_name = _DOCUMENT_NAMES[next(iter(attest_types))]
+        attest_name = _DOCUMENT_NAMES.get(order.attest_type, "Attest")
+        today = datetime.now(ZoneInfo("Europe/Copenhagen")).strftime("%d-%m-%Y")
         result = sbsys_client.journalize(
             pdf_bytes=pdf_bytes,
             sag_id=sag_id,
             delforloeb_id=delforloeb_id,
-            document_name=document_name,
-            description=f"{document_name} automatisk journaliseret fra attest-postkassen.",
+            document_name=f"{attest_name} {today}",
         )
-        document_id = result.get("Id") if isinstance(result, dict) else None  # TODO: verificér feltnavn mod SBSYS svar
+
+        # TODO: Confirm the SBSYS upload response fields using an anonymized TEST response.
+        # A missing/unverified document ID must not cause automatic upload retry;
+        # treat HTTP 200 as potentially successful and reconcile manually.
+        document_id = result.get("Id") if isinstance(result, dict) else None
         if document_id is None:
             raise AirflowFailException(
                 f"SBSYS journalization returned no document id for email uid={mail_uid!r}"
@@ -350,6 +403,10 @@ def _process_email(message, mail_uid: str, db_manager, sbsys_client):
 
 
 def process_attest_journalize() -> None:
+    """
+    Process attest emails by fetching them from the mailbox, handling each email,
+    and marking them as seen. Raises an exception if any email could not be processed.
+    """
     logger.info("Starting to process attest data...")
 
     imap_conn = BaseHook.get_connection("attest_imap")

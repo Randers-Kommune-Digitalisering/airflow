@@ -6,7 +6,7 @@ from airflow.models import Variable
 
 from datetime import datetime, timezone
 
-from dag_attest.model import (
+from attest_data_model import (
     ForwardStatus,
     Notification,
     NotificationStatus,
@@ -33,6 +33,16 @@ def _notification_details(
         requester_name,
         attest_type,
 ):
+    """
+    Generate the details for a notification email based on the notification type and other parameters.
+    
+    :param notification_type: The type of notification.
+    :param is_clean: Boolean indicating if the record is clean.
+    :param requester_email: The email of the requester.
+    :param requester_name: The name of the requester.
+    :param attest_type: The type of attest.
+    :return: A tuple containing the recipient email, email body, and a boolean indicating if the PDF should be attached.
+    """
     if notification_type == NotificationType.RECORD_JOURNALIZED:
         if is_clean:
             body = (
@@ -74,9 +84,14 @@ def _notification_details(
         return _HR_MAILBOX, body, True
 
     raise ValueError(f"Unknown notification type: {notification_type}")
-        
+
 
 def process_attest_outgoing_mails() -> None:
+    """
+    Process outgoing attest emails by fetching pending records from the database,
+    generating the appropriate email content, and sending the emails.
+    Raises an exception if any email could not be processed.
+    """
     config = Variable.get("attest_forward_config", deserialize_json=True)
     if not isinstance(config, dict):
         raise AirflowException(
@@ -260,7 +275,7 @@ def process_attest_outgoing_mails() -> None:
 
         except Exception as exc:
             logger.error(
-                "Could not send attest notification (%s)", 
+                "Could not send attest notification (%s)",
                 type(exc).__name__,
             )
             failed_uids.append(mail_uid)

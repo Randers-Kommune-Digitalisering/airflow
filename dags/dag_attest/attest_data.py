@@ -6,10 +6,9 @@ import re
 from sqlalchemy.orm import Session
 from collections.abc import Collection
 
-from datetime import datetime, timedelta, timezone
 from email.message import Message
 
-from dag_attest.model import (
+from attest_data_model import (
     AttestationOrder,
     AttestationRequest,
     OrderStatus,
@@ -17,6 +16,7 @@ from dag_attest.model import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 class AttestParseError(ValueError):
     pass
@@ -39,7 +39,12 @@ ATTEST_TYPE_IDS: dict[AttestType, int] = {
 
 
 def extract_pdf_attachments(message: Message) -> list[tuple[bytes, str]]:
-    """Return decoded PDF attachment bytes and extracted text."""
+    """
+    Return decoded PDF attachment bytes and extracted text.
+    
+    :param message: The email message to extract PDF attachments from.
+    :return: A list of tuples containing the PDF bytes and extracted text.
+    """
     import fitz  # PyMuPDF for PDF processing
 
     pdfs: list[tuple[bytes, str]] = []
@@ -69,6 +74,12 @@ def extract_pdf_attachments(message: Message) -> list[tuple[bytes, str]]:
 
 
 def extract_cpr(text: str) -> str:
+    """
+    Extract CPR number from the given text.
+    
+    :param text: The text to extract the CPR number from.
+    :return: The extracted CPR number.
+    """
     lines = re.split(r"<br\s*/?>", text, flags=re.IGNORECASE)
     found: set[str] = set()
 
@@ -95,6 +106,12 @@ def extract_cpr(text: str) -> str:
 
 
 def extract_requester_email(text: str) -> str:
+    """
+    Extract the requester email from the given text.
+    
+    :param text: The text to extract the requester email from.
+    :return: The extracted requester email.
+    """
     addresses = {
         match.group(0).casefold()
         for match in re.finditer(
@@ -111,6 +128,12 @@ def extract_requester_email(text: str) -> str:
 
 
 def format_cpr_for_sbsys(cpr: str) -> str:
+    """
+    Format the CPR number for SBSYS.
+    
+    :param cpr: The CPR number to format.
+    :return: The formatted CPR number.
+    """
     if "-" in cpr:
         return cpr
 
@@ -118,11 +141,24 @@ def format_cpr_for_sbsys(cpr: str) -> str:
 
 
 def is_clean_attest(text: str) -> bool:
+    """
+    Determine if the attest text indicates a clean record.
+    
+    :param text: The text to check.
+    :return: True if the attest is clean, False otherwise.
+    """
     normalized_text = " ".join(text.split()).casefold()
     return "er ikke registreret med afgørelser" in normalized_text
 
 
 def detect_attest_types(text: str, subject: str | None) -> set[AttestType]:
+    """
+    Detect the types of attest mentioned in the text or subject.
+    
+    :param text: The text to analyze.
+    :param subject: The email subject to analyze.
+    :return: A set of detected AttestType values.
+    """
     normalized_text = " ".join(text.split()).casefold()
     found = {kind for kind in AttestType if kind.value in normalized_text}
 
@@ -141,6 +177,12 @@ def detect_attest_types(text: str, subject: str | None) -> set[AttestType]:
 
 
 def to_attest_type_ids(kinds: Collection[AttestType]) -> set[int]:
+    """
+    Convert a collection of AttestType values to their corresponding IDs.
+    
+    :param kinds: Collection of AttestType values.
+    :return: Set of corresponding attest type IDs.
+    """
     missing = [kind.value for kind in kinds if kind not in ATTEST_TYPE_IDS]
     if missing:
         raise AttestParseError(f"Unknown attest type value for: {', '.join(missing)}")
@@ -176,6 +218,12 @@ def find_matching_orders(
 
 
 def extract_email_body(message: Message) -> str:
+    """
+    Extract the body text from an email message.
+    
+    :param message: The email message to extract the body from.
+    :return: The extracted body text as a string.
+    """
     if message.is_multipart():
         body_part = message.get_body(preferencelist=("html", "plain"))
         if body_part is None:
@@ -211,6 +259,13 @@ def find_received_record(
         session: Session,
         mail_uid: str,
 ) -> ReceivedRecord | None:
+    """
+    Find a received record by its mail UID.
+    
+    :param session: SQLAlchemy session
+    :param mail_uid: The UID of the email to find the received record for.
+    :return: The matching ReceivedRecord object or None if not found.
+    """
     return (
         session.query(ReceivedRecord)
         .filter(ReceivedRecord.mail_uid == mail_uid)

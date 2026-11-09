@@ -138,31 +138,41 @@ class SbsysClient:
         }
         return self._request("POST", "api/delforloeb", json=payload)
 
-    def journalize(self, file: bytes, sag_id: int, delforloeb_id: int | None = None) -> dict:
+    # TODO: Verify id
+    def journalize(
+            self,
+            pdf_bytes: bytes,
+            sag_id: int,
+            document_name: str,
+            description: str = "Automatisk journaliseret af robot",
+            delforloeb_id: int | None = None,
+            filename: str = "attest.pdf",
+    ) -> dict:
         """
         Journalize a PDF on a sag or a specific delforloeb.
 
-        :param file: PDF content to journalize.
+        :param pdf_bytes: PDF content to journalize.
         :param sag_id: ID of the sag.
+        :param document_name: Name of the document in SBSYS.
+        :param description: Description of the document in SBSYS.
         :param delforloeb_id: Optional ID of the target delforloeb.
-        :return: The journalization response.
+        :param filename: Filename sent with the PDF.
+        :return: The parsed JSON response from SBSYS.
         """
         metadata = {
             "SagID": sag_id,
-            "Beskrivelse": "Fraværsbrev automatisk journaliseret.",
+            "DokumentNavn": document_name,
+            "Beskrivelse": description,
             "OmfattetAfAktindsigt": True,
-            "DokumentNavn": "Fraværsbrev",
-            "DokumentArt": {
-                "Id": 1,
-                "Navn": "Indgående",
-            },
         }
-        multipart = {
-            "file": ("maindoc.pdf", file, "application/pdf"),
-            "json": (None, json.dumps(metadata, ensure_ascii=False), "application/json"),
-        }
+
         path = "api/dokument/journaliser"
         if delforloeb_id is not None:
             path = f"{path}/{delforloeb_id}"
 
-        return self._request("POST", path, files=multipart)
+        files = {
+            "file": (filename, pdf_bytes, "application/pdf"),
+            "json": (None, json.dumps(metadata, ensure_ascii=False), "application/json"),
+        }
+
+        return self._request("POST", path, files=files)
