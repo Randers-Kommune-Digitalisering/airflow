@@ -405,7 +405,7 @@ def extract_cpr_from_maindoc_attachments() -> None:
                         f"{delforloeb_title}.\n\n"
                         "Venlig hilsen Fravær - Løn og Personale"
                     ),
-                    attachments=[],
+                    attachments=[(filename, pdf_bytes)],
                 )
 
             except Exception:
