@@ -21,7 +21,7 @@ dag_args = {**DEFAULT_DAG_ARGS, "retries": 1, "retry_delay": timedelta(minutes=5
 
 def failure_reason(error: Exception) -> str:
     if isinstance(error, ProfessionalStsSkipped):
-        return "Brugeren kunne ikke hentes fra støttesystemet efter gentagne forsøg. Flere brugere?"
+        return "Brugeren kunne ikke hentes fra støttesystemet efter to forsøg."
     reasons = {
         "Professional lookup returned multiple matches": "Flere Nexus-brugere matcher brugerens ADGUID.",
         "STS import or linking did not return a professional": "Brugeren kunne ikke importeres eller tilknyttes fra støttesystemet.",
@@ -67,6 +67,10 @@ def fetch_user_details(**context) -> None:
         failed = False
         try:
             changes = nexus_client.update_existing_professional(person=person)
+        except ProfessionalStsSkipped as error:
+            failed = True
+            logger.error("Professional skipped after STS retry: ProfessionalWithStsSnNotFetched")
+            changes = [f"Behandling sprunget over: {failure_reason(error)}"]
         except Exception as error:
             failed = True
             failed_users.append(person.user.ad_guid)
