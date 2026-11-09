@@ -32,7 +32,7 @@ DAG'en `absence_post_forward_mails` udfører følgende trin:
 - Genbruger Delta-opslaget, hvis det samme CPR optræder i flere vedhæftninger
 - Finder afdelingens modtagere i Airflow Variablen `absence_post_mapning`
 - Slår personalesager op i SBSYS Produktion via CPR og journaliserer PDF'en på hver aktiv sag (status-id 9). Delforløbet vælges ud fra mailens emne via `subject_delforloeb_mapping`: kun Delforløbet `3.1 Breve fra Udbetaling Danmark` og `02 Sygdom` er tilladt at blive journaliseret på. Mailen bliver liggende ved manglende eller modstridende emnematch. Hvis delforløbet mangler på en aktiv sag, oprettes det før journalisering
-- Sender derefter en mail til afdelingens modtagere med det oprindelige emne, den konfigurerede brødtekst samt delforløbets titel og sagsnumrene for de journaliserede sager
+- Sender derefter en mail til afdelingens modtagere med det oprindelige emne, den konfigurerede brødtekst, delforløbets titel og den journaliserede PDF som vedhæftning
 - Sletter kun den oprindelige email, når alle relevante PDF'er er håndteret. Enten journaliseret og videresendt eller sendt til manuel behandling ved flere aktive afdelinger. Ved andre fejl bliver mailen liggende til manuel håndtering
 
 Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokumentet ikke automatisk:
@@ -43,7 +43,7 @@ Hvis der ikke findes præcis én anvendelig SD-afdelingskode, videresendes dokum
 
 **Dataflow:**
 - SD-ORG-email (IMAP) + SD ORG Excel-vedhæftning → afdelings- og emailmapping → Airflow Variable
-- Fraværspost-email (IMAP) + PDF-vedhæftning → CPR-nummer → Delta-opslag → journalisering på aktive personalesager i SBSYS → mail til afdelingsmodtagere (SMTP) → Slet original mail fra postkassen
+- Fraværspost-email (IMAP) + PDF-vedhæftning → CPR-nummer → Delta-opslag → journalisering på aktive personalesager i SBSYS → mail med samme PDF til afdelingsmodtagere (SMTP) → Slet original mail fra postkassen
 
 **Bemærk (datahåndtering):**
 
