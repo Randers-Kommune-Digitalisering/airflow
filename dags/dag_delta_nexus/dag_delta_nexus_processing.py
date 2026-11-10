@@ -17,6 +17,12 @@ from utils.config import DEFAULT_DAG_ARGS
 
 logger = logging.getLogger(__name__)
 dag_args = {**DEFAULT_DAG_ARGS, "retries": 1, "retry_delay": timedelta(minutes=30)}
+dag_args["email"] = dag_args["email"].copy()
+dag_args["email"].extend([
+    "rune.aagaard.keena@randers.dk",
+    "Jane.Scharling.Andersen@randers.dk",
+    "Natashia.Maise.Nygaard@randers.dk",
+])
 
 
 def failure_reason(error: Exception) -> str:
@@ -92,8 +98,9 @@ def fetch_user_details(**context) -> None:
 
     if report_items:
         sent_at = pendulum.now("Europe/Copenhagen").strftime("%H:%M %d-%m-%Y")
+        report_recipients = [email for email in dag_args["email"] if email not in DEFAULT_DAG_ARGS["email"]]
         send_email(
-            to=["rune.aagaard.keena@randers.dk", "Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
+            to=report_recipients,
             subject=f"Delta Nexus - ændringsrapport - {sent_at}",
             html_content="<ul>" + "".join(report_items) + "</ul>",
         )
