@@ -18,6 +18,10 @@ class ProfessionalImportSkipped(Exception):
     """STS import was denied by a downstream service."""
 
 
+class ProfessionalDuplicateSkipped(Exception):
+    """A professional still conflicts with an existing Nexus record after retry."""
+
+
 @dataclass(frozen=True)
 class DeltaUser:
     """User identifiers supplied by Delta for Nexus synchronization."""
@@ -240,7 +244,7 @@ class NexusClient:
             return None
         return external
 
-    def _get_professional(self, person: DeltaPerson) -> dict | None:
+    def _get_professional(self, person: DeltaPerson, retry_duplicate: bool = True) -> dict | None:
         """Find a professional by AD GUID, importing or creating one if needed."""
 
         matches = self._follow(self._home, "professionals", params={"query": person.user.ad_guid})
@@ -265,7 +269,22 @@ class NexusClient:
             self._set_identity_fields(professional, person)
             professional["primaryAddress"]["route"] = "home:importProfessionalFromSts"
             professional["activeDirectoryConfiguration"]["route"] = "home:importProfessionalFromSts"
-            saved = self._follow(professional, "create", method="post", expected_reason="ProfessionalServiceDataIntegrity", json=professional)
+            try:
+                saved = self._follow(professional, "create", method="post", expected_reason="ProfessionalServiceDataIntegrity", json=professional)
+            except HTTPError as error:
+                response = error.response
+                if response is None or response.status_code != 400:
+                    raise
+                try:
+                    content = response.json()
+                except ValueError:
+                    raise error from None
+                if not isinstance(content, dict) or content.get("reason") != "ProfessionalServiceDuplicateProfessionalWhenTryingToCreate":
+                    raise
+                if retry_duplicate:
+                    logger.warning("Duplicate professional on create; retrying search and import")
+                    return self._get_professional(person, retry_duplicate=False)
+                raise ProfessionalDuplicateSkipped() from error
             if isinstance(saved, dict) and saved.get("reason") == "ProfessionalServiceDataIntegrity":
                 logger.error("Data integrity error creating professional")
                 return None
@@ -299,6 +318,9 @@ class NexusClient:
         except ProfessionalImportSkipped:
             logger.warning("Professional skipped: downstream STS import forbidden")
             return ["Import fra støttesystemet blev sprunget over (adgang nægtet)."]
+        except ProfessionalDuplicateSkipped:
+            logger.error("Professional skipped: duplicate in Nexus after retry (ProfessionalServiceDuplicateProfessionalWhenTryingToCreate)")
+            return ["Oprettelse sprunget over: brugeren findes allerede i Nexus."]
         changes = []
 
         org_by_sync_id = {org["syncId"]: org for org in self._organizations}

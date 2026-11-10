@@ -45,20 +45,15 @@ def discover_nexus_users(**context) -> dict:
         client_secret=delta_conn.password,
     )
     registrations = list(delta_client.get_engagement_uuids_changed_since(lookback_start, valid_date))
-    if last_success is not None:
-        start_date = pendulum.instance(last_success).in_timezone("Europe/Copenhagen").date() + timedelta(days=1)
-    else:
-        start_date = valid_date if local_interval_end.hour == 0 else valid_date + timedelta(days=1)
-    if local_interval_end.hour == 0:
-        start_date = min(start_date, valid_date)
-    while start_date <= valid_date:
-        registrations.extend(delta_client.get_engagement_uuids_valid_from(start_date))
-        start_date += timedelta(days=1)
+    if local_interval_end.hour in (4, 8, 12, 16, 20) and local_interval_end.minute == 0:
+        start_date = valid_date
+        if last_success is not None:
+            start_date = min(start_date, pendulum.instance(last_success).in_timezone("Europe/Copenhagen").date() + timedelta(days=1))
+        while start_date <= valid_date:
+            registrations.extend(delta_client.get_engagement_uuids_valid_from(start_date))
+            start_date += timedelta(days=1)
 
-    existing_runs = DagRun.find(
-        dag_id="delta_nexus_processing",
-        execution_start_date=lookback_start,
-    )
+    existing_runs = DagRun.find(dag_id="delta_nexus_processing") if registrations else []
     triggered_ids = {
         str(registration_id)
         for run in existing_runs
@@ -90,7 +85,7 @@ def has_nexus_users(**context) -> bool:
 
 with DAG(
     dag_id="delta_nexus_polling",
-    start_date=pendulum.datetime(2026, 11, 9, tz="UTC"),
+    start_date=pendulum.datetime(2026, 11, 9, tz="Europe/Copenhagen"),
     schedule="*/10 * * * *",
     default_args=dag_args,
     catchup=False,

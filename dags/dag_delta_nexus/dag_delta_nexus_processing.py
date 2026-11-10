@@ -16,7 +16,7 @@ from utils.config import DEFAULT_DAG_ARGS
 
 
 logger = logging.getLogger(__name__)
-dag_args = {**DEFAULT_DAG_ARGS, "retries": 1, "retry_delay": timedelta(minutes=5)}
+dag_args = {**DEFAULT_DAG_ARGS, "retries": 1, "retry_delay": timedelta(minutes=30)}
 
 
 def failure_reason(error: Exception) -> str:
@@ -101,7 +101,7 @@ def fetch_user_details(**context) -> None:
 
 with DAG(
     dag_id="delta_nexus_processing",
-    start_date=pendulum.datetime(2026, 11, 9, tz="UTC"),
+    start_date=pendulum.datetime(2026, 11, 9, tz="Europe/Copenhagen"),
     schedule=None,
     default_args=dag_args,
     catchup=False,
