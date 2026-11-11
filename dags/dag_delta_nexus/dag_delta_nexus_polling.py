@@ -45,7 +45,7 @@ def discover_nexus_users(**context) -> dict:
         client_secret=delta_conn.password,
     )
     registrations = list(delta_client.get_engagement_uuids_changed_since(lookback_start, valid_date))
-    if local_interval_end.hour in (4, 8, 12, 16, 20) and local_interval_end.minute == 0:
+    if local_interval_end.hour in (6, 14, 22) and local_interval_end.minute == 0:
         start_date = valid_date
         if last_success is not None:
             start_date = min(start_date, pendulum.instance(last_success).in_timezone("Europe/Copenhagen").date() + timedelta(days=1))

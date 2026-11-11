@@ -24,7 +24,7 @@ def get_config_and_and_call_main_function() -> bool:
 with DAG(
     dag_id="nexus_sms_hjaelpemiddelhuset",
     start_date=datetime(year=2026, month=3, day=27, tz=timezone("Europe/Copenhagen")),
-    schedule="*/10 * * * *",
+    schedule="*/15 7-15 * * 1-5",
     catchup=False,
     default_args=dag_args,
     description="Fetch Nexus data from Hjaelpemiddelhuset, send SMS notifications via Computronic and update Nexus orders accordingly",

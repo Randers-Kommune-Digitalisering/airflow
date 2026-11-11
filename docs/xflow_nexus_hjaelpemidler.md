@@ -70,5 +70,5 @@ Eksempel:
 
 Tidsplanen er sat op til at køre automatisk med følgende interval:
 
-- **Tidspunkt:** hver time
-- **Cron syntax:** `@hourly`
+- **Tidspunkt:** hver hele time fra kl. 06:00 til og med 16:00, mandag til fredag, i `Europe/Copenhagen`.
+- **Cron syntax:** `0 6-16 * * 1-5`
