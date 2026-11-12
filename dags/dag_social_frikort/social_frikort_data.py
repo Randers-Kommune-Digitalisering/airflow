@@ -1,5 +1,6 @@
 import io
 import pandas as pd
+from decimal import Decimal, InvalidOperation
 from typing import Any, Iterator
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
@@ -19,28 +20,28 @@ def get_social_frikort_report_fields() -> dict[str, str]:
     fields = config.get("report_field_to_blanket_field_id")
     if (
         not isinstance(fields, dict)
-        or not fields
+        or len(fields) != 2
         or any(
             not isinstance(name, str) or not name.strip()
             or not isinstance(field_id, str) or not field_id.strip()
             for name, field_id in fields.items()
         )
+        or len(set(fields.values())) != 2
     ):
         raise AirflowFailException(
-            "Socialt Frikort report configuration requires a non-empty "
-            "report_field_to_blanket_field_id mapping of column names to field IDs."
+            "Socialt Frikort report configuration requires exactly two distinct "
+            "field IDs in report_field_to_blanket_field_id."
         )
     return fields
 
 
-def social_frikort_income_columns(report_fields: dict[str, str]) -> list[str]:
+def social_frikort_income_columns() -> list[str]:
     """
     Get income report columns in worksheet order.
 
-    :param report_fields: Mapping of report column names to blanket field identifiers.
-    :return: CPR and date columns followed by the configured report columns.
+    :return: CPR, search period and total income columns.
     """
-    return ["CPR", "IndkomstPersonGruppeDispositionDato", "AngivelsePeriode", *report_fields]
+    return ["CPR", "Søgeperiode", "Samlet Indtægt"]
 
 
 def social_frikort_address_columns() -> list[str]:
@@ -157,105 +158,84 @@ def _extract_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, A
     return fields
 
 
-def extract_social_frikort_income_rows(
-    payload: dict[str, Any], report_fields: dict[str, str]
-) -> list[dict[str, Any]]:
+def _income_amount(value: object) -> Decimal:
     """
-    Extract CPR, dates, and configured income fields from a SKAT response.
+    Convert a SKAT income value to a finite decimal amount.
 
-    Traverse people, income entries, periods, and blanket trees, returning a
-    row for each declaration containing at least one configured field.
+    :param value: Unvalidated income value from the SKAT response.
+    :return: Decimal amount, or zero for an empty value.
+    """
+    if value is None or value == "":
+        return Decimal(0)
+    if not isinstance(value, (str, int, float, Decimal)) or isinstance(value, bool):
+        raise AirflowFailException("Invalid income amount in SKAT response.")
+    text = str(value).strip()
+    if "," in text:
+        text = text.replace(".", "").replace(",", ".")
+    try:
+        amount = Decimal(text)
+    except InvalidOperation as error:
+        raise AirflowFailException("Invalid income amount in SKAT response.") from error
+    if not amount.is_finite():
+        raise AirflowFailException("Invalid income amount in SKAT response.")
+    return amount
+
+
+def extract_social_frikort_income_total(
+    payload: dict[str, Any], report_fields: dict[str, str]
+) -> Decimal:
+    """
+    Sum the configured income fields across the entire SKAT response.
+
+    Traverse people, income entries, periods, and blanket trees.
 
     :param payload: Raw response from IndkomstOplysningPersonHent_O.
-    :param report_fields: Mapping of report column names to blanket field identifiers.
-    :return: Income report rows, or an empty list if no matching fields are found.
+    :param report_fields: Mapping of income names to blanket field identifiers.
+    :return: Total income, including zero when no matching fields are found.
     """
     if not isinstance(payload, dict):
-        return []
+        raise AirflowFailException("Invalid SKAT income response.")
 
     root = payload.get("IndkomstOplysningPersonHent_O") or {}
     person_data = root.get("IndkomstPersonUddata") or {}
     item = person_data.get("Item") or {}
     people = _coerce_to_list(value=item.get("IndkomstOplysningPersonStruktur"))
-    rows: list[dict[str, Any]] = []
+    total = Decimal(0)
+    field_ids = set(report_fields.values())
 
     for person in people:
         if not isinstance(person, dict):
             continue
-        cpr = person.get("PersonCivilRegistrationIdentifier")
         for income_info in _coerce_to_list(value=person.get("IndkomstOplysningSamling")):
             if not isinstance(income_info, dict):
                 continue
             for period in _coerce_to_list(value=income_info.get("IndkomstLoenPeriodeSamling")):
                 if not isinstance(period, dict):
                     continue
-                disposition_date = period.get("IndkomstPersonGruppeDispositionDato")
-                disposition_date = str(disposition_date).split("T")[0] if disposition_date else None
-                period_items = (
-                    ((period.get("AngivelsePeriodeStruktur") or {}).get("AngivelsePeriode") or {})
-                    .get("Items")
-                )
-                period_items = _coerce_to_list(value=period_items)
-                period_from = str(period_items[0]).split("T")[0] if period_items and period_items[0] else None
-                period_to = str(period_items[1]).split("T")[0] if len(period_items) > 1 and period_items[1] else None
-                declaration_period = (
-                    f"{period_from} - {period_to}"
-                    if period_from and period_to
-                    else period_from or period_to
-                )
                 blanket_content = period.get("AngivelseBlanketIndholdStruktur") or {}
                 for declaration in _coerce_to_list(value=blanket_content.get("AngivelseOplysningSamling")):
                     if not isinstance(declaration, dict):
                         continue
-                    values = _extract_fields(blanket=declaration, field_ids=set(report_fields.values()))
-                    if values:
-                        rows.append(
-                            {
-                                "CPR": cpr,
-                                "IndkomstPersonGruppeDispositionDato": disposition_date,
-                                "AngivelsePeriode": declaration_period,
-                                **{
-                                    field_name: values.get(field_id)
-                                    for field_name, field_id in report_fields.items()
-                                },
-                            }
-                        )
+                    values = _extract_fields(blanket=declaration, field_ids=field_ids)
+                    total += sum((_income_amount(value) for value in values.values()), Decimal(0))
 
-    return rows
+    return total
 
 
 def write_social_frikort_report_excel_bytes(
-    rows: list[dict[str, Any]], report_fields: dict[str, str],
-    address_rows: list[dict[str, Any]],
+    rows: list[dict[str, Any]], address_rows: list[dict[str, Any]],
 ) -> bytes:
     """
     Write the Socialt Frikort report to Excel bytes with two sheets.
 
     Sheet 1: Indkomstoplysninger.
-    Sheet 2: Bobæl (with blank rows separating CPR groups).
+    Sheet 2: Adresse Historik (with blank rows separating CPR groups).
 
     :param rows: Extracted income report rows.
-    :param report_fields: Mapping of report column names to blanket field identifiers.
     :param address_rows: Current and historical address rows grouped by CPR.
     :return: Excel file as bytes.
     """
-    income_df = pd.DataFrame(rows, columns=social_frikort_income_columns(report_fields=report_fields))
-    if not income_df.empty:
-        # Sort each CPR block separately so the blank rows between input CPRs stay in place.
-        separator = income_df.isna().all(axis=1)
-        income_df = pd.concat(
-            (
-                group.sort_values(
-                    "IndkomstPersonGruppeDispositionDato",
-                    ascending=False,
-                    kind="stable",
-                    na_position="last",
-                    key=lambda dates: pd.to_datetime(dates, format="%Y-%m-%d", errors="raise"),
-                )
-                for _, group in income_df.groupby(separator.shift(fill_value=False).cumsum(), sort=False)
-            ),
-            ignore_index=True,
-        )
+    income_df = pd.DataFrame(rows, columns=social_frikort_income_columns())
     separated_address_rows: list[dict[str, Any]] = []
     for address_row in address_rows:
         if separated_address_rows and address_row["CPR"] != separated_address_rows[-1].get("CPR"):

@@ -10,9 +10,8 @@ from rkdigi.email_handling import EmailReader, EmailSender
 
 from dag_social_frikort.social_frikort_data import (
     extract_social_frikort_address_rows,
-    extract_social_frikort_income_rows,
+    extract_social_frikort_income_total,
     get_social_frikort_report_fields,
-    social_frikort_income_columns,
     write_social_frikort_report_excel_bytes,
 )
 from utils.mail_attachments import find_latest_attachment
@@ -94,7 +93,7 @@ def process_social_frikort() -> None:
             dtype={cpr_column: str},
             sheet_name=0,
         )
-        cpr_list = extract_cprs(df=input_df, column=cpr_column)
+        cpr_list = list(dict.fromkeys(extract_cprs(df=input_df, column=cpr_column)))
         if not cpr_list:
             raise AirflowFailException("No CPR values found in the Social Frikort Excel file.")
 
@@ -129,20 +128,17 @@ def process_social_frikort() -> None:
                         soege_aar_maaned_fra_kode=start_month,
                         soege_aar_maaned_til_kode=end_month,
                     )
-                    rows = extract_social_frikort_income_rows(payload=payload, report_fields=report_fields)
                 except Exception as error:
                     logger.error(f"SKAT lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained with empty income fields.")
-                    rows = []
+                    income_total = None
+                else:
+                    income_total = extract_social_frikort_income_total(payload=payload, report_fields=report_fields)
 
-                # Keep a row without income when no records match, and separate adjacent CPR blocks.
-                report_rows.extend(rows or [{
-                    column: cpr if column == "cpr" else None
-                    for column in social_frikort_income_columns(report_fields)
-                }])
-                if idx != total_cprs:
-                    report_rows.append({
-                        column: None for column in social_frikort_income_columns(report_fields)
-                    })
+                report_rows.append({
+                    "CPR": cpr,
+                    "Søgeperiode": f"{start_month} - {end_month}",
+                    "Samlet Indtægt": income_total,
+                })
 
                 try:
                     person_payload = person_client.person_lookup(pnr=cpr)
@@ -151,7 +147,7 @@ def process_social_frikort() -> None:
                     logger.error(f"Address lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained without address.")
                     address_rows.append({"cpr": cpr})
 
-        excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, report_fields=report_fields, address_rows=address_rows)
+        excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, address_rows=address_rows)
         context = get_current_context()
         report_date = context["logical_date"].in_timezone(context["dag"].timezone).date().isoformat()
         report_filename = f"Social_Frikort_{start_month}_til_{end_month}_{report_date}.xlsx"
