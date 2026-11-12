@@ -172,6 +172,7 @@ def process_social_frikort() -> None:
                     logger.error(f"SKAT lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained with empty income fields.")
                     rows = []
 
+                # Keep a row without income when no records match, and separate adjacent CPR blocks.
                 report_rows.extend(rows or [{
                     column: cpr if column == "cpr" else None
                     for column in social_frikort_income_columns(report_fields)

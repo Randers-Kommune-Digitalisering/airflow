@@ -152,6 +152,7 @@ def _extract_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, A
                 .get("BlanketFeltNummerIdentifikator")
             )
             if str(field_id) in field_ids:
+                # Later matches in nested blankets replace earlier values for the same field ID.
                 fields[str(field_id)] = felt.get("AngivelseFeltIndholdTekst")
     return fields
 
@@ -240,6 +241,7 @@ def write_social_frikort_report_excel_bytes(
     """
     income_df = pd.DataFrame(rows, columns=social_frikort_income_columns(report_fields=report_fields))
     if not income_df.empty:
+        # Sort each CPR block separately so the blank rows between input CPRs stay in place.
         separator = income_df.isna().all(axis=1)
         income_df = pd.concat(
             (
