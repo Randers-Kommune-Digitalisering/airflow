@@ -192,14 +192,14 @@ def process_social_frikort() -> None:
         excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, report_fields=report_fields, address_rows=address_rows)
         context = get_current_context()
         report_date = context["logical_date"].in_timezone(context["dag"].timezone).date().isoformat()
-        report_filename = f"SocialFrikort_{start_month}_til_{end_month}_{report_date}.xlsx"
+        report_filename = f"Social_Frikort_{start_month}_til_{end_month}_{report_date}.xlsx"
 
         email_sender = EmailSender(smtp_server=smtp_server)
         email_sender.send_email(
             sender=sender,
             recipients=recipients,
-            subject=f"Social Frikort indkomstoplysninger ({start_month} -> {end_month})",
-            body="Indkomstoplysninger fra SKAT er vedhæftet som Excel.",
+            subject=f"Social Frikort: Indkomstoplysninger + Adresse Historik ({start_month} -> {end_month})",
+            body="Indkomstoplysninger + Adresse Historik er vedhæftet som Excel.",
             attachments=[(report_filename, excel_bytes)],
         )
         logger.info("Social Frikort report sent successfully.")
