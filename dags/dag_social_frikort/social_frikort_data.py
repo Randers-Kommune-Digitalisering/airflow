@@ -248,6 +248,10 @@ def write_social_frikort_report_excel_bytes(
         ):
             frame.to_excel(writer, index=False, sheet_name=sheet_name)
             worksheet = writer.sheets[sheet_name]
+            for row in worksheet.iter_rows():
+                for cell in row:
+                    if cell.data_type == "f":
+                        cell.data_type = "s"
             worksheet.freeze_panes = "A2"
             worksheet.auto_filter.ref = worksheet.dimensions
 
