@@ -67,10 +67,10 @@ def process_social_frikort() -> None:
 
     # Get and validate runtime configurations from Airflow Variables
     skat_client_config = Variable.get("skat_client_config", deserialize_json=True)
-    runtime_config = Variable.get("social_frikort_runtime_config", deserialize_json=True)
+    social_frikort_runtime_config = Variable.get("social_frikort_runtime_config", deserialize_json=True)
     if not isinstance(skat_client_config, dict):
         raise AirflowFailException("SKAT client configuration must be a JSON object.")
-    if not isinstance(runtime_config, dict):
+    if not isinstance(social_frikort_runtime_config, dict):
         raise AirflowFailException("Social Frikort runtime configuration must be a JSON object.")
 
     skat_required_keys = (
@@ -91,7 +91,7 @@ def process_social_frikort() -> None:
     adgang_formaal_type_kode = skat_client_config.get("adgang_formaal_type_kode")
 
     runtime_required_keys = ("sender_email", "recipient_emails", "smtp_server", "imap_server")
-    missing_runtime_keys = _get_missing_or_empty_keys(runtime_config, runtime_required_keys)
+    missing_runtime_keys = _get_missing_or_empty_keys(social_frikort_runtime_config, runtime_required_keys)
     if missing_runtime_keys:
         raise AirflowFailException(
             "Social Frikort runtime configuration is missing required keys: "
@@ -99,10 +99,10 @@ def process_social_frikort() -> None:
         )
 
     report_fields = get_social_frikort_report_fields()
-    sender = runtime_config.get("sender_email")
-    recipients = runtime_config.get("recipient_emails")
-    smtp_server = runtime_config.get("smtp_server")
-    imap_server = runtime_config.get("imap_server")
+    sender = social_frikort_runtime_config.get("sender_email")
+    recipients = social_frikort_runtime_config.get("recipient_emails")
+    smtp_server = social_frikort_runtime_config.get("smtp_server")
+    imap_server = social_frikort_runtime_config.get("imap_server")
 
     social_frikort_imap_conn = BaseHook.get_connection("social_frikort_imap")
     if not all((social_frikort_imap_conn.login, social_frikort_imap_conn.password, imap_server)):
@@ -124,6 +124,7 @@ def process_social_frikort() -> None:
     logger.info(f"Found attachment: {filename} (UID: {uid.decode()}) with size {len(content_bytes)} bytes")
 
     try:
+        # Expected input file format: an Excel sheet where CPR numbers are in the "Cprnr." column
         cpr_column = "Cprnr."
         input_df = pd.read_excel(
             io.BytesIO(content_bytes),
@@ -204,5 +205,6 @@ def process_social_frikort() -> None:
     except Exception as e:
         raise AirflowFailException("Failed to process Social Frikort report") from e
     finally:
+        # Ensure to delete the processed input email
         email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
         logger.info("Deleted processed Social Frikort input email from INBOX.")
