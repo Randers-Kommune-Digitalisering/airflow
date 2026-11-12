@@ -34,6 +34,7 @@ AUTH_ROLES_MAPPING = {
     "Fleksjobrefusion": ["Fleksjobrefusion"],
     "Jobindsats": ["Jobindsats"],
     "Absence": ["Absence"],
+    "Social": ["Social"],
 }
 
 PROVIDER_NAME = "keycloak"
