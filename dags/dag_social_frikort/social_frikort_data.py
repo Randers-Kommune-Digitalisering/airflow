@@ -1,13 +1,18 @@
 import io
-from typing import Any, Iterator
-
 import pandas as pd
+from typing import Any, Iterator
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
 from openpyxl.utils import get_column_letter
 
 
 def get_social_frikort_report_fields() -> dict[str, str]:
+    """
+    Get the configured report column names and their blanket field identifiers.
+
+    :return: Mapping of report column names to blanket field identifiers.
+    :raises AirflowFailException: If the configuration or field mapping is invalid.
+    """
     config = Variable.get("social_frikort_report_config", deserialize_json=True)
     if not isinstance(config, dict):
         raise AirflowFailException("Socialt Frikort report configuration must be a JSON object.")
@@ -28,17 +33,101 @@ def get_social_frikort_report_fields() -> dict[str, str]:
     return fields
 
 
-def social_frikort_report_columns(report_fields: dict[str, str]) -> list[str]:
-    return ["cpr", "IndkomstPersonGruppeDispositionDato", "AngivelsePeriode", *report_fields]
+def social_frikort_income_columns(report_fields: dict[str, str]) -> list[str]:
+    """
+    Get income report columns in worksheet order.
+
+    :param report_fields: Mapping of report column names to blanket field identifiers.
+    :return: CPR and date columns followed by the configured report columns.
+    """
+    return ["CPR", "IndkomstPersonGruppeDispositionDato", "AngivelsePeriode", *report_fields]
+
+
+def social_frikort_address_columns() -> list[str]:
+    """
+    Get address report columns in worksheet order.
+
+    :return: List of CPR, address, and moving date columns.
+    """
+    return [
+        "CPR", "AdresseType", "StandardAdresse", "Postnummer",
+        "Vejnavn", "Husnummer", "Tilflytningsdato", "Fraflytningsdato",
+        "Etage", "Sidedoer", "Postdistrikt"
+    ]
+
+
+def extract_social_frikort_address_rows(
+    payload: dict[str, Any], cpr: str
+) -> list[dict[str, Any]]:
+    """
+    Extract the current address followed by historical addresses for one CPR.
+
+    :param payload: Address response containing current and historical addresses.
+    :param cpr: CPR to include in each address row.
+    :return: Address rows, or one CPR-only row if no addresses are available.
+    """
+    address = payload.get("adresse") or {}
+    rows: list[dict[str, Any]] = []
+    current = address.get("aktuelAdresse")
+    if isinstance(current, dict):
+        rows.append({
+            "CPR": cpr,
+            "AdresseType": "Aktuel",
+            "StandardAdresse": current.get("standardadresse"),
+            "Postnummer": current.get("postnummer"),
+            "Tilflytningsdato": _address_date(value=current.get("tilflytningsdato")),
+            "Postdistrikt": current.get("postdistrikt")
+        })
+
+    for historical in address.get("adresseHistorik") or []:
+        if not isinstance(historical, dict):
+            continue
+        rows.append({
+            "CPR": cpr,
+            "AdresseType": "Historisk",
+            "Vejnavn": historical.get("vejnavn"),
+            "Husnummer": historical.get("husnummer"),
+            "Tilflytningsdato": _address_date(value=historical.get("tilflytningsdato")),
+            "Fraflytningsdato": _address_date(value=historical.get("fraflytningsdato")),
+            "Postnummer": historical.get("postnummer"),
+            "Etage": historical.get("etage"),
+            "Sidedoer": historical.get("sidedoer"),
+            "Postdistrikt": historical.get("postdistrikt"),
+        })
+
+    return rows or [{"CPR": cpr}]
+
+
+def _address_date(value: Any) -> str | None:
+    """
+    Extract the date part of an address date value.
+
+    :param value: Address date mapping containing a dato value, or another value.
+    :return: Date string without the time component, or None if unavailable.
+    """
+    date = value.get("dato") if isinstance(value, dict) else None
+    return str(date).split("T")[0] if date else None
 
 
 def _coerce_to_list(value: Any) -> list[Any]:
+    """
+    Coerce an optional scalar or list value into a list.
+
+    :param value: A single value, list of values, or None.
+    :return: Empty list for None, the original list, or a single-item list.
+    """
     if value is None:
         return []
     return value if isinstance(value, list) else [value]
 
 
 def _iter_blanket_tree(blanket: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """
+    Traverse a blanket and its UnderAngivelseSamling children depth-first.
+
+    :param blanket: Root blanket node.
+    :return: Iterator of blanket nodes, starting with the root.
+    """
     yield blanket
     for child in _coerce_to_list(value=blanket.get("UnderAngivelseSamling")):
         if isinstance(child, dict):
@@ -46,8 +135,15 @@ def _iter_blanket_tree(blanket: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 
 def _extract_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, Any]:
+    """
+    Extract configured field values from a blanket tree.
+
+    :param blanket: Root blanket node containing fields and child blankets.
+    :param field_ids: Blanket field identifiers to include.
+    :return: Mapping of matching field identifiers to their values.
+    """
     fields: dict[str, Any] = {}
-    for node in _iter_blanket_tree(blanket):
+    for node in _iter_blanket_tree(blanket=blanket):
         for felt in _coerce_to_list(value=node.get("AngivelseFeltSamling")):
             if not isinstance(felt, dict):
                 continue
@@ -63,7 +159,16 @@ def _extract_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, A
 def extract_social_frikort_income_rows(
     payload: dict[str, Any], report_fields: dict[str, str]
 ) -> list[dict[str, Any]]:
-    """Extract CPR, dates and configured income fields from a SKAT response."""
+    """
+    Extract CPR, dates, and configured income fields from a SKAT response.
+
+    Traverse people, income entries, periods, and blanket trees, returning a
+    row for each declaration containing at least one configured field.
+
+    :param payload: Raw response from IndkomstOplysningPersonHent_O.
+    :param report_fields: Mapping of report column names to blanket field identifiers.
+    :return: Income report rows, or an empty list if no matching fields are found.
+    """
     if not isinstance(payload, dict):
         return []
 
@@ -89,7 +194,7 @@ def extract_social_frikort_income_rows(
                     ((period.get("AngivelsePeriodeStruktur") or {}).get("AngivelsePeriode") or {})
                     .get("Items")
                 )
-                period_items = _coerce_to_list(period_items)
+                period_items = _coerce_to_list(value=period_items)
                 period_from = str(period_items[0]).split("T")[0] if period_items and period_items[0] else None
                 period_to = str(period_items[1]).split("T")[0] if len(period_items) > 1 and period_items[1] else None
                 declaration_period = (
@@ -105,7 +210,7 @@ def extract_social_frikort_income_rows(
                     if values:
                         rows.append(
                             {
-                                "cpr": cpr,
+                                "CPR": cpr,
                                 "IndkomstPersonGruppeDispositionDato": disposition_date,
                                 "AngivelsePeriode": declaration_period,
                                 **{
@@ -119,13 +224,24 @@ def extract_social_frikort_income_rows(
 
 
 def write_social_frikort_report_excel_bytes(
-    rows: list[dict[str, Any]], report_fields: dict[str, str]
+    rows: list[dict[str, Any]], report_fields: dict[str, str],
+    address_rows: list[dict[str, Any]],
 ) -> bytes:
-    """Create an Excel report containing only the income information worksheet."""
-    report_df = pd.DataFrame(rows, columns=social_frikort_report_columns(report_fields))
-    if not report_df.empty:
-        separator = report_df.isna().all(axis=1)
-        report_df = pd.concat(
+    """
+    Write the Socialt Frikort report to Excel bytes with two sheets.
+
+    Sheet 1: Indkomstoplysninger.
+    Sheet 2: Bobæl (with blank rows separating CPR groups).
+
+    :param rows: Extracted income report rows.
+    :param report_fields: Mapping of report column names to blanket field identifiers.
+    :param address_rows: Current and historical address rows grouped by CPR.
+    :return: Excel file as bytes.
+    """
+    income_df = pd.DataFrame(rows, columns=social_frikort_income_columns(report_fields=report_fields))
+    if not income_df.empty:
+        separator = income_df.isna().all(axis=1)
+        income_df = pd.concat(
             (
                 group.sort_values(
                     "IndkomstPersonGruppeDispositionDato",
@@ -134,21 +250,31 @@ def write_social_frikort_report_excel_bytes(
                     na_position="last",
                     key=lambda dates: pd.to_datetime(dates, format="%Y-%m-%d", errors="raise"),
                 )
-                for _, group in report_df.groupby(separator.shift(fill_value=False).cumsum(), sort=False)
+                for _, group in income_df.groupby(separator.shift(fill_value=False).cumsum(), sort=False)
             ),
             ignore_index=True,
         )
+    separated_address_rows: list[dict[str, Any]] = []
+    for address_row in address_rows:
+        if separated_address_rows and address_row["CPR"] != separated_address_rows[-1].get("CPR"):
+            separated_address_rows.append({})
+        separated_address_rows.append(address_row)
+    address_df = pd.DataFrame(separated_address_rows, columns=social_frikort_address_columns())
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        report_df.to_excel(writer, index=False, sheet_name="Indkomstoplysninger")
-        worksheet = writer.sheets["Indkomstoplysninger"]
-        worksheet.freeze_panes = "A2"
-        worksheet.auto_filter.ref = worksheet.dimensions
+        for sheet_name, frame in (
+            ("Indkomstoplysninger", income_df),
+            ("Adresse Historik", address_df),
+        ):
+            frame.to_excel(writer, index=False, sheet_name=sheet_name)
+            worksheet = writer.sheets[sheet_name]
+            worksheet.freeze_panes = "A2"
+            worksheet.auto_filter.ref = worksheet.dimensions
 
-        for column_index, column_name in enumerate(report_df.columns, start=1):
-            values = report_df[column_name].fillna("").astype(str)
-            content_width = values.map(len).max() if not values.empty else 0
-            width = max(int(content_width), len(column_name)) + 2
-            worksheet.column_dimensions[get_column_letter(column_index)].width = min(width, 60)
+            for column_index, column_name in enumerate(frame.columns, start=1):
+                values = frame[column_name].fillna("").astype(str)
+                content_width = values.map(len).max() if not values.empty else 0
+                width = max(int(content_width), len(column_name)) + 2
+                worksheet.column_dimensions[get_column_letter(column_index)].width = min(width, 60)
 
     return output.getvalue()

@@ -1,18 +1,19 @@
 import io
 import logging
 import re
-from typing import Any
-
 import pandas as pd
+from typing import Any
 from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from rkdigi.email_handling import EmailReader, EmailSender
+
 from dag_social_frikort.social_frikort_data import (
+    extract_social_frikort_address_rows,
     extract_social_frikort_income_rows,
     get_social_frikort_report_fields,
-    social_frikort_report_columns,
+    social_frikort_income_columns,
     write_social_frikort_report_excel_bytes,
 )
 from utils.mail_attachments import find_latest_attachment
@@ -60,7 +61,7 @@ def _resolve_month_interval() -> tuple[str, str]:
 
 
 def process_social_frikort() -> None:
-    """Read CPRs from the Social Frikort mailbox and email a one-sheet SKAT report."""
+    """Read CPRs from the mailbox and email income and address information."""
 
     logger.info("Starting Social Frikort processing.")
 
@@ -103,7 +104,6 @@ def process_social_frikort() -> None:
     smtp_server = runtime_config.get("smtp_server")
     imap_server = runtime_config.get("imap_server")
 
-    # Read mailbox username and password from the Airflow connection (host lives in the runtime config)
     social_frikort_imap_conn = BaseHook.get_connection("social_frikort_imap")
     if not all((social_frikort_imap_conn.login, social_frikort_imap_conn.password, imap_server)):
         raise AirflowFailException("Social Frikort IMAP credentials are not configured.")
@@ -141,8 +141,10 @@ def process_social_frikort() -> None:
 
         from utils.kombit import TempClientCert
         from kombit_client.integrations.sf0770a import SKATForwardEIndkomstClient
+        from kombit_client.integrations.sf1520 import PersonBaseDataExtendedClient
 
         report_rows: list[dict[str, Any]] = []
+        address_rows: list[dict[str, Any]] = []
         with TempClientCert() as client_cert_path:
             skat_client = SKATForwardEIndkomstClient(
                 virksomhed_se_nummer_identifikator=virksomhed_se_nummer_identifikator,
@@ -151,9 +153,13 @@ def process_social_frikort() -> None:
                 adgang_formaal_type_kode=adgang_formaal_type_kode,
                 client_certificate_file_path=client_cert_path,
             )
+            person_client = PersonBaseDataExtendedClient(
+                client_certificate_file_path=client_cert_path,
+            )
 
             total_cprs = len(cpr_list)
-            for index, cpr in enumerate(cpr_list, start=1):
+            for idx, cpr in enumerate(cpr_list, start=1):
+                logger.info(f"Processing CPR {idx}/{total_cprs}")
                 try:
                     payload = skat_client.indkomstoplysninger_laes(
                         person_civil_registration_identifier=cpr,
@@ -162,24 +168,26 @@ def process_social_frikort() -> None:
                     )
                     rows = extract_social_frikort_income_rows(payload=payload, report_fields=report_fields)
                 except Exception as error:
-                    logger.error(
-                        "SKAT lookup failed for CPR row %s/%s (%s); CPR will be retained with empty income fields.",
-                        index,
-                        total_cprs,
-                        type(error).__name__,
-                    )
+                    logger.error(f"SKAT lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained with empty income fields.")
                     rows = []
 
                 report_rows.extend(rows or [{
                     column: cpr if column == "cpr" else None
-                    for column in social_frikort_report_columns(report_fields)
+                    for column in social_frikort_income_columns(report_fields)
                 }])
-                if index != total_cprs:
+                if idx != total_cprs:
                     report_rows.append({
-                        column: None for column in social_frikort_report_columns(report_fields)
+                        column: None for column in social_frikort_income_columns(report_fields)
                     })
 
-        excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, report_fields=report_fields)
+                try:
+                    person_payload = person_client.person_lookup(pnr=cpr)
+                    address_rows.extend(extract_social_frikort_address_rows(payload=person_payload, cpr=cpr))
+                except Exception as error:
+                    logger.error(f"Address lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained without address.")
+                    address_rows.append({"cpr": cpr})
+
+        excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, report_fields=report_fields, address_rows=address_rows)
         context = get_current_context()
         report_date = context["logical_date"].in_timezone(context["dag"].timezone).date().isoformat()
         report_filename = f"SocialFrikort_{start_month}_til_{end_month}_{report_date}.xlsx"
