@@ -1,6 +1,5 @@
 import io
 import logging
-import re
 import pandas as pd
 from typing import Any
 from airflow.exceptions import AirflowFailException
@@ -18,46 +17,9 @@ from dag_social_frikort.social_frikort_data import (
 )
 from utils.mail_attachments import find_latest_attachment
 from utils.cpr_excel import extract_cprs
+from utils.config_validation import get_missing_or_empty_keys, resolve_month_interval
 
 logger = logging.getLogger(__name__)
-
-
-def _get_missing_or_empty_keys(config: dict, required_keys: tuple[str, ...]) -> list[str]:
-    """
-    Return required keys that are missing or have an empty value.
-
-    :param config: Configuration dictionary to validate.
-    :param required_keys: Keys that must be present and non-empty.
-    :return: Missing/empty key names.
-    """
-    return [key for key in required_keys if not config.get(key)]
-
-
-def _resolve_month_interval() -> tuple[str, str]:
-    """
-    Resolve and validate month interval from DAG runtime params.
-
-    :return: Tuple containing (start_month, end_month).
-    :raises AirflowFailException: If required params are missing or the interval is invalid.
-    """
-    ctx = get_current_context()
-    start_month = (ctx.get("params") or {}).get("start_month")
-    end_month = (ctx.get("params") or {}).get("end_month")
-
-    if not start_month or not end_month:
-        raise AirflowFailException("Need to specify both start_month and end_month (YYYYMM).")
-
-    start_month = str(start_month).strip()
-    end_month = str(end_month).strip()
-
-    regex_pattern = r"^\d{4}(?:0[1-9]|1[0-2])$"
-    if not (re.fullmatch(regex_pattern, start_month) and re.fullmatch(regex_pattern, end_month)):
-        raise AirflowFailException("start_month and end_month must be in YYYYMM format.")
-
-    if start_month > end_month:
-        raise AirflowFailException("start_month must not be after end_month.")
-
-    return start_month, end_month
 
 
 def process_social_frikort() -> None:
@@ -79,7 +41,7 @@ def process_social_frikort() -> None:
          "abonnent_type_kode",
          "adgang_formaal_type_kode",
     )
-    missing_skat_keys = _get_missing_or_empty_keys(skat_client_config, skat_required_keys)
+    missing_skat_keys = get_missing_or_empty_keys(skat_client_config, skat_required_keys)
     if missing_skat_keys:
         raise AirflowFailException(
             f"SKAT client configuration is missing required keys: {', '.join(missing_skat_keys)}"
@@ -91,7 +53,7 @@ def process_social_frikort() -> None:
     adgang_formaal_type_kode = skat_client_config.get("adgang_formaal_type_kode")
 
     runtime_required_keys = ("sender_email", "recipient_emails", "smtp_server", "imap_server")
-    missing_runtime_keys = _get_missing_or_empty_keys(social_frikort_runtime_config, runtime_required_keys)
+    missing_runtime_keys = get_missing_or_empty_keys(social_frikort_runtime_config, runtime_required_keys)
     if missing_runtime_keys:
         raise AirflowFailException(
             "Social Frikort runtime configuration is missing required keys: "
@@ -136,7 +98,7 @@ def process_social_frikort() -> None:
         if not cpr_list:
             raise AirflowFailException("No CPR values found in the Social Frikort Excel file.")
 
-        start_month, end_month = _resolve_month_interval()
+        start_month, end_month = resolve_month_interval()
 
         logger.info(f"Social Frikort date range: {start_month} -> {end_month}")
 
