@@ -92,7 +92,7 @@ def process_arbejdsfortjeneste() -> None:
     # Find the newest matching Excel attachment in the mailbox
     found = find_latest_attachment(
         email_reader=email_reader,
-        filename_prefixes="Liste",
+        filename_prefixes=("Liste",),
     )
 
     if not found:

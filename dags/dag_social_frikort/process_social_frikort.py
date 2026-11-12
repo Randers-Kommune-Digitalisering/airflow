@@ -75,9 +75,9 @@ def process_social_frikort() -> None:
         imap_server=imap_server,
     )
     found = find_latest_attachment(
-            email_reader=email_reader,
-            filename_prefixes="Social",
-        )
+        email_reader=email_reader,
+        filename_prefixes=("Social",),
+    )
     if not found:
         raise AirflowFailException("No matching CPR-list attachment found in the mailbox.")
 
