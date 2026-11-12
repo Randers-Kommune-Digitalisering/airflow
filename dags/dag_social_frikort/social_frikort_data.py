@@ -1,7 +1,7 @@
 import io
 import pandas as pd
 from decimal import Decimal, InvalidOperation
-from typing import Any, Iterator
+from typing import Any
 from airflow.exceptions import AirflowFailException
 from airflow.models import Variable
 from openpyxl.utils import get_column_letter
@@ -122,39 +122,34 @@ def _coerce_to_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [value]
 
 
-def _iter_blanket_tree(blanket: dict[str, Any]) -> Iterator[dict[str, Any]]:
+def _extract_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, list[Any]]:
     """
-    Traverse a blanket and its UnderAngivelseSamling children depth-first.
-
-    :param blanket: Root blanket node.
-    :return: Iterator of blanket nodes, starting with the root.
-    """
-    yield blanket
-    for child in _coerce_to_list(value=blanket.get("UnderAngivelseSamling")):
-        if isinstance(child, dict):
-            yield from _iter_blanket_tree(child)
-
-
-def _extract_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, Any]:
-    """
-    Extract configured field values from a blanket tree.
+    Collect independent field values, preferring child values over their parent.
 
     :param blanket: Root blanket node containing fields and child blankets.
     :param field_ids: Blanket field identifiers to include.
-    :return: Mapping of matching field identifiers to their values.
+    :return: Mapping of matching field identifiers to values from sibling branches.
     """
-    fields: dict[str, Any] = {}
-    for node in _iter_blanket_tree(blanket=blanket):
-        for felt in _coerce_to_list(value=node.get("AngivelseFeltSamling")):
-            if not isinstance(felt, dict):
-                continue
-            field_id = (
-                (felt.get("BlanketFeltEnhedStruktur") or {})
-                .get("BlanketFeltNummerIdentifikator")
-            )
-            if str(field_id) in field_ids:
-                # Later matches in nested blankets replace earlier values for the same field ID.
-                fields[str(field_id)] = felt.get("AngivelseFeltIndholdTekst")
+    own_fields: dict[str, Any] = {}
+    for felt in _coerce_to_list(value=blanket.get("AngivelseFeltSamling")):
+        if not isinstance(felt, dict):
+            continue
+        field_id = (
+            (felt.get("BlanketFeltEnhedStruktur") or {})
+            .get("BlanketFeltNummerIdentifikator")
+        )
+        if str(field_id) in field_ids:
+            own_fields[str(field_id)] = felt.get("AngivelseFeltIndholdTekst")
+
+    fields: dict[str, list[Any]] = {}
+    for child in _coerce_to_list(value=blanket.get("UnderAngivelseSamling")):
+        if not isinstance(child, dict):
+            continue
+        for field_id, values in _extract_fields(blanket=child, field_ids=field_ids).items():
+            fields.setdefault(field_id, []).extend(values)
+
+    for field_id, value in own_fields.items():
+        fields.setdefault(field_id, [value])
     return fields
 
 
@@ -217,7 +212,10 @@ def extract_social_frikort_income_total(
                     if not isinstance(declaration, dict):
                         continue
                     values = _extract_fields(blanket=declaration, field_ids=field_ids)
-                    total += sum((_income_amount(value) for value in values.values()), Decimal(0))
+                    total += sum(
+                        (_income_amount(value) for field_values in values.values() for value in field_values),
+                        Decimal(0),
+                    )
 
     return total
 
