@@ -145,7 +145,7 @@ def process_social_frikort() -> None:
                     address_rows.extend(extract_social_frikort_address_rows(payload=person_payload, cpr=cpr))
                 except Exception as error:
                     logger.error(f"Address lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained without address.")
-                    address_rows.append({"cpr": cpr})
+                    address_rows.append({"CPR": cpr})
 
         excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, address_rows=address_rows)
         context = get_current_context()
