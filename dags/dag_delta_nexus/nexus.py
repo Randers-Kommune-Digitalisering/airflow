@@ -25,9 +25,9 @@ class ProfessionalDuplicateSkipped(Exception):
 @dataclass(frozen=True)
 class DeltaUser:
     """User identifiers supplied by Delta for Nexus synchronization."""
-    ad_guid: str
-    username: str
-    upn: str
+    ad_guid: str | None
+    username: str | None
+    upn: str | None
 
 
 @dataclass(frozen=True)
@@ -50,11 +50,13 @@ class DeltaPerson:
     def from_dict(cls, data: dict) -> "DeltaPerson":
         """Build a person from a Delta user-details record."""
 
-        user = data["user"]
+        user = data.get("user")
+        if user is None:
+            user = {}
         primary = data.get("primary_adm_unit")
         return cls(
             name=data["name"],
-            user=DeltaUser(user["ADGUID"], user["UserName"], user["UserPrincipalName"]),
+            user=DeltaUser(user.get("ADGUID"), user.get("UserName"), user.get("UserPrincipalName")),
             adm_units=[DeltaAdministrativeUnit(**unit) for unit in data["adm_units"]],
             primary_adm_unit=DeltaAdministrativeUnit(**primary) if primary else None,
             job_function=data.get("job_function"),

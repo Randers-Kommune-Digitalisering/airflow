@@ -69,29 +69,42 @@ def fetch_user_details(**context) -> None:
         client_secret=nexus_conn.password,
     )
 
-    for person in nexus_persons:
+    for index, person in enumerate(nexus_persons, start=1):
         failed = False
-        try:
-            changes = nexus_client.update_existing_professional(person=person)
-        except ProfessionalStsSkipped as error:
+        missing_fields = [
+            field for field, value in (
+                ("ADGUID", person.user.ad_guid),
+                ("UserName", person.user.username),
+                ("UserPrincipalName", person.user.upn),
+            )
+            if value is None
+        ]
+        if missing_fields:
             failed = True
-            logger.error("Professional skipped after STS retry: ProfessionalWithStsSnNotFetched")
-            changes = [f"Behandling sprunget over: {failure_reason(error)}"]
-        except Exception as error:
-            failed = True
-            failed_users.append(person.user.ad_guid)
-            if isinstance(error, HTTPError) and error.response is not None:
-                logger.error(f"Professional update failed (HTTP {error.response.status_code}, content={error.response.text!r})")
-            else:
-                logger.error("Professional update failed (%s)", type(error).__name__)
-            changes = [f"Behandling mislykkedes: {failure_reason(error)}"]
+            logger.error("Skipping Delta person %d: missing user fields: %s", index, ", ".join(missing_fields))
+            changes = ["Behandling sprunget over: Manglende Delta-brugerfelter: " + ", ".join(missing_fields)]
+        else:
+            try:
+                changes = nexus_client.update_existing_professional(person=person)
+            except ProfessionalStsSkipped as error:
+                failed = True
+                logger.error("Professional skipped after STS retry: ProfessionalWithStsSnNotFetched")
+                changes = [f"Behandling sprunget over: {failure_reason(error)}"]
+            except Exception as error:
+                failed = True
+                failed_users.append(person.user.ad_guid)
+                if isinstance(error, HTTPError) and error.response is not None:
+                    logger.error(f"Professional update failed (HTTP {error.response.status_code}, content={error.response.text!r})")
+                else:
+                    logger.error("Professional update failed (%s)", type(error).__name__)
+                changes = [f"Behandling mislykkedes: {failure_reason(error)}"]
         if not changes:
             changes = ["Ingen ændringer."]
         sublist_style = ' style="color: #000; font-weight: normal;"' if failed else ""
         details = f"<ul{sublist_style}>" + "".join(f"<li>{escape(change)}</li>" for change in changes) + "</ul>"
         item_style = ' style="color: #b91c1c; font-weight: bold;"' if failed else ""
         if not show_failed_only or failed:
-            report_items.append(f"<li{item_style}>{escape(person.name)} ({escape(person.user.username)}){details}</li>")
+            report_items.append(f"<li{item_style}>{escape(person.name)} ({escape(person.user.username or 'ikke angivet')}){details}</li>")
 
     if failed_users:
         raise RuntimeError(f"Failed to update {len(failed_users)} Nexus professionals")
