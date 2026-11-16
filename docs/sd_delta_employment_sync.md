@@ -12,8 +12,10 @@ For at indlæse ansættelser fra SD skal en excelfil indlæses i Delta, Delta fo
 
 Ændringer i dataintervallet hentes fra SD, de nødvendige data hentes for ansættelserne fra SD, og en fil genereres. Filen uploades, og en rapport sendes til delta@randers.dk.
 
+Efter upload kontrollerer en Airflow-sensor importens XML-status hvert 30. sekund uden at holde en worker optaget mellem forespørgsler. Mailrapporten sendes efter statuskontrollen med samme indhold og vedhæftning som før. Importens resumé vises før proceslinket; resuméet vises med fed advarsel, hvis duplikerede, ugyldige eller afbrudte rækker er større end nul. Fejl og timeout efter 30 minutter vises samme sted uden at fejle jobbet. Uden en fil at uploade fortsætter jobbet uden statuskontrol. Rapport og vedhæftning overføres mellem opgaver via Airflow XCom.
+
 **Dataflow:**
-- Data fra SD → generér excelfil → upload filen til Delta
+- Data fra SD → generér excelfil → upload filen til Delta → afvent importstatus → send mailrapport
 
 ## Afhængigheder
 

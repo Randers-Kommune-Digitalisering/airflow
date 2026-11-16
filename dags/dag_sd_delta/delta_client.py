@@ -1,6 +1,7 @@
 import logging
 from datetime import date
 from pathlib import Path
+from xml.etree import ElementTree
 
 from airflow.hooks.base import BaseHook
 from rkdigi.token_session import ManagedOAuth2Session
@@ -34,6 +35,7 @@ class DeltaClient:
         self._query_url = f"{hook.host.rstrip('/')}/api/object/query"
         self._update_url = f"{hook.host.rstrip('/')}/api/object/update"
         self._sd_integration_url = f"{hook.host.rstrip('/')}/integration-sd/import/run-process"
+        self._process_details_url = f"{hook.host.rstrip('/')}/bpm/api/process/instance/details"
         self._initialized = True
 
     def __new__(cls, hook: BaseHook):
@@ -175,6 +177,54 @@ class DeltaClient:
             raise ValueError(f"Missing process instance id in Delta upload response: {res_json}")
 
         return str(process_instance_id)
+
+    def status_sd_excel_file(self, process_instance_id: str) -> dict[str, str]:
+        """
+        Fetches the current processing status of an uploaded Excel file.
+
+        Args:
+            process_instance_id (str): The process instance id of the uploaded file.
+
+        Returns:
+            dict: The current status and, when finished, the import summary.
+
+        Raises:
+            ValueError: If Delta returns an invalid response or a non-OK result code.
+        """
+        res = self._session.post(
+            self._process_details_url,
+            json={
+                "processInstanceId": process_instance_id,
+                "subProcessNavigationDisabled": True,
+            },
+            timeout=30,
+        )
+        res.raise_for_status()
+
+        try:
+            root = ElementTree.fromstring(res.text)
+        except ElementTree.ParseError as exc:
+            raise ValueError(f"Invalid XML status response for Delta process {process_instance_id}") from exc
+
+        if root.tag != "ProcessInstDetailsResMsg":
+            raise ValueError(f"Unexpected Delta status response for process {process_instance_id}")
+
+        code = root.findtext("./result/code")
+        if code != "OK":
+            raise ValueError(f"Delta process {process_instance_id} returned result code {code!r}")
+
+        status = root.findtext("./processInstance/status")
+        returned_id = root.findtext("./processInstance/id")
+        if not status or not returned_id:
+            raise ValueError(f"Missing process instance status or id for Delta process {process_instance_id}")
+
+        if status == "FINISHED":
+            summary = root.findtext("./processInstance/summary")
+            if not summary or not summary.strip():
+                raise ValueError(f"Missing import summary for Delta process {process_instance_id}")
+            return {"status": status, "summary": summary}
+
+        return {"status": status}
 
     def get_engagement_by_los_and_cpr(self, los: str, cpr: str, valid_date: date) -> list[dict]:
         """

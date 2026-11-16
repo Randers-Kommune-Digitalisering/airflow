@@ -10,15 +10,20 @@ from datetime import timedelta
 from pendulum import datetime, timezone
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.sensors.python import PythonSensor
 from airflow.models import Variable
 from airflow.hooks.base import BaseHook
-from airflow.utils.email import send_email
 
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
 from dag_sd_delta.sd import get_employment_on_date_df, get_person_on_date_df, get_professions_xml, get_institutions_df
 from dag_sd_delta.extract_transform import build_output_df
-from dag_sd_delta.load import upload_excel_file_to_delta
+from dag_sd_delta.load import (
+    upload_excel_file_to_delta,
+    is_sd_excel_import_finished,
+    prepare_delta_report,
+    send_delta_report,
+)
 from dag_sd_delta.delta_client import DeltaClient
 from dag_sd_delta.signflow import LogivaSignflowClient
 from dag_sd_delta.utils import validate_insts_to_import
@@ -31,7 +36,7 @@ dag_args["retry_delay"] = timedelta(minutes=5)
 logger = logging.getLogger(__name__)
 
 
-def extract_transform() -> None:
+def extract_transform() -> dict[str, str | None]:
     """Extracts authorizations from Signflow, checks them against Delta, and prepares a DataFrame with data from SD for user creation."""
     insts_to_import_raw = Variable.get("delta_sd_insts_to_import", default_var="{}")
     insts_to_import = json.loads(insts_to_import_raw)
@@ -229,16 +234,12 @@ def extract_transform() -> None:
     result["log_html"] = html_prefix + styled_log_lines + "</pre>"
 
     timestamp = pendulum.now("Europe/Copenhagen").strftime("%Y-%m-%d %H:%M:%S")
-    email_kwargs = {
-        "to": ["delta@randers.dk"],
-        "subject": f"SD Delta user creation - {timestamp}",
-        "html_content": f"{result['upload_html']}{result['log_html']}",
-    }
-    if out_file:
-        email_kwargs["files"] = [out_file]
-    send_email(**email_kwargs)
-
-    return None
+    return prepare_delta_report(
+        process_instance_id=result["process_instance_id"],
+        subject=f"SD Delta user creation - {timestamp}",
+        html_content=f"{result['upload_html']}{result['log_html']}",
+        attachment_path=out_file,
+    )
 
 
 with DAG(
@@ -255,5 +256,25 @@ with DAG(
     get_and_handle_authorizations = PythonOperator(
         task_id="get_and_handle_authorizations",
         python_callable=extract_transform,
-        do_xcom_push=False
+        show_return_value_in_logs=False,
     )
+    wait_for_import = PythonSensor(
+        task_id="wait_for_sd_excel_import",
+        python_callable=is_sd_excel_import_finished,
+        op_kwargs={
+            "process_instance_id": "{{ ti.xcom_pull(task_ids='get_and_handle_authorizations')['process_instance_id'] }}"
+        },
+        mode="reschedule",
+        poke_interval=30,
+        timeout=30 * 60,
+        retries=0,
+        soft_fail=True,
+    )
+    email_report = PythonOperator(
+        task_id="send_report",
+        python_callable=send_delta_report,
+        op_kwargs={"source_task_id": "get_and_handle_authorizations"},
+        trigger_rule="all_done",
+        do_xcom_push=False,
+    )
+    get_and_handle_authorizations >> wait_for_import >> email_report

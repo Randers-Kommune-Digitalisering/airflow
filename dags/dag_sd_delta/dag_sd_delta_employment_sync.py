@@ -7,15 +7,21 @@ from pendulum import datetime, timezone
 from airflow import DAG
 from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
+from airflow.sensors.python import PythonSensor
 from airflow.models import Variable, DagRun
 from airflow.hooks.base import BaseHook
-from airflow.utils.email import send_email
 from airflow.utils.state import DagRunState
 
 from utils.config import DEFAULT_DAG_ARGS
 from utils.custom_log import get_log_collector, get_styled_log_html
 from dag_sd_delta.extract_transform import get_and_transform_changes
-from dag_sd_delta.load import upload_excel_file_to_delta, handle_deleted_employments
+from dag_sd_delta.load import (
+    upload_excel_file_to_delta,
+    handle_deleted_employments,
+    is_sd_excel_import_finished,
+    prepare_delta_report,
+    send_delta_report,
+)
 from dag_sd_delta.delta_client import DeltaClient
 from dag_sd_delta.utils import validate_insts_to_import
 
@@ -43,7 +49,7 @@ def get_start_time_since_last_success(context: dict) -> pendulum.DateTime | None
     return last_success.data_interval_end
 
 
-def extract_transform(**context: dict) -> None:
+def extract_transform(**context: dict) -> dict[str, str | None]:
     """Fetches and validates configuration from Airflow Variables and DAG params, then starts the main flow."""
 
     # set up internal log collector to capture logs for email report
@@ -123,17 +129,12 @@ def extract_transform(**context: dict) -> None:
         result.get("deleted_log_html") or "",
         result.get("log_html") or "",
     ])
-    email_kwargs = {
-        "to": ["delta@randers.dk"],
-        "subject": email_subject,
-        "html_content": email_html,
-    }
-    report_path = result.get("report_path")
-    if report_path:
-        email_kwargs["files"] = [report_path]
-    send_email(**email_kwargs)
-
-    return None
+    return prepare_delta_report(
+        process_instance_id=result["process_instance_id"],
+        subject=email_subject,
+        html_content=email_html,
+        attachment_path=result.get("report_path"),
+    )
 
 
 with DAG(
@@ -170,5 +171,25 @@ with DAG(
     get_changes = PythonOperator(
         task_id="get_and_transform_changes",
         python_callable=extract_transform,
-        do_xcom_push=False
+        show_return_value_in_logs=False,
     )
+    wait_for_import = PythonSensor(
+        task_id="wait_for_sd_excel_import",
+        python_callable=is_sd_excel_import_finished,
+        op_kwargs={
+            "process_instance_id": "{{ ti.xcom_pull(task_ids='get_and_transform_changes')['process_instance_id'] }}"
+        },
+        mode="reschedule",
+        poke_interval=30,
+        timeout=30 * 60,
+        retries=0,
+        soft_fail=True,
+    )
+    email_report = PythonOperator(
+        task_id="send_report",
+        python_callable=send_delta_report,
+        op_kwargs={"source_task_id": "get_and_transform_changes"},
+        trigger_rule="all_done",
+        do_xcom_push=False,
+    )
+    get_changes >> wait_for_import >> email_report
