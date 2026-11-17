@@ -12,7 +12,7 @@ from airflow.sensors.base import PokeReturnValue
 from airflow.utils.email import send_email
 from requests.exceptions import RequestException
 
-from dag_sd_delta.delta_client import DeltaClient
+from dag_sd_delta.delta_client import DeltaClient, MissingImportSummaryError
 from utils.custom_log import get_log_collector, get_styled_log_html
 from dag_sd_delta.sd import employment_exists_on_date
 
@@ -145,6 +145,9 @@ def is_sd_excel_import_finished(process_instance_id: str | None) -> PokeReturnVa
                     "has_warnings": _has_import_warnings(summary),
                 },
             )
+    except MissingImportSummaryError as exc:
+        logger.info("Delta import summary not available yet for process %s: %s", process_instance_id, exc)
+        return PokeReturnValue(is_done=False)
     except (ValueError, RequestException) as exc:
         logger.warning("Delta import status check failed for process %s: %s", process_instance_id, exc)
         return PokeReturnValue(is_done=True, xcom_value={"status": "ERROR", "message": str(exc)})

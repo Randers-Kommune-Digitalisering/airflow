@@ -9,7 +9,7 @@ Henter autorisationer fra Logiva Signflow og tjekker, om der er en ansættelse i
 
 Der genereres og uploades kun en fil ti lDelta hvis der er nogle ansættelser der mangler brugere.
 
-Efter upload kontrollerer en Airflow-sensor importens XML-status hvert 30. sekund uden at holde en worker optaget mellem forespørgsler. Mailrapporten sendes efter statuskontrollen med samme indhold og vedhæftning som før. Importens resumé vises før proceslinket; resuméet vises med fed advarsel, hvis duplikerede, ugyldige eller afbrudte rækker er større end nul. Fejl og timeout efter 30 minutter vises samme sted uden at fejle jobbet. Uden en fil at uploade fortsætter jobbet uden statuskontrol. Rapport og vedhæftning overføres mellem opgaver via Airflow XCom.
+Efter upload kontrollerer en Airflow-sensor importens XML-status hvert 30. sekund uden at holde en worker optaget mellem forespørgsler. Hvis Delta melder importen færdig, men resuméet endnu mangler, fortsætter sensoren med at kontrollere indtil resuméet er tilgængeligt eller timeout efter 30 minutter. Mailrapporten sendes efter statuskontrollen med samme indhold og vedhæftning som før. Importens resumé vises før proceslinket; resuméet vises med fed advarsel, hvis duplikerede, ugyldige eller afbrudte rækker er større end nul. Andre fejl og timeout efter 30 minutter vises samme sted uden at fejle jobbet. Uden en fil at uploade fortsætter jobbet uden statuskontrol. Rapport og vedhæftning overføres mellem opgaver via Airflow XCom.
 
 ### Logiva Signflow data
 CSV-fil hentet fra Logiva Signflow er cp1252 encoded med tabs som seperator.

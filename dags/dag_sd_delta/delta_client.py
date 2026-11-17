@@ -10,6 +10,10 @@ from rkdigi.token_session import ManagedOAuth2Session
 logger = logging.getLogger(__name__)
 
 
+class MissingImportSummaryError(ValueError):
+    """Delta reports a finished import before its summary is available."""
+
+
 class DeltaClient:
     _instance: "DeltaClient | None" = None
 
@@ -221,7 +225,7 @@ class DeltaClient:
         if status == "FINISHED":
             summary = root.findtext("./processInstance/summary")
             if not summary or not summary.strip():
-                raise ValueError(f"Missing import summary for Delta process {process_instance_id}")
+                raise MissingImportSummaryError(f"Missing import summary for Delta process {process_instance_id}")
             return {"status": status, "summary": summary}
 
         return {"status": status}
