@@ -312,18 +312,21 @@ class NexusClient:
                 current_by_sync_id[org["syncId"]] = org
         return current_by_sync_id
 
-    def update_existing_professional(self, person: DeltaPerson) -> list[str]:
-        """Describe proposed changes to an existing professional in Danish."""
+    def update_existing_professional(self, person: DeltaPerson) -> tuple[list[str], set[str]]:
+        """Return Danish report messages and the messages that describe errors."""
         logger.info(f"Handling: {person.name} ({person.user.username})")
         try:
             professional = self._get_professional(person)
         except ProfessionalImportSkipped:
             logger.warning("Professional skipped: downstream STS import forbidden")
-            return ["Import fra støttesystemet blev sprunget over (adgang nægtet)."]
+            message = "Import fra støttesystemet blev sprunget over (adgang nægtet)."
+            return [message], {message}
         except ProfessionalDuplicateSkipped:
             logger.error("Professional skipped: duplicate in Nexus after retry (ProfessionalServiceDuplicateProfessionalWhenTryingToCreate)")
-            return ["Oprettelse sprunget over: brugeren findes allerede i Nexus."]
+            message = "Oprettelse sprunget over: brugeren findes allerede i Nexus."
+            return [message], {message}
         changes = []
+        errors: set[str] = set()
 
         org_by_sync_id = {org["syncId"]: org for org in self._organizations}
         desired_sync_ids = {org.uuid for org in person.adm_units} | {RANDERS_KOMMUNE_SYNC_ID}
@@ -336,7 +339,9 @@ class NexusClient:
                 json.dumps(name, ensure_ascii=False) for name in missing_names
             )
             logger.error("Delta organizations not found among active Nexus organizations: %s", quoted_names)
-            changes.append("Delta-organisationer findes ikke blandt aktive Nexus-organisationer: " + quoted_names)
+            message = "Delta-organisationer findes ikke blandt aktive Nexus-organisationer: " + quoted_names
+            changes.append(message)
+            errors.add(message)
             desired_sync_ids -= missing_sync_ids
 
         primary = person.primary_adm_unit
@@ -344,6 +349,7 @@ class NexusClient:
             message = f"Primær Delta-organisation findes ikke blandt aktive Nexus-organisationer: {json.dumps(primary.name, ensure_ascii=False)}"
             logger.error("Delta primary organization not found among active Nexus organizations: %s", primary.name)
             changes.append(message)
+            errors.add(message)
 
         current_by_sync_id = self._get_professional_organizations_by_sync_id(professional)
 
@@ -378,7 +384,9 @@ class NexusClient:
             job = next((item for item in jobs if isinstance(item, dict) and item.get("active") and isinstance(item.get("name"), str) and item["name"].casefold() == person.job_function.casefold()), None)
             if job is None:
                 logger.warning(f"Job title not found: {person.job_function!r}")
-                changes.append(f"Stillingsbetegnelse kunne ikke ændres: {person.job_function} findes ikke i Nexus.")
+                message = f"Stillingsbetegnelse kunne ikke ændres: {person.job_function} findes ikke i Nexus."
+                changes.append(message)
+                errors.add(message)
             elif config.get("professionalJob") != job:
                 old_job = config.get("professionalJob")
                 logger.info(f"Job title change pending: {(old_job.get('name') if isinstance(old_job, dict) else None)!r} -> {job['name']!r}")
@@ -390,7 +398,9 @@ class NexusClient:
             primary_organization = current_by_sync_id.get(primary.uuid)
             if primary_organization is None:
                 logger.error("Primary organization not found on Nexus professional: %s", primary.name)
-                changes.append(f"Primær organisation kunne ikke ændres: {json.dumps(primary.name, ensure_ascii=False)} findes ikke på Nexus-brugeren.")
+                message = f"Primær organisation kunne ikke ændres: {json.dumps(primary.name, ensure_ascii=False)} findes ikke på Nexus-brugeren."
+                changes.append(message)
+                errors.add(message)
             else:
                 old_primary = config.get("primaryOrganization")
                 old_primary_id = old_primary.get("id") if isinstance(old_primary, dict) else None
@@ -412,4 +422,4 @@ class NexusClient:
         if config_changed:
             self._follow(config, "update", method="put", json=config)
             logger.info("Configuration updated")
-        return changes
+        return changes, errors
