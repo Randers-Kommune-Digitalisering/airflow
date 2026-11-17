@@ -361,6 +361,9 @@ class DeltaClient:
                                     direct_primary = parent
             if not has_active_engagement:
                 continue
+            primary_adm_unit = association_primary or direct_primary or first_adm_unit
+            if primary_adm_unit is not None:
+                adm_units[primary_adm_unit["uuid"]] = primary_adm_unit
             user_details.append({
                 "user": {
                     attribute["userKey"].rsplit("-", 1)[-1]: attribute.get("value")
@@ -368,7 +371,7 @@ class DeltaClient:
                     if attribute.get("userKey")
                 },
                 "adm_units": list(adm_units.values()),
-                "primary_adm_unit": association_primary or direct_primary or first_adm_unit,
+                "primary_adm_unit": primary_adm_unit,
                 "name": name,
                 "job_function": job_function
             })
