@@ -32,8 +32,8 @@ def open_error_and_control_messages_context(page: Page) -> bool:
             "xpath=//*[@id='jbFrameset']/frame"
         )
 
-        nav_frame.locator("#fe171").click(timeout=20000)
-        nav_frame.locator("#tab_2885").click(
+        nav_frame.locator("#fe172").click(timeout=20000)
+        nav_frame.locator("#tab_2909").click(
             timeout=20000
         )
 
@@ -329,7 +329,7 @@ def run_sd_control_and_error_list_review_job(
                             )
                             page.frame_locator("#insideiframe").frame_locator(
                                 "xpath=//*[@id='jbFrameset']/frame"
-                            ).locator("#fe171").wait_for(
+                            ).locator("#fe172").wait_for(
                                 state="visible", timeout=10000
                             )
                             logger.info("Reused SD login in new browser")
