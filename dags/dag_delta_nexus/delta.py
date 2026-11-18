@@ -54,7 +54,9 @@ class DeltaClient:
 
     def get_nexus_user_uuids_for_engagements(self, engagement_uuids: list[str], valid_date: date, prod: bool = True) -> list[str]:
         """
-        Return unique UUIDs of users linked to active engagements with Nexus roles.
+        Return unique UUIDs of users linked to active engagements with Nexus roles and an ADGUID.
+
+        Users without an ADGUID are skipped so later polls can find them once it is set.
 
         :param engagement_uuids: Engagement UUIDs to look up in Delta.
         :param valid_date: Date on which the engagement and role graph is queried.
@@ -93,6 +95,7 @@ class DeltaClient:
                                     "projection": {
                                         "state": True,
                                         "identity": True,
+                                        "attributes": ["APOS-Types-User-Attribute-ADGUID"],
                                         "incomingTypeRelations": [
                                             {
                                                 "userKey": "APOS-Types-AssignedIdmRole-TypeRelation-User",
@@ -151,6 +154,12 @@ class DeltaClient:
                 user_uuid = user.get("identity", {}).get("uuid")
                 if not user_uuid:
                     continue
+                has_ad_guid = any(
+                    attribute.get("userKey") == "APOS-Types-User-Attribute-ADGUID"
+                    and isinstance(attribute.get("value"), str)
+                    and bool(attribute["value"].strip())
+                    for attribute in user.get("attributes", [])
+                )
                 has_matching_role = False
                 for assigned_role_ref in user.get("inTypeRefs", []):
                     if assigned_role_ref.get("refObjTypeUserKey") != "APOS-Types-AssignedIdmRole":
@@ -169,7 +178,7 @@ class DeltaClient:
                             break
                     if has_matching_role:
                         break
-                if has_matching_role:
+                if has_matching_role and has_ad_guid:
                     user_uuids.append(user_uuid)
 
         return list(dict.fromkeys(user_uuids))
