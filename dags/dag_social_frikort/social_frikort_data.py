@@ -23,6 +23,7 @@ def get_social_frikort_report_fields() -> dict[str, str]:
         or len(fields) != 2
         or any(
             not isinstance(name, str) or not name.strip()
+            or name in ("CPR", "Søgeperiode")
             or not isinstance(field_id, str) or not field_id.strip()
             for name, field_id in fields.items()
         )
@@ -35,13 +36,13 @@ def get_social_frikort_report_fields() -> dict[str, str]:
     return fields
 
 
-def social_frikort_income_columns() -> list[str]:
+def social_frikort_income_columns(report_fields: dict[str, str]) -> list[str]:
     """
     Get income report columns in worksheet order.
 
-    :return: CPR, search period and total income columns.
+    :return: CPR, search period and the configured income columns.
     """
-    return ["CPR", "Søgeperiode", "Samlet Indtægt"]
+    return ["CPR", "Søgeperiode", *report_fields]
 
 
 def social_frikort_address_columns() -> list[str]:
@@ -176,17 +177,17 @@ def _income_amount(value: object) -> Decimal:
     return amount
 
 
-def extract_social_frikort_income_total(
+def extract_social_frikort_income_fields(
     payload: dict[str, Any], report_fields: dict[str, str]
-) -> Decimal:
+) -> dict[str, Decimal]:
     """
-    Sum the configured income fields across the entire SKAT response.
+    Sum each configured income field across the entire SKAT response.
 
     Traverse people, income entries, periods, and blanket trees.
 
     :param payload: Raw response from IndkomstOplysningPersonHent_O.
     :param report_fields: Mapping of income names to blanket field identifiers.
-    :return: Total income, including zero when no matching fields are found.
+    :return: Income by report column, including zero for fields not found.
     """
     if not isinstance(payload, dict):
         raise AirflowFailException("Invalid SKAT income response.")
@@ -195,8 +196,9 @@ def extract_social_frikort_income_total(
     person_data = root.get("IndkomstPersonUddata") or {}
     item = person_data.get("Item") or {}
     people = _coerce_to_list(value=item.get("IndkomstOplysningPersonStruktur"))
-    total = Decimal(0)
+    totals = {name: Decimal(0) for name in report_fields}
     field_ids = set(report_fields.values())
+    names_by_id = {field_id: name for name, field_id in report_fields.items()}
 
     for person in people:
         if not isinstance(person, dict):
@@ -212,16 +214,17 @@ def extract_social_frikort_income_total(
                     if not isinstance(declaration, dict):
                         continue
                     values = _extract_fields(blanket=declaration, field_ids=field_ids)
-                    total += sum(
-                        (_income_amount(value) for field_values in values.values() for value in field_values),
-                        Decimal(0),
-                    )
+                    for field_id, field_values in values.items():
+                        totals[names_by_id[field_id]] += sum(
+                            (_income_amount(value) for value in field_values), Decimal(0)
+                        )
 
-    return total
+    return totals
 
 
 def write_social_frikort_report_excel_bytes(
     rows: list[dict[str, Any]], address_rows: list[dict[str, Any]],
+    report_fields: dict[str, str],
 ) -> bytes:
     """
     Write the Socialt Frikort report to Excel bytes with two sheets.
@@ -231,9 +234,10 @@ def write_social_frikort_report_excel_bytes(
 
     :param rows: Extracted income report rows.
     :param address_rows: Current and historical address rows grouped by CPR.
+    :param report_fields: Mapping whose names determine the income column headers.
     :return: Excel file as bytes.
     """
-    income_df = pd.DataFrame(rows, columns=social_frikort_income_columns())
+    income_df = pd.DataFrame(rows, columns=social_frikort_income_columns(report_fields))
     separated_address_rows: list[dict[str, Any]] = []
     for address_row in address_rows:
         if separated_address_rows and address_row["CPR"] != separated_address_rows[-1].get("CPR"):

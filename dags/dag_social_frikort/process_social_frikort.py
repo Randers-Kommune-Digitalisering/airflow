@@ -10,7 +10,7 @@ from rkdigi.email_handling import EmailReader, EmailSender
 
 from dag_social_frikort.social_frikort_data import (
     extract_social_frikort_address_rows,
-    extract_social_frikort_income_total,
+    extract_social_frikort_income_fields,
     get_social_frikort_report_fields,
     write_social_frikort_report_excel_bytes,
 )
@@ -130,14 +130,14 @@ def process_social_frikort() -> None:
                     )
                 except Exception as error:
                     logger.error(f"SKAT lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained with empty income fields.")
-                    income_total = None
+                    income_fields = dict.fromkeys(report_fields)
                 else:
-                    income_total = extract_social_frikort_income_total(payload=payload, report_fields=report_fields)
+                    income_fields = extract_social_frikort_income_fields(payload=payload, report_fields=report_fields)
 
                 report_rows.append({
                     "CPR": cpr,
                     "Søgeperiode": f"{start_month} - {end_month}",
-                    "Samlet Indtægt": income_total,
+                    **income_fields,
                 })
 
                 try:
@@ -147,7 +147,7 @@ def process_social_frikort() -> None:
                     logger.error(f"Address lookup failed for CPR row {idx}/{total_cprs} ({type(error).__name__}); CPR will be retained without address.")
                     address_rows.append({"CPR": cpr})
 
-        excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, address_rows=address_rows)
+        excel_bytes = write_social_frikort_report_excel_bytes(rows=report_rows, address_rows=address_rows, report_fields=report_fields)
         context = get_current_context()
         report_date = context["logical_date"].in_timezone(context["dag"].timezone).date().isoformat()
         report_filename = f"Social_Frikort_{start_month}_til_{end_month}_{report_date}.xlsx"
