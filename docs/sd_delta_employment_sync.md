@@ -10,7 +10,7 @@ Formålet med jobbet er at hente ændringer i SD, transformere dem og indlæse d
 For at indlæse ansættelser fra SD skal en excelfil indlæses i Delta, Delta forventer en fil med følgende headers:
 "Institutions-niveau", "Stamafdeling", "CPR-nummer", "Navn (for-/efternavn)", "Stillingskode nuværende", "Stillingskode niveau 2", "Startdato", "Slutdato", "Ansættelsesstatus", "Tjenestenummer", "Afdeling", "Handling"
 
-Ændringer i dataintervallet hentes fra SD, de nødvendige data hentes for ansættelserne fra SD, og en fil genereres. Filen uploades, og en rapport sendes til delta@randers.dk.
+Ændringer i dataintervallet hentes fra SD, de nødvendige data hentes for ansættelserne fra SD, og en fil genereres. Perioder for samme ansættelse (institution, CPR-nummer og tjenestenummer) sorteres efter startdato i filen. Filen uploades, og en rapport sendes til delta@randers.dk.
 
 Efter upload kontrollerer en Airflow-sensor importens XML-status hvert 30. sekund uden at holde en worker optaget mellem forespørgsler. Mailrapporten sendes efter statuskontrollen med samme indhold og vedhæftning som før. Importens resumé vises før proceslinket; resuméet vises med fed advarsel, hvis duplikerede, ugyldige eller afbrudte rækker er større end nul. Fejl og timeout efter 30 minutter vises samme sted uden at fejle jobbet. Uden en fil at uploade fortsætter jobbet uden statuskontrol. Rapport og vedhæftning overføres mellem opgaver via Airflow XCom.
 

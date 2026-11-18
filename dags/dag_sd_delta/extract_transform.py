@@ -931,6 +931,14 @@ def get_and_transform_changes(
         logger.warning("No employment changes found for any institution. Not generating an output file.")
     elif out_dfs:
         combined_out_df = pd.concat(out_dfs, ignore_index=True)
+        if not combined_out_df.empty:
+            combined_out_df["_start_date"] = combined_out_df["Startdato"].map(
+                lambda value: datetime.strptime(value, "%d.%m.%Y").date()
+            )
+            combined_out_df = combined_out_df.sort_values(
+                ["Institutions-niveau", "CPR-nummer", "Tjenestenummer", "_start_date"],
+                kind="stable",
+            ).drop(columns="_start_date")
 
         # Write result as excel file
         output_dir = Path(tempfile.gettempdir()) / "sd_delta_sync"
