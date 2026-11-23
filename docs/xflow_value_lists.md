@@ -32,7 +32,7 @@ DAG'en kører dagligt og udfører følgende trin:
 :key: | **Airflow Connections**
 
 **X-Flow API:**
-- **Connection ID:** `xflow`
+- **Connection ID:** `xflow_value_lists`
 - **Connection Type:** `HTTP`
 
 Forbindelsen bruges til at kalde X-Flow API'et.

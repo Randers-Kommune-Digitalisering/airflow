@@ -52,7 +52,7 @@ def sync_value_lists(config_text: str) -> None:
             prepared.append((str(UUID(entry["list_id"])), values))
 
     # Validate the destination connection only after all source lists are ready
-    connection = BaseHook.get_connection("xflow")
+    connection = BaseHook.get_connection("xflow_value_lists")
     if not connection.password:
         raise ValueError("xflow Connection requires a password")
 
