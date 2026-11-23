@@ -1,44 +1,131 @@
 import logging
-
-from airflow.models import Variable
+from typing import Any
+from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
-# from airflow.exceptions import AirflowFailException
-
-from dag_eindkomst.eindkomst_data import placeholder_function
+from airflow.models import Variable
+from airflow.operators.python import get_current_context
 from rkdigi.email_handling import EmailReader, EmailSender
+
+from dag_eindkomst.eindkomst_data import (
+    extract_cpr_se_pairs_from_txt,
+    extract_eindkomst_rows,
+    get_eindkomst_report_config,
+    write_eindkomst_report_excel_bytes,
+)
+from utils.mail_attachments import find_latest_attachment
+from utils.config_validation import get_missing_or_empty_keys, resolve_month_interval
 
 logger = logging.getLogger(__name__)
 
 
 def process_eindkomst() -> None:
-    """
-    Placeholder function for processing the eindkomst data.
-    """
-    logger.info("Starting to process eindkomst data...")
-    placeholder_function()
+    """Read CPRs from a text attachment and email the SKAT income report."""
 
-    # TODO: Create this Airflow Connection with the same ID and correct connection type and details
-    imap_conn = BaseHook.get_connection("eindkomst_imap")
+    logger.info("Starting eIndkomst processing")
 
-    email_reader = EmailReader(
-        email=imap_conn.login,
-        password=imap_conn.password,
-    )
-    mailboxes = email_reader.list_mailboxes()
-    logger.info(f"EmailReader initialized for connection: eindkomst_imap. Available mailboxes: {mailboxes}")
-
-    # TODO: Create this Airflow Variable with the same name and correct JSON structure containing sender_email, recipient_emails, and smtp_server
+    skat_client_config = Variable.get("skat_client_config", deserialize_json=True)
     eindkomst_runtime_config = Variable.get("eindkomst_runtime_config", deserialize_json=True)
+    if not isinstance(skat_client_config, dict):
+        raise AirflowFailException("SKAT client configuration must be a JSON object.")
+    if not isinstance(eindkomst_runtime_config, dict):
+        raise AirflowFailException("eIndkomst runtime configuration must be a JSON object.")
+
+    skat_required_keys = (
+        "virksomhed_se_nummer_identifikator", "abonnement_type_kode",
+        "abonnent_type_kode", "adgang_formaal_type_kode",
+    )
+
+    missing_skat_keys = get_missing_or_empty_keys(skat_client_config, skat_required_keys)
+    if missing_skat_keys:
+        raise AirflowFailException(
+            f"SKAT client configuration is missing required keys: {', '.join(missing_skat_keys)}"
+        )
+
+    eindkomst_required_keys = ("sender_email", "recipient_emails", "smtp_server", "imap_server")
+    missing_eindkomst_keys = get_missing_or_empty_keys(eindkomst_runtime_config, eindkomst_required_keys)
+    if missing_eindkomst_keys:
+        raise AirflowFailException(
+            f"eIndkomst runtime configuration is missing required keys: {', '.join(missing_eindkomst_keys)}"
+        )
+
+    columns, fields = get_eindkomst_report_config()
+    start_month, end_month = resolve_month_interval()
 
     sender = eindkomst_runtime_config["sender_email"]
-    recipients = eindkomst_runtime_config["recipient_emails"]
+    recipient = eindkomst_runtime_config["recipient_emails"]
     smtp_server = eindkomst_runtime_config["smtp_server"]
+    imap_server = eindkomst_runtime_config["imap_server"]
 
-    email_sender = EmailSender(smtp_server=smtp_server)
-    email_sender.send_email(
-        sender=sender,
-        recipients=recipients,
-        subject="Placeholder subject",
-        body="Placeholder body",
-        attachments=[],
+    virksomhed_se_nummer_identifikator = skat_client_config["virksomhed_se_nummer_identifikator"]
+    abonnement_type_kode = skat_client_config.get("abonnement_type_kode")
+    abonnent_type_kode = skat_client_config.get("abonnent_type_kode")
+    adgang_formaal_type_kode = skat_client_config.get("adgang_formaal_type_kode")
+
+    eindkomst_imap_conn = BaseHook.get_connection("eindkomst_imap")
+    if not eindkomst_imap_conn.login or not eindkomst_imap_conn.password:
+        raise AirflowFailException("eIndkomst IMAP credentials are not configured.")
+
+    email_reader = EmailReader(
+        email=eindkomst_imap_conn.login,
+        password=eindkomst_imap_conn.password,
+        imap_server=imap_server,
     )
+    found = find_latest_attachment(
+        email_reader=email_reader,
+        criteria="ALL",
+        extensions=(".txt",),
+        filename_prefixes=("eindkomst",))
+
+    if not found:
+        raise AirflowFailException("No eIndkomst text attachment found in the mailbox.")
+
+    uid, filename, content_bytes = found
+    logger.info(f"Found attachment: {filename} (UID: {uid.decode()}) with size {len(content_bytes)} bytes")
+
+    try:
+        cpr_se_pairs = extract_cpr_se_pairs_from_txt(content=content_bytes)
+
+        from utils.kombit import TempClientCert
+        from kombit_client.integrations.sf0770a import SKATForwardEIndkomstClient
+
+        rows: list[dict[str, Any]] = []
+        with TempClientCert() as certificate:
+            client = SKATForwardEIndkomstClient(
+                virksomhed_se_nummer_identifikator=virksomhed_se_nummer_identifikator,
+                abonnement_type_kode=abonnement_type_kode,
+                abonnent_type_kode=abonnent_type_kode,
+                adgang_formaal_type_kode=adgang_formaal_type_kode,
+                client_certificate_file_path=certificate,
+            )
+            for index, (cpr, se_number) in enumerate(cpr_se_pairs, start=1):
+                logger.info(f"Processing eIndkomst input row {index}/{len(cpr_se_pairs)}")
+                if not se_number:
+                    rows.append({"CPR": cpr})
+                    continue
+                payload = client.indkomstoplysninger_laes(
+                    person_civil_registration_identifier=cpr,
+                    soege_aar_maaned_fra_kode=start_month,
+                    soege_aar_maaned_til_kode=end_month,
+                )
+                rows.extend(extract_eindkomst_rows(payload, cpr, se_number, fields))
+
+        report_date = get_current_context()["logical_date"].in_timezone(
+            get_current_context()["dag"].timezone
+        ).date().isoformat()
+
+        report_filename = f"eIndkomst_{start_month}_til_{end_month}_{report_date}.xlsx"
+
+        EmailSender(smtp_server=smtp_server).send_email(
+            sender=sender,
+            recipients=recipient,
+            subject=f"eIndkomst: Indkomstoplysninger ({start_month} - {end_month})",
+            body="Indkomstoplysninger er vedhæftet som Excel.",
+            attachments=[(report_filename, write_eindkomst_report_excel_bytes(rows, columns))],
+        )
+        logger.info("eIndkomst report sent successfully.")
+    except Exception as error:
+        raise AirflowFailException("Failed to process eIndkomst report") from error
+    finally:
+        # Make sure to delete the processed input email
+        email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
+        logger.info("Deleted processed eIndkomst input email from INBOX.")
