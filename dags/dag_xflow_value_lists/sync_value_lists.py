@@ -30,11 +30,12 @@ def sync_value_lists(config_text: str) -> None:
     :raises ValueError: If configuration, sources or the X-Flow connection is invalid.
     """
     entries, allowed_hosts, created_by = _config(config_text)
-    # Preflight every source before writing; this session never receives the X-Flow token.
+    # Resolve sources before syncing lists, so invalid sources won't result in a partial sync
     prepared = []
     with requests.Session() as source_session:
         for entry in entries:
             origin = entry["origin"]
+            # Entries provide values inline, through an Airflow Variable, or from an approved HTTPS URL
             if origin == "values":
                 values = entry["values"]
 
@@ -50,6 +51,7 @@ def sync_value_lists(config_text: str) -> None:
 
             prepared.append((str(UUID(entry["list_id"])), values))
 
+    # Validate the destination connection only after all source lists are ready
     connection = BaseHook.get_connection("xflow")
     if not connection.password:
         raise ValueError("xflow Connection requires a password")
@@ -63,7 +65,7 @@ def sync_value_lists(config_text: str) -> None:
     with requests.Session() as destination_session:
         destination_session.headers.update({"publicApiToken": connection.password})
         for list_id, values in prepared:
-            # Match X-Flow's positional key and index format for full-list replacement.
+            # X-Flow replaces the complete list; each item needs its positional key and one-based index
             items = [
                 {"value": value, "key": str(index), "oprettetAf": created_by, "indeks": str(index)}
                 for index, value in enumerate(values, start=1)
@@ -139,20 +141,20 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
 
 def _url_values(url: str, session: requests.Session) -> list[str]:
     """
-    Fetch a bounded JSON value array without following redirects.
+    Fetch an external JSON value array without following redirects.
 
     :param url: Approved HTTPS URL to fetch.
     :param session: Requests session used for source retrieval.
     :return: Validated non-empty list of strings from the response.
     :raises ValueError: If the response redirects, is too large or contains invalid values.
     """
+    # Stream response to enforce the size limit even if the server omits Content-Length
     response = session.get(url, timeout=TIMEOUT, allow_redirects=False, stream=True)
     try:
         if 300 <= response.status_code < 400:
             raise ValueError("Source URL redirects are not allowed")
 
         response.raise_for_status()
-        # Stream to enforce the size limit even if the server omits Content-Length.
         content = bytearray()
         for chunk in response.iter_content(chunk_size=8192):
             content.extend(chunk)
