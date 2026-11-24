@@ -1,7 +1,7 @@
 import csv
 import io
 import logging
-from typing import Any
+from typing import Any, Iterator
 
 import pandas as pd
 from airflow.exceptions import AirflowFailException
@@ -100,9 +100,9 @@ def _as_list(value: Any) -> list[Any]:
 
 def _collect_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, Any]:
     """
-    Collect requested field values from a blanket and its nested blankets.
+    Collect requested field values from a single blanket.
 
-    :param blanket: Blanket node containing fields and optional child blankets.
+    :param blanket: Blanket node containing fields.
     :param field_ids: SKAT field identifiers to include.
     :return: Mapping from requested field identifiers to their raw values.
     """
@@ -114,12 +114,14 @@ def _collect_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, A
         if str(field_id) in field_ids:
             own[str(field_id)] = field.get("AngivelseFeltIndholdTekst")
 
-    collected = own.copy()
+    return own
+
+
+def _iter_blankets(blanket: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    yield blanket
     for child in _as_list(blanket.get("UnderAngivelseSamling")):
-        if not isinstance(child, dict):
-            continue
-        collected.update(_collect_fields(child, field_ids))
-    return collected
+        if isinstance(child, dict):
+            yield from _iter_blankets(child)
 
 
 def extract_eindkomst_rows(
@@ -179,26 +181,38 @@ def extract_eindkomst_rows(
                     f"{start_date} - {end_date}" if start_date and end_date else start_date or end_date
                 )
 
-                values_by_column: dict[str, Any] = {column: None for column in report_fields}
                 content = period.get("AngivelseBlanketIndholdStruktur") or {}
-
-                for declaration in _as_list(content.get("AngivelseOplysningSamling")):
-                    if not isinstance(declaration, dict):
-                        continue
-
-                    fields = _collect_fields(declaration, set(report_fields.values()))
-                    for column, field_id in report_fields.items():
-                        if field_id in fields:
-                            values_by_column[column] = fields[field_id]
-
-                rows.append({
+                base_row = {
                     "CPR": cpr,
                     "SE-Nummer": company.get("VirksomhedSENummerIdentifikator"),
                     "Tjenestenummer": period.get("AnsaettelseforholdMedarbejderIdentifikator"),
                     "IndkomstPersonGruppeDispositionDato": disposition_date,
                     "AngivelsePeriode": angivelse_periode,
-                    **values_by_column,
-                })
+                }
+                field_ids = set(report_fields.values())
+                declarations = [
+                    declaration for declaration in _as_list(content.get("AngivelseOplysningSamling"))
+                    if isinstance(declaration, dict)
+                ]
+                if not declarations:
+                    declarations = [{}]
+
+                for declaration in declarations:
+                    shared_fields: dict[str, Any] = {}
+                    income_records: list[dict[str, Any]] = []
+                    for blanket in _iter_blankets(declaration):
+                        fields = _collect_fields(blanket, field_ids)
+                        if str(blanket.get("BlanketNummerIdentifikator")) == "16001":
+                            income_records.append(fields)
+                        else:
+                            shared_fields.update(fields)
+
+                    for income_fields in income_records or [{}]:
+                        fields = {**shared_fields, **income_fields}
+                        rows.append({
+                            **base_row,
+                            **{column: fields.get(field_id) for column, field_id in report_fields.items()},
+                        })
 
     return rows
 
