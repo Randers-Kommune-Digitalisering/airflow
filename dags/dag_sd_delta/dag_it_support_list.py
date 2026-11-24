@@ -157,7 +157,7 @@ def extract_transform() -> dict[str, str]:
 
     timestamp = pendulum.now("Europe/Copenhagen").strftime("%Y-%m-%d %H:%M:%S")
     send_email(
-        to=["D-It-Supporten@randers.dk"],
+        to=["D-It-Supporten@randers.dk", "rune.aagaard.keena@randers.dk"],
         subject=f"Signflow Autorisationer - {timestamp}",
         html_content="Liste af autorisationer er vedh\u00e6ftet.",
         files=[output_file_path],
