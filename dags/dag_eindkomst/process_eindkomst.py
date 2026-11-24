@@ -75,7 +75,7 @@ def process_eindkomst() -> None:
     )
     found = find_latest_attachment(
         email_reader=email_reader,
-        criteria="ALL",
+        criteria="UNSEEN",
         extensions=(".txt",),
         filename_prefixes=("eindkomst",))
 
