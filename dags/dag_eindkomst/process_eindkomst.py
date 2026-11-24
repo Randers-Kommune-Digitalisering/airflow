@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+
 from airflow.exceptions import AirflowFailException
 from airflow.hooks.base import BaseHook
 from airflow.models import Variable
@@ -48,11 +49,13 @@ def process_eindkomst() -> None:
             f"eIndkomst runtime configuration is missing required keys: {', '.join(missing_eindkomst_keys)}"
         )
 
-    columns, fields = get_eindkomst_report_config()
+    columns, fields, column_descriptions = get_eindkomst_report_config()
     start_month, end_month = resolve_month_interval()
 
+    logger.info(f"eIndkomst date range: {start_month} -> {end_month}")
+
     sender = eindkomst_runtime_config["sender_email"]
-    recipient = eindkomst_runtime_config["recipient_emails"]
+    recipients = eindkomst_runtime_config["recipient_emails"]
     smtp_server = eindkomst_runtime_config["smtp_server"]
     imap_server = eindkomst_runtime_config["imap_server"]
 
@@ -83,7 +86,8 @@ def process_eindkomst() -> None:
     logger.info(f"Found attachment: {filename} (UID: {uid.decode()}) with size {len(content_bytes)} bytes")
 
     try:
-        cpr_se_pairs = extract_cpr_se_pairs_from_txt(content=content_bytes)
+        cpr_se_pairs = extract_cpr_se_pairs_from_txt(content_bytes)
+        logger.info(f"Extracted {len(cpr_se_pairs)} CPR/SE pairs ({len({cpr for cpr, _ in cpr_se_pairs})} unique CPRs) from eIndkomst input.")
 
         from utils.kombit import TempClientCert
         from kombit_client.integrations.sf0770a import SKATForwardEIndkomstClient
@@ -102,6 +106,7 @@ def process_eindkomst() -> None:
                 if not se_number:
                     rows.append({"CPR": cpr})
                     continue
+                # SKAT is queried by CPR, the input SE number is used to filter the response below.
                 payload = client.indkomstoplysninger_laes(
                     person_civil_registration_identifier=cpr,
                     soege_aar_maaned_fra_kode=start_month,
@@ -113,18 +118,18 @@ def process_eindkomst() -> None:
             get_current_context()["dag"].timezone
         ).date().isoformat()
 
-        report_filename = f"eIndkomst_{start_month}_til_{end_month}_{report_date}.xlsx"
+        filename = f"eIndkomst_{start_month}_til_{end_month}_{report_date}.xlsx"
 
         EmailSender(smtp_server=smtp_server).send_email(
             sender=sender,
-            recipients=recipient,
+            recipients=recipients,
             subject=f"eIndkomst: Indkomstoplysninger ({start_month} - {end_month})",
             body="Indkomstoplysninger er vedhæftet som Excel.",
-            attachments=[(report_filename, write_eindkomst_report_excel_bytes(rows, columns))],
+            attachments=[(filename, write_eindkomst_report_excel_bytes(rows, columns, column_descriptions))],
         )
         logger.info("eIndkomst report sent successfully.")
     except Exception as error:
-        raise AirflowFailException("Failed to process eIndkomst report") from error
+        raise AirflowFailException("Failed to process eIndkomst report.") from error
     finally:
         # Make sure to delete the processed input email
         email_reader.delete_email_by_uid(uid=uid, mailbox="INBOX", expunge=True)
