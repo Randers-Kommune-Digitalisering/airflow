@@ -43,7 +43,7 @@ def extract_cpr_se_pairs_from_txt(content: bytes) -> list[tuple[str, str]]:
     except UnicodeDecodeError as error:
         raise AirflowFailException("eIndkomst input must be encoded as UTF-8.") from error
 
-    logger.info("eIndkomst input decoded as UTF-8.")
+    logger.debug("eIndkomst input decoded as UTF-8.")
 
     reader = csv.reader(io.StringIO(text, newline=""), delimiter=";", strict=True)
     try:
