@@ -1,9 +1,9 @@
 from airflow import DAG
+from airflow.models.param import Param
 from airflow.operators.python import PythonOperator
 from pendulum import datetime, timezone
-from airflow.models.param import Param
-
 from utils.config import DEFAULT_DAG_ARGS
+
 from dag_eindkomst.process_eindkomst import process_eindkomst
 
 dag_args = DEFAULT_DAG_ARGS.copy()

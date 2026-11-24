@@ -6,6 +6,8 @@ from airflow.hooks.base import BaseHook
 from airflow.models import Variable
 from airflow.operators.python import get_current_context
 from rkdigi.email_handling import EmailReader, EmailSender
+from utils.config_validation import get_missing_or_empty_keys, resolve_month_interval
+from utils.mail_attachments import find_latest_attachment
 
 from dag_eindkomst.eindkomst_data import (
     extract_cpr_se_pairs_from_txt,
@@ -13,8 +15,6 @@ from dag_eindkomst.eindkomst_data import (
     get_eindkomst_report_config,
     write_eindkomst_report_excel_bytes,
 )
-from utils.mail_attachments import find_latest_attachment
-from utils.config_validation import get_missing_or_empty_keys, resolve_month_interval
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +89,8 @@ def process_eindkomst() -> None:
         cpr_se_pairs = extract_cpr_se_pairs_from_txt(content_bytes)
         logger.info(f"Extracted {len(cpr_se_pairs)} CPR/SE pairs ({len({cpr for cpr, _ in cpr_se_pairs})} unique CPRs) from eIndkomst input.")
 
-        from utils.kombit import TempClientCert
         from kombit_client.integrations.sf0770a import SKATForwardEIndkomstClient
+        from utils.kombit import TempClientCert
 
         rows: list[dict[str, Any]] = []
         with TempClientCert() as certificate:
