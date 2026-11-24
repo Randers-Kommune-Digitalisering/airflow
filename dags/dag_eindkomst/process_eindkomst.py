@@ -86,7 +86,7 @@ def process_eindkomst() -> None:
     logger.info(f"Found attachment: {filename} (UID: {uid.decode()}) with size {len(content_bytes)} bytes")
 
     try:
-        cpr_se_pairs = extract_cpr_se_pairs_from_txt(content_bytes)
+        cpr_se_pairs = extract_cpr_se_pairs_from_txt(content=content_bytes)
         logger.info(f"Extracted {len(cpr_se_pairs)} CPR/SE pairs ({len({cpr for cpr, _ in cpr_se_pairs})} unique CPRs) from eIndkomst input.")
 
         from kombit_client.integrations.sf0770a import SKATForwardEIndkomstClient
@@ -118,7 +118,7 @@ def process_eindkomst() -> None:
                 )
                 for se_number in se_numbers:
                     if se_number:
-                        rows.extend(extract_eindkomst_rows(payload, cpr, se_number, fields))
+                        rows.extend(extract_eindkomst_rows(payload=payload, cpr=cpr, se_number=se_number, report_fields=fields))
 
         report_date = get_current_context()["logical_date"].in_timezone(
             get_current_context()["dag"].timezone
@@ -131,7 +131,7 @@ def process_eindkomst() -> None:
             recipients=recipients,
             subject=f"eIndkomst: Indkomstoplysninger ({start_month} - {end_month})",
             body="Indkomstoplysninger er vedhæftet som Excel.",
-            attachments=[(filename, write_eindkomst_report_excel_bytes(rows, columns, column_descriptions))],
+            attachments=[(filename, write_eindkomst_report_excel_bytes(rows=rows, columns=columns, column_descriptions=column_descriptions))],
         )
         logger.info("eIndkomst report sent successfully.")
     except Exception as error:

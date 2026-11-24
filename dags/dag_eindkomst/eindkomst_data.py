@@ -106,7 +106,7 @@ def _collect_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, A
     :return: Mapping from requested field identifiers to their raw values.
     """
     own: dict[str, Any] = {}
-    for field in _as_list(blanket.get("AngivelseFeltSamling")):
+    for field in _as_list(value=blanket.get("AngivelseFeltSamling")):
         if not isinstance(field, dict):
             continue
         field_id = (field.get("BlanketFeltEnhedStruktur") or {}).get("BlanketFeltNummerIdentifikator")
@@ -118,9 +118,9 @@ def _collect_fields(blanket: dict[str, Any], field_ids: set[str]) -> dict[str, A
 
 def _iter_blankets(blanket: dict[str, Any]) -> Iterator[dict[str, Any]]:
     yield blanket
-    for child in _as_list(blanket.get("UnderAngivelseSamling")):
+    for child in _as_list(value=blanket.get("UnderAngivelseSamling")):
         if isinstance(child, dict):
-            yield from _iter_blankets(child)
+            yield from _iter_blankets(blanket=child)
 
 
 def extract_eindkomst_rows(
@@ -146,13 +146,13 @@ def extract_eindkomst_rows(
     item = person_data.get("Item") or {}
     rows: list[dict[str, Any]] = []
 
-    for person in _as_list(item.get("IndkomstOplysningPersonStruktur")):
+    for person in _as_list(value=item.get("IndkomstOplysningPersonStruktur")):
         if not isinstance(person, dict):
             continue
         if str(person.get("PersonCivilRegistrationIdentifier", cpr)).strip() != cpr:
             continue
 
-        for income in _as_list(person.get("IndkomstOplysningSamling")):
+        for income in _as_list(value=person.get("IndkomstOplysningSamling")):
             if not isinstance(income, dict):
                 continue
 
@@ -163,7 +163,7 @@ def extract_eindkomst_rows(
             if str(company.get("VirksomhedSENummerIdentifikator", "")).strip() != se_number:
                 continue
 
-            for period in _as_list(income.get("IndkomstLoenPeriodeSamling")):
+            for period in _as_list(value=income.get("IndkomstLoenPeriodeSamling")):
                 if not isinstance(period, dict):
                     continue
 
@@ -171,7 +171,7 @@ def extract_eindkomst_rows(
                 disposition_date = str(disposition_date).split("T")[0] if disposition_date else None
 
                 period_items = _as_list(
-                    ((period.get("AngivelsePeriodeStruktur") or {}).get("AngivelsePeriode") or {}).get("Items")
+                    value=((period.get("AngivelsePeriodeStruktur") or {}).get("AngivelsePeriode") or {}).get("Items")
                 )
                 period_dates = [str(value).split("T")[0] if value else None for value in period_items[:2]]
                 start_date = period_dates[0] if period_dates else None
@@ -190,7 +190,7 @@ def extract_eindkomst_rows(
                 }
                 field_ids = set(report_fields.values())
                 declarations = [
-                    declaration for declaration in _as_list(content.get("AngivelseOplysningSamling"))
+                    declaration for declaration in _as_list(value=content.get("AngivelseOplysningSamling"))
                     if isinstance(declaration, dict)
                 ]
                 if not declarations:
@@ -199,8 +199,8 @@ def extract_eindkomst_rows(
                 for declaration in declarations:
                     shared_fields: dict[str, Any] = {}
                     income_records: list[dict[str, Any]] = []
-                    for blanket in _iter_blankets(declaration):
-                        fields = _collect_fields(blanket, field_ids)
+                    for blanket in _iter_blankets(blanket=declaration):
+                        fields = _collect_fields(blanket=blanket, field_ids=field_ids)
                         if str(blanket.get("BlanketNummerIdentifikator")) == "16001":
                             income_records.append(fields)
                         else:
