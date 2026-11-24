@@ -101,18 +101,24 @@ def process_eindkomst() -> None:
                 adgang_formaal_type_kode=adgang_formaal_type_kode,
                 client_certificate_file_path=certificate,
             )
-            for index, (cpr, se_number) in enumerate(cpr_se_pairs, start=1):
-                logger.info(f"Processing eIndkomst input row {index}/{len(cpr_se_pairs)}")
-                if not se_number:
+            se_numbers_by_cpr: dict[str, list[str]] = {}
+            for cpr, se_number in cpr_se_pairs:
+                se_numbers_by_cpr.setdefault(cpr, []).append(se_number)
+            for index, (cpr, se_numbers) in enumerate(se_numbers_by_cpr.items(), start=1):
+                logger.info(f"Processing eIndkomst CPR {index}/{len(se_numbers_by_cpr)}")
+                if "" in se_numbers:
                     rows.append({"CPR": cpr})
+                if not any(se_numbers):
                     continue
-                # SKAT is queried by CPR, the input SE number is used to filter the response below.
+                # Fetch once per CPR, then filter for each requested SE number.
                 payload = client.indkomstoplysninger_laes(
                     person_civil_registration_identifier=cpr,
                     soege_aar_maaned_fra_kode=start_month,
                     soege_aar_maaned_til_kode=end_month,
                 )
-                rows.extend(extract_eindkomst_rows(payload, cpr, se_number, fields))
+                for se_number in se_numbers:
+                    if se_number:
+                        rows.extend(extract_eindkomst_rows(payload, cpr, se_number, fields))
 
         report_date = get_current_context()["logical_date"].in_timezone(
             get_current_context()["dag"].timezone
