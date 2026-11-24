@@ -11,7 +11,7 @@ dag_args["retries"] = 0
 
 
 with DAG(
-    dag_id="dag_eindkomst",
+    dag_id="eindkomst_income_report",
     start_date=datetime(year=2026, month=11, day=16, tz=timezone("Europe/Copenhagen")),
     schedule=None,
     catchup=False,
