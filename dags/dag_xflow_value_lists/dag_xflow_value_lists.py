@@ -8,11 +8,13 @@ from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 
+from dag_xflow_value_lists.create_value_lists import create_value_lists
 from dag_xflow_value_lists.sync_value_lists import sync_value_lists
 from utils.config import DEFAULT_DAG_ARGS
 
 
 VAR_NAME = "xflow_value_lists_config"
+CREATE_VAR_NAME = "xflow_value_lists_create_config"
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["retries"] = 1
 dag_args["retry_delay"] = timedelta(minutes=30)
@@ -29,7 +31,15 @@ def run_sync() -> None:
     if not config:
         raise ValueError(f"Variable '{VAR_NAME}' is missing or empty")
 
-    sync_value_lists(config)
+    sync_value_lists(config_text=config)
+
+
+def run_create() -> None:
+    """Create configured lists when the optional creation variable is present."""
+    config = Variable.get(CREATE_VAR_NAME, default_var=None)
+    if not config:
+        raise ValueError(f"Variable '{CREATE_VAR_NAME}' is missing or empty")
+    create_value_lists(config_text=config)
 
 
 with DAG(
@@ -45,5 +55,10 @@ with DAG(
     PythonOperator(
         task_id="sync_value_lists",
         python_callable=run_sync,
+        do_xcom_push=False,
+    )
+    PythonOperator(
+        task_id="create_value_lists",
+        python_callable=run_create,
         do_xcom_push=False,
     )

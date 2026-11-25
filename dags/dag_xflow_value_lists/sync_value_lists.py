@@ -11,7 +11,6 @@ from dag_xflow_value_lists.xflow_client import TIMEOUT, XFlowClient, _hostname, 
 
 MAX_SOURCE_BYTES = 1_000_000  # Maximum allowed size for source content in bytes
 SOURCE_FIELDS = {"values", "url", "airflow"}  # Allowed source types for value lists
-xflow_client = XFlowClient()
 
 
 def sync_value_lists(config_text: str) -> None:
@@ -23,6 +22,7 @@ def sync_value_lists(config_text: str) -> None:
     :raises ValueError: If configuration, sources or the X-Flow connection is invalid.
     """
     entries, allowed_hosts, created_by = _config(config_text=config_text)
+    xflow_client = XFlowClient()
     # Resolve sources before syncing lists, so invalid sources won't result in a partial sync
     prepared = []
     with requests.Session() as source_session:
@@ -100,13 +100,17 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
 
 
 def _url_values(url: str, session: requests.Session) -> list[str]:
+    return _values(_url_json(url, session))
+
+
+def _url_json(url: str, session: requests.Session) -> object:
     """
-    Fetch an external JSON value array without following redirects.
+    Fetch external JSON without following redirects.
 
     :param url: Approved HTTPS URL to fetch.
     :param session: Requests session used for source retrieval.
-    :return: Validated non-empty list of strings from the response.
-    :raises ValueError: If the response redirects, is too large or contains invalid values.
+    :return: Decoded JSON from the response.
+    :raises ValueError: If the response redirects, is too large or contains invalid JSON.
     """
     # Stream response to enforce the size limit even if the server omits Content-Length
     response = session.get(url, timeout=TIMEOUT, allow_redirects=False, stream=True)
@@ -121,7 +125,7 @@ def _url_values(url: str, session: requests.Session) -> list[str]:
             if len(content) > MAX_SOURCE_BYTES:
                 raise ValueError("Source URL exceeds size limit")
 
-        return _values(_json(content.decode("utf-8")))
+        return _json(content.decode("utf-8"))
     finally:
         response.close()
 
@@ -154,4 +158,3 @@ def _values(data: object) -> list[str]:
         raise ValueError("Value-list sources must be non-empty JSON arrays of non-blank strings")
 
     return data
-

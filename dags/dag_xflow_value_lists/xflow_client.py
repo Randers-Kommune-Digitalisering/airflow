@@ -1,4 +1,4 @@
-"""Validate X-Flow destinations and replace their value lists."""
+"""Validate X-Flow destinations and create or replace their value lists."""
 
 import ipaddress
 import logging
@@ -31,7 +31,14 @@ class XFlowClient:
         self._token = connection.password
 
     def replace_value_lists(self, prepared: list[tuple[str, list[str]]], created_by: str) -> None:
-        """Replace each configured list with its prepared values."""
+        """
+        Replace each X-Flow list with its complete set of prepared values.
+
+        :param prepared: Pairs of X-Flow list IDs and ordered values to send.
+        :param created_by: Creator recorded on each value-list item.
+        :return: None.
+        :raises ValueError: If X-Flow redirects a replacement request.
+        """
         with requests.Session() as session:
             session.headers.update({"publicApiToken": self._token})
             for list_id, values in prepared:
@@ -53,7 +60,63 @@ class XFlowClient:
                 finally:
                     response.close()
 
-                logger.info("Updated X-Flow value list %s with %s items", list_id, len(values))
+                logger.info(f"Updated X-Flow value list:{list_id} with {len(values)} items")
+
+    def create_value_lists(self, prepared: list[dict[str, str]]) -> None:
+        """
+        Create X-Flow lists unless a search finds an exact name match.
+
+        :param prepared: List definitions with name and description strings.
+        :return: None.
+        :raises ValueError: If X-Flow redirects or returns an invalid search response.
+        """
+        with requests.Session() as session:
+            session.headers.update({"publicApiToken": self._token})
+            for entry in prepared:
+                name = entry["name"]
+                response = session.get(  # Check if a value list with the given name already exists
+                    f"{self._base_url}/ValueList/Search",
+                    params={"name": name},
+                    timeout=TIMEOUT,
+                    allow_redirects=False,
+                )
+                try:
+                    if response.status_code == 404:
+                        matches = []
+                    else:
+                        _check_response(response)
+                        matches = response.json()
+                        if not isinstance(matches, list) or any(
+                            not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                            for item in matches
+                        ):
+                            raise ValueError("Invalid X-Flow value-list search response")
+                finally:
+                    response.close()
+
+                if any(item["name"] == name for item in matches):
+                    logger.info(f"X-Flow value list already exists: {name}, skipping creation")
+                    continue
+
+                logger.info(f"No X-Flow value list found with the configured name: {name}, creating it")
+                response = session.post(  # Create the value list if name does not already exist
+                    f"{self._base_url}/ValueList",
+                    json={"name": name, "valueType": "Text", "description": entry["description"]},
+                    timeout=TIMEOUT,
+                    allow_redirects=False,
+                )
+                try:
+                    _check_response(response)
+                finally:
+                    response.close()
+
+                logger.info(f"Created X-Flow value list {name}")
+
+
+def _check_response(response: requests.Response) -> None:
+    if 300 <= response.status_code < 400:
+        raise ValueError("X-Flow redirects are not allowed")
+    response.raise_for_status()
 
 
 def _https_url(url: str, allowed_hosts: set[str] | None = None) -> str:
