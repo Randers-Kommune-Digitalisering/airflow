@@ -1,7 +1,6 @@
 """Validate configured sources and replace X-Flow value lists."""
 
 import ipaddress
-import importlib
 import json
 import logging
 import re
@@ -10,8 +9,8 @@ from uuid import UUID
 
 import requests
 
-BaseHook = importlib.import_module("airflow.hooks.base").BaseHook
-Variable = importlib.import_module("airflow.models").Variable
+from airflow.models import Variable
+from airflow.hooks.base import BaseHook
 
 
 logger = logging.getLogger(__name__)
