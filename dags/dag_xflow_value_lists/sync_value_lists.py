@@ -28,7 +28,7 @@ def sync_value_lists(config_text: str) -> None:
     :return: None.
     :raises ValueError: If configuration, sources or the X-Flow connection is invalid.
     """
-    entries, allowed_hosts, created_by = _config(config_text)
+    entries, allowed_hosts, created_by = _config(config_text=config_text)
     # Resolve sources before syncing lists, so invalid sources won't result in a partial sync
     prepared = []
     with requests.Session() as source_session:
@@ -46,7 +46,7 @@ def sync_value_lists(config_text: str) -> None:
                 values = _values(_json(source))
 
             else:
-                values = _url_values(_https_url(entry["url"], allowed_hosts), source_session)
+                values = _url_values(url=_https_url(entry["url"], allowed_hosts), session=source_session)
 
             prepared.append((str(UUID(entry["list_id"])), values))
 
@@ -56,7 +56,7 @@ def sync_value_lists(config_text: str) -> None:
         raise ValueError("xflow Connection requires a password")
 
     base_url = connection.host
-    _https_url(base_url)
+    _https_url(url=base_url)
     parsed_base = urlsplit(base_url)
     if not re.fullmatch(r"api\.[a-z0-9-]+\.xflow\.dk", parsed_base.hostname or "") or parsed_base.path not in ("", "/"):
         raise ValueError("xflow Connection host must be an X-Flow API base URL")
@@ -94,7 +94,7 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
     :return: Sync entries, normalized allowed hosts and creator attribution.
     :raises ValueError: If the configuration or any list entry is invalid.
     """
-    config = _json(config_text)
+    config = _json(text=config_text)
     if not isinstance(config, dict) or set(config) != {"sync", "allowed_url_hosts", "created_by"}:
         raise ValueError("Configuration must contain only sync, allowed_url_hosts and created_by")
 
@@ -107,7 +107,7 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
     if not isinstance(created_by, str) or not created_by.strip():
         raise ValueError("created_by must be a non-blank string")
 
-    allowed_hosts = {_hostname(host) for host in hosts}
+    allowed_hosts = {_hostname(host=host) for host in hosts}
     seen_ids = set()
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("origin"), str) or entry["origin"] not in SOURCE_FIELDS:
@@ -127,10 +127,10 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
 
         seen_ids.add(list_id)
         if origin == "values":
-            _values(entry["values"])
+            _values(data=entry["values"])
 
         elif origin == "url":
-            _https_url(entry["url"], allowed_hosts)
+            _https_url(url=entry["url"], allowed_hosts=allowed_hosts)
 
         elif not isinstance(entry["airflow"], str) or not entry["airflow"].strip():
             raise ValueError("airflow must name a source Variable")
