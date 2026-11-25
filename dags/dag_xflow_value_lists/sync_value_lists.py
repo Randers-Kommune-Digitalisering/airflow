@@ -1,22 +1,14 @@
 """Validate configured sources and replace X-Flow value lists."""
 
-import ipaddress
-import importlib
 import json
-import logging
-import re
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
 
-BaseHook = importlib.import_module("airflow.hooks.base").BaseHook
-Variable = importlib.import_module("airflow.models").Variable
+from airflow.models import Variable
 
+from dag_xflow_value_lists.xflow_client import TIMEOUT, XFlowClient, _hostname, _https_url
 
-logger = logging.getLogger(__name__)
-HOST_PATTERN = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
-TIMEOUT = (10, 30)  # (connect timeout, read timeout) in seconds
 MAX_SOURCE_BYTES = 1_000_000  # Maximum allowed size for source content in bytes
 SOURCE_FIELDS = {"values", "url", "airflow"}  # Allowed source types for value lists
 
@@ -29,7 +21,8 @@ def sync_value_lists(config_text: str) -> None:
     :return: None.
     :raises ValueError: If configuration, sources or the X-Flow connection is invalid.
     """
-    entries, allowed_hosts, created_by = _config(config_text)
+    entries, allowed_hosts, created_by = _config(config_text=config_text)
+    xflow_client = XFlowClient()
     # Resolve sources before syncing lists, so invalid sources won't result in a partial sync
     prepared = []
     with requests.Session() as source_session:
@@ -47,44 +40,11 @@ def sync_value_lists(config_text: str) -> None:
                 values = _values(_json(source))
 
             else:
-                values = _url_values(_https_url(entry["url"], allowed_hosts), source_session)
+                values = _url_values(url=_https_url(entry["url"], allowed_hosts), session=source_session)
 
             prepared.append((str(UUID(entry["list_id"])), values))
 
-    # Validate the destination connection only after all source lists are ready
-    connection = BaseHook.get_connection("xflow_value_lists")
-    if not connection.password:
-        raise ValueError("xflow Connection requires a password")
-
-    base_url = connection.host
-    _https_url(base_url)
-    parsed_base = urlsplit(base_url)
-    if not re.fullmatch(r"api\.[a-z0-9-]+\.xflow\.dk", parsed_base.hostname or "") or parsed_base.path not in ("", "/"):
-        raise ValueError("xflow Connection host must be an X-Flow API base URL")
-
-    with requests.Session() as destination_session:
-        destination_session.headers.update({"publicApiToken": connection.password})
-        for list_id, values in prepared:
-            # X-Flow replaces the complete list; each item needs its positional key and one-based index
-            items = [
-                {"value": value, "key": str(index), "oprettetAf": created_by, "indeks": str(index)}
-                for index, value in enumerate(values, start=1)
-            ]
-            response = destination_session.put(
-                f"{base_url.rstrip('/')}/ValueList/{list_id}/Values",
-                json={"ValueListData": items},
-                timeout=TIMEOUT,
-                allow_redirects=False,
-            )
-            try:
-                if 300 <= response.status_code < 400:
-                    raise ValueError("X-Flow redirects are not allowed")
-
-                response.raise_for_status()
-            finally:
-                response.close()
-
-            logger.info("Updated X-Flow value list %s with %s items", list_id, len(values))
+    xflow_client.replace_value_lists(prepared=prepared, created_by=created_by)
 
 
 def _config(config_text: str) -> tuple[list[dict], set[str], str]:
@@ -95,7 +55,7 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
     :return: Sync entries, normalized allowed hosts and creator attribution.
     :raises ValueError: If the configuration or any list entry is invalid.
     """
-    config = _json(config_text)
+    config = _json(text=config_text)
     if not isinstance(config, dict) or set(config) != {"sync", "allowed_url_hosts", "created_by"}:
         raise ValueError("Configuration must contain only sync, allowed_url_hosts and created_by")
 
@@ -108,7 +68,7 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
     if not isinstance(created_by, str) or not created_by.strip():
         raise ValueError("created_by must be a non-blank string")
 
-    allowed_hosts = {_hostname(host) for host in hosts}
+    allowed_hosts = {_hostname(host=host) for host in hosts}
     seen_ids = set()
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("origin"), str) or entry["origin"] not in SOURCE_FIELDS:
@@ -128,10 +88,10 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
 
         seen_ids.add(list_id)
         if origin == "values":
-            _values(entry["values"])
+            _values(data=entry["values"])
 
         elif origin == "url":
-            _https_url(entry["url"], allowed_hosts)
+            _https_url(url=entry["url"], allowed_hosts=allowed_hosts)
 
         elif not isinstance(entry["airflow"], str) or not entry["airflow"].strip():
             raise ValueError("airflow must name a source Variable")
@@ -140,13 +100,17 @@ def _config(config_text: str) -> tuple[list[dict], set[str], str]:
 
 
 def _url_values(url: str, session: requests.Session) -> list[str]:
+    return _values(_url_json(url, session))
+
+
+def _url_json(url: str, session: requests.Session) -> object:
     """
-    Fetch an external JSON value array without following redirects.
+    Fetch external JSON without following redirects.
 
     :param url: Approved HTTPS URL to fetch.
     :param session: Requests session used for source retrieval.
-    :return: Validated non-empty list of strings from the response.
-    :raises ValueError: If the response redirects, is too large or contains invalid values.
+    :return: Decoded JSON from the response.
+    :raises ValueError: If the response redirects, is too large or contains invalid JSON.
     """
     # Stream response to enforce the size limit even if the server omits Content-Length
     response = session.get(url, timeout=TIMEOUT, allow_redirects=False, stream=True)
@@ -161,7 +125,7 @@ def _url_values(url: str, session: requests.Session) -> list[str]:
             if len(content) > MAX_SOURCE_BYTES:
                 raise ValueError("Source URL exceeds size limit")
 
-        return _values(_json(content.decode("utf-8")))
+        return _json(content.decode("utf-8"))
     finally:
         response.close()
 
@@ -194,57 +158,3 @@ def _values(data: object) -> list[str]:
         raise ValueError("Value-list sources must be non-empty JSON arrays of non-blank strings")
 
     return data
-
-
-def _https_url(url: str, allowed_hosts: set[str] | None = None) -> str:
-    """
-    Validate an HTTPS URL and, when provided, its allowed hostname.
-
-    :param url: URL to validate.
-    :param allowed_hosts: Exact DNS hostnames permitted for the URL.
-    :return: The validated URL.
-    :raises ValueError: If the URL is invalid or its hostname is not permitted.
-    """
-    if not isinstance(url, str):
-        raise ValueError("URL must be a string")
-
-    try:
-        parsed = urlsplit(url)
-        port = parsed.port
-        host = parsed.hostname
-    except ValueError as exc:
-        raise ValueError("Invalid HTTPS URL") from exc
-
-    if parsed.scheme != "https" or not host:
-        raise ValueError("URL must use HTTPS and have a hostname")
-
-    if parsed.username is not None or parsed.password is not None:
-        raise ValueError("URL credentials are not allowed")
-
-    if parsed.fragment or parsed.query or port not in (None, 443):
-        raise ValueError("URL cannot have a query, fragment or non-443 port")
-
-    hostname = _hostname(host)
-    if allowed_hosts is not None and hostname not in allowed_hosts:
-        raise ValueError("URL host is not in allowed_url_hosts")
-
-    return url
-
-
-def _hostname(host: str) -> str:
-    """
-    Normalize and validate a DNS hostname.
-
-    :param host: Hostname to validate.
-    :return: The lowercase hostname.
-    :raises ValueError: If the host is not a valid DNS hostname.
-    """
-    if not isinstance(host, str) or not HOST_PATTERN.fullmatch(host.lower()):
-        raise ValueError("Allowed hosts must be DNS hostnames, without a scheme or port")
-
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        return host.lower()
-
-    raise ValueError("IP addresses are not allowed")
