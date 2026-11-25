@@ -13,8 +13,8 @@ from airflow.hooks.base import BaseHook
 from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
-from dag_sd_delta.delta_client import DeltaClient
-from dag_sd_delta.signflow import LogivaSignflowClient
+from dag_it_support_authorizations_report.delta_client import DeltaClient
+from dag_it_support_authorizations_report.signflow import LogivaSignflowClient
 from utils.config import DEFAULT_DAG_ARGS
 
 dag_args = DEFAULT_DAG_ARGS.copy()
@@ -59,7 +59,7 @@ def _autosize_excel_columns(worksheet, dataframe: pd.DataFrame, padding: int = 2
 
 
 def extract_transform() -> dict[str, str]:
-    """Build IT support authorization list from Signflow enriched with Delta values and save it as an Excel file. Returns a dictionary with the file path of the saved Excel file."""
+    """Build the IT support Excel list with Delta usernames and explanations for unmatched engagements."""
     signflow_client = LogivaSignflowClient(BaseHook.get_connection("logiva_signflow"))
     delta_client = DeltaClient(BaseHook.get_connection("delta_prod"))
 
@@ -93,11 +93,13 @@ def extract_transform() -> dict[str, str]:
     out_df["Fra dato"] = out_df["Fra dato"].apply(_to_dk_date_string)
     out_df["Loginnavn(e)"] = None
     out_df["Findes ikke i Delta"] = None
+    out_df["Kommentar"] = None
 
     for idx, row in out_df.iterrows():
         from_date = _parse_dk_date(row["Fra dato"])
         if from_date is None:
             out_df.at[idx, "Findes ikke i Delta"] = "x"
+            out_df.at[idx, "Kommentar"] = "Ugyldig fra-dato; Delta kunne ikke slås op."
             continue
 
         engagements = delta_client.get_engagement_by_los_and_cpr(
@@ -108,6 +110,18 @@ def extract_transform() -> dict[str, str]:
 
         if not engagements:
             out_df.at[idx, "Findes ikke i Delta"] = "x"
+            active_engagements = delta_client.get_engagement_by_los_and_cpr(
+                los=None, cpr=str(row["CPR"]), valid_date=from_date
+            )
+            if active_engagements:
+                comment = "Aktiv ansættelse fundet for CPR, men ikke med det angivne LOS."
+            elif delta_client.get_engagement_by_los_and_cpr(
+                los=None, cpr=str(row["CPR"]), valid_date=from_date, active_only=False
+            ):
+                comment = "Ansættelse fundet for CPR, men ikke aktiv på fra-datoen."
+            else:
+                comment = "Ingen ansættelse fundet for CPR på fra-datoen."
+            out_df.at[idx, "Kommentar"] = comment
             continue
 
         usernames = sorted(
@@ -136,6 +150,7 @@ def extract_transform() -> dict[str, str]:
         "Handling",
         "Lederemail",
         "Findes ikke i Delta",
+        "Kommentar",
     ]
     out_df = out_df[[column_name for column_name in column_order if column_name in out_df.columns]]
 
@@ -165,14 +180,14 @@ def extract_transform() -> dict[str, str]:
 
 
 with DAG(
-    dag_id="it_support_list",
-    start_date=pendulum.datetime(year=2026, month=8, day=3, tz=timezone("Europe/Copenhagen")),
+    dag_id="it_support_authorizations_report",
+    start_date=pendulum.datetime(year=2026, month=11, day=25, tz=timezone("Europe/Copenhagen")),
     schedule="30 6 * * 1-5",
     render_template_as_native_obj=True,
     default_args=dag_args,
     catchup=False,
     max_active_runs=1,
-    description="Check Signflow authorizations and send IT support list with Delta details.",
+    description="Check Signflow authorizations and send an IT support report with Delta details.",
     tags=["it-support", "delta", "user", "signflow", "authorization"],
 ) as dag:
     get_and_handle_authorizations = PythonOperator(
