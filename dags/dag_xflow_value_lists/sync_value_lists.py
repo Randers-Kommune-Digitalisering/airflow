@@ -1,23 +1,17 @@
 """Validate configured sources and replace X-Flow value lists."""
 
-import ipaddress
 import json
-import logging
-import re
-from urllib.parse import urlsplit
 from uuid import UUID
 
 import requests
 
 from airflow.models import Variable
-from airflow.hooks.base import BaseHook
 
+from dag_xflow_value_lists.xflow_client import TIMEOUT, XFlowClient, _hostname, _https_url
 
-logger = logging.getLogger(__name__)
-HOST_PATTERN = re.compile(r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
-TIMEOUT = (10, 30)  # (connect timeout, read timeout) in seconds
 MAX_SOURCE_BYTES = 1_000_000  # Maximum allowed size for source content in bytes
 SOURCE_FIELDS = {"values", "url", "airflow"}  # Allowed source types for value lists
+xflow_client = XFlowClient()
 
 
 def sync_value_lists(config_text: str) -> None:
@@ -50,40 +44,7 @@ def sync_value_lists(config_text: str) -> None:
 
             prepared.append((str(UUID(entry["list_id"])), values))
 
-    # Validate the destination connection only after all source lists are ready
-    connection = BaseHook.get_connection("xflow_value_lists")
-    if not connection.password:
-        raise ValueError("xflow Connection requires a password")
-
-    base_url = connection.host
-    _https_url(url=base_url)
-    parsed_base = urlsplit(base_url)
-    if not re.fullmatch(r"api\.[a-z0-9-]+\.xflow\.dk", parsed_base.hostname or "") or parsed_base.path not in ("", "/"):
-        raise ValueError("xflow Connection host must be an X-Flow API base URL")
-
-    with requests.Session() as destination_session:
-        destination_session.headers.update({"publicApiToken": connection.password})
-        for list_id, values in prepared:
-            # X-Flow replaces the complete list; each item needs its positional key and one-based index
-            items = [
-                {"value": value, "key": str(index), "oprettetAf": created_by, "indeks": str(index)}
-                for index, value in enumerate(values, start=1)
-            ]
-            response = destination_session.put(
-                f"{base_url.rstrip('/')}/ValueList/{list_id}/Values",
-                json={"ValueListData": items},
-                timeout=TIMEOUT,
-                allow_redirects=False,
-            )
-            try:
-                if 300 <= response.status_code < 400:
-                    raise ValueError("X-Flow redirects are not allowed")
-
-                response.raise_for_status()
-            finally:
-                response.close()
-
-            logger.info("Updated X-Flow value list %s with %s items", list_id, len(values))
+    xflow_client.replace_value_lists(prepared=prepared, created_by=created_by)
 
 
 def _config(config_text: str) -> tuple[list[dict], set[str], str]:
@@ -194,56 +155,3 @@ def _values(data: object) -> list[str]:
 
     return data
 
-
-def _https_url(url: str, allowed_hosts: set[str] | None = None) -> str:
-    """
-    Validate an HTTPS URL and, when provided, its allowed hostname.
-
-    :param url: URL to validate.
-    :param allowed_hosts: Exact DNS hostnames permitted for the URL.
-    :return: The validated URL.
-    :raises ValueError: If the URL is invalid or its hostname is not permitted.
-    """
-    if not isinstance(url, str):
-        raise ValueError("URL must be a string")
-
-    try:
-        parsed = urlsplit(url)
-        port = parsed.port
-        host = parsed.hostname
-    except ValueError as exc:
-        raise ValueError("Invalid HTTPS URL") from exc
-
-    if parsed.scheme != "https" or not host:
-        raise ValueError("URL must use HTTPS and have a hostname")
-
-    if parsed.username is not None or parsed.password is not None:
-        raise ValueError("URL credentials are not allowed")
-
-    if parsed.fragment or parsed.query or port not in (None, 443):
-        raise ValueError("URL cannot have a query, fragment or non-443 port")
-
-    hostname = _hostname(host)
-    if allowed_hosts is not None and hostname not in allowed_hosts:
-        raise ValueError("URL host is not in allowed_url_hosts")
-
-    return url
-
-
-def _hostname(host: str) -> str:
-    """
-    Normalize and validate a DNS hostname.
-
-    :param host: Hostname to validate.
-    :return: The lowercase hostname.
-    :raises ValueError: If the host is not a valid DNS hostname.
-    """
-    if not isinstance(host, str) or not HOST_PATTERN.fullmatch(host.lower()):
-        raise ValueError("Allowed hosts must be DNS hostnames, without a scheme or port")
-
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        return host.lower()
-
-    raise ValueError("IP addresses are not allowed")
