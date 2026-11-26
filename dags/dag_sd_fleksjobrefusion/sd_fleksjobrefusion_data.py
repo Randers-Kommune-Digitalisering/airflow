@@ -302,7 +302,9 @@ def open_merarbejde_context(page: Page) -> bool:
         )
 
         nav_frame.locator("#fe20").click(timeout=20000)
-        nav_frame.locator("#tab_2737").click(timeout=20000)
+        nav_frame.get_by_role("link", name="Merarbejde", exact=True).click(
+            timeout=20000
+        )
 
         merarbejde_frame = page.frame_locator("#insideiframe").frame_locator(
             "xpath=//frameset[@id='innerFrameset']/frame[@name='insidemain']"
