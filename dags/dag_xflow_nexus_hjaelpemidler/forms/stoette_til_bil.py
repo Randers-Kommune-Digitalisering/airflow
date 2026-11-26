@@ -30,7 +30,7 @@ def generate_stoette_til_bil_fields(model_object: Any) -> list[Field]:
     ]
 
     if model_object.type_text is not None:
-        fields.append(Field(label="Type", field_type=FieldType.DROPDOWN, value=model_object.type))
+        fields.append(Field(label="Type", field_type=FieldType.DROPDOWN, value=model_object.type_text))
 
     if optional_contact_info:
         fields.append(Field(label="Uddyb kilde med navn, telefonnr. m.m.", field_type=FieldType.TEXT_AREA, value=optional_contact_info))

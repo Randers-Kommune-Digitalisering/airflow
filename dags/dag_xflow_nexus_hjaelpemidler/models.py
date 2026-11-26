@@ -42,7 +42,7 @@ class HjaelpemiddelData(Protocol):
 
 
 class StoetteTilBilData(HjaelpemiddelData, Protocol):
-    type: str | None
+    type_text: str | None
 
 
 class HjaelpemiddelFormData:
