@@ -15,24 +15,14 @@ logger = logging.getLogger(__name__)
 
 
 def process_gis_to_dalux() -> None:
-    gis_db = PostgresHook(postgres_conn_id="gis_db")
+    gis_db = PostgresHook(postgres_conn_id="gis_db_districts")
     dalux_hook = HttpHook(http_conn_id="dalux_api")
 
     sql = """
-        SELECT
-            id,
-            estate_id,
-            sbsys,
-            kaldenavn,
-            institutionsnavn,
-            servicedistrikt,
-            kl_anvendelsesomraade,
-            kl_ejerskab,
-            kl_bda_areal,
-            bbr_bygningsnummer,
-            ejendom_adresse,
-            ST_AsText(wkb_geometry) AS wkt
-        FROM nye_tabeller.v_kommunale_bygninger_rk_dalux
+        SELECT dalux_id, sbsys, kaldenavn, institutionsnavn, servicedistrikt,
+               kl_anvendelsesomraade, kl_ejerskab, bbr_bygningsnummer,
+               ST_AsText(wkb_geometry) AS wkt
+        FROM s03_ejendomsservice.v_kommunale_bygninger_rk_dalux
     """
     records = gis_db.get_records(sql)
     logger.info(f"Fetched {len(records)} buildings from GIS DB")

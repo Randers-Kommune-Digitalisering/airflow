@@ -37,4 +37,4 @@ Koden består af et DAG-job, der udfører følgende trin:
 
 ## Schedule
 
-Jobbet er sat op til at køre en gang om ugen.
+Jobbet er sat op til at køre en gang om ugen: "0 12 * * 0" (Søndag kl. 12:00)

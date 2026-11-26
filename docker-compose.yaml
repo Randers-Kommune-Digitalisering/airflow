@@ -11,6 +11,11 @@ x-airflow-common:
     AIRFLOW__WEBSERVER__SECRET_KEY: "supersecretkey"
     AIRFLOW__CORE__REMOTE_LOGGING: 'False'
     AIRFLOW__WEBSERVER__RBAC: 'False'
+    AIRFLOW__SMTP__SMTP_HOST: mailhog
+    AIRFLOW__SMTP__SMTP_PORT: 1025
+    AIRFLOW__SMTP__SMTP_STARTTLS: 'False'
+    AIRFLOW__SMTP__SMTP_SSL: 'False'
+    AIRFLOW__SMTP__SMTP_MAIL_FROM: airflow@local.test
     CLIENT_CERT_PRIVATE_KEY: ${CLIENT_CERT_PRIVATE_KEY}
     CLIENT_CERT_PUBLIC_KEY: ${CLIENT_CERT_PUBLIC_KEY}
     PYTHONPATH: /opt/airflow/dags/repo/dags
@@ -20,6 +25,8 @@ x-airflow-common:
   depends_on:
     airflow-postgres:
       condition: service_healthy
+    mailhog:
+      condition: service_started
 
 services:
   airflow-postgres:
@@ -73,6 +80,12 @@ services:
       POSTGRES_DB: demo
     ports:
       - "5433:5432"
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
 
 volumes:
   postgres-db-volume:

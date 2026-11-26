@@ -5,7 +5,7 @@ DEFAULT_DAG_ARGS = {
     'owner': 'all',
     'retries': 0,
     'retry_delay': timedelta(minutes=5),
-    "email": ["digitalisering@randers.dk"],
+    "email": ["udvikling@randers.dk"],
     "email_on_failure": True,
     "email_on_retry": False,
 }

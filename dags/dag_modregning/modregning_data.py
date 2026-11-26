@@ -1,85 +1,52 @@
-import fnmatch
 import io
 import logging
-from datetime import datetime, timezone
-from typing import Any
-
 import pandas as pd
-from airflow.providers.sftp.hooks.sftp import SFTPHook
+from typing import Any
+from openpyxl.utils import get_column_letter
+from airflow.models import Variable
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CPR_COLUMN = "ID-nummer"
+
+def get_excluded_ydelse_names() -> set[str]:
+    excluded_cfg = Variable.get(
+        "modregning_excluded_ydelse_list",
+        default_var={"excluded_ydelse_name": []},
+        deserialize_json=True,
+    )
+
+    return {
+        x.strip()
+        for x in excluded_cfg.get("excluded_ydelse_name", [])
+        if isinstance(x, str) and x
+    }
 
 
-def get_latest_excel_info(
-    sftp_hook: SFTPHook,
-    directory: str,
-    pattern: str = "*.xlsx",
-) -> tuple[str, datetime] | None:
-    sftp = sftp_hook.get_conn()
-    files = sftp.listdir_attr(directory)
-
-    matched = [f for f in files if fnmatch.fnmatch(f.filename.lower(), pattern.lower())]
-    if not matched:
-        logger.error(f'No Excel files found in "{directory}" matching "{pattern}"')
-        return None
-
-    latest = max(matched, key=lambda f: f.st_mtime)
-    remote_path = directory.rstrip("/") + "/" + latest.filename
-    modified_at_utc = datetime.fromtimestamp(latest.st_mtime, tz=timezone.utc)
-    return remote_path, modified_at_utc
-
-
-def read_excel_from_sftp(
-    sftp_hook: SFTPHook,
-    remote_path: str,
-    dtype: dict[str, Any] | None = None,
-    sheet_name: str | int | None = 0,
-) -> pd.DataFrame:
-    logger.info(f"Reading Excel file from SFTP: {remote_path}")
-
-    sftp = sftp_hook.get_conn()
-    with sftp.open(remote_path, "rb") as remote_file:
-        data = remote_file.read()
-
-    return pd.read_excel(io.BytesIO(data), dtype=dtype, sheet_name=sheet_name)
-
-
-def mask_cpr(cpr: object) -> str:
-    """
-    Mask CPR for logging (never log full CPR).
-
-    :param cpr: CPR-like value.
-    :return: Masked CPR like 'DDMMYYxxxx' or 'invalid'.
-    """
-    cpr_str = str(cpr).strip().replace("-", "").replace(" ", "").zfill(10)
-    if len(cpr_str) == 10 and cpr_str.isdigit():
-        return f"{cpr_str[:6]}xxxx"
-    return "invalid"
-
-
-def _normalize_cpr(value: object) -> str | None:
+def _normalize_cpr(value: str | None) -> str | None:
     """
     Normalize CPR to 10 digits (string). Returns None if invalid.
 
-    :param value: Raw CPR cell value from Excel.
-    :return: 10-digit CPR string or None.
+    :param value: CPR value to normalize.
+    :return: Normalized CPR string or None if invalid.
     """
-    if value is None or (isinstance(value, float) and pd.isna(value)):
+    if value is None:
         return None
 
-    s = str(value).strip().replace("-", "").replace(" ", "")
+    s = value.strip().replace("-", "").replace(" ", "")
     if not s.isdigit():
         return None
 
     s = s.zfill(10)
-    return s if len(s) == 10 else None
+
+    if len(s) != 10:
+        return None
+
+    return s
 
 
 def extract_unique_cprs(
     df: pd.DataFrame,
-    column: str = DEFAULT_CPR_COLUMN,
+    column: str = "ID-nummer",
 ) -> list[str]:
     """
     Extract unique CPR numbers from an Excel DataFrame column.
@@ -87,49 +54,52 @@ def extract_unique_cprs(
     :param df: DataFrame from Excel.
     :param column: Column name containing CPR/ID numbers.
     :return: Sorted list of unique CPR strings (10 digits).
-    :raises ValueError: If expected column is missing.
     """
     if column not in df.columns:
         raise ValueError(f'Expected column "{column}" not found. Columns: {df.columns.tolist()}')
 
-    cprs: list[str] = []
-    for raw in df[column].tolist():
-        normalized = _normalize_cpr(raw)
-        if normalized:
-            cprs.append(normalized)
-
-    unique = sorted(set(cprs))
+    normalized = df[column].map(_normalize_cpr)
+    unique = sorted(str(cpr) for cpr in normalized.dropna().unique())
     logger.info(f"Extracted {len(unique)} unique CPRs from Excel")
     return unique
 
 
-def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> set[str]:
+def extract_ydelser_from_serviceplatform_response(payload: dict[str, Any]) -> tuple[set[str], bool]:
     """
-    Extract unique YdelseNavn values from the Serviceplatform payload (new format).
+    Extract unique `YdelseNavn` values from a Serviceplatform response payload.
 
-    :param payload: JSON payload returned by the Serviceplatform endpoint.
-    :return: Set of unique YdelseNavn strings.
+    :param payload: Parsed JSON/dict response from Serviceplatform.
+    :return: (ydelser, found_any_ydelse)
     """
     ydelser: set[str] = set()
+    found_any_ydelse = False
 
     if not isinstance(payload, dict):
-        return ydelser
+        return ydelser, found_any_ydelse
 
     effektuering = payload.get("EffektueringHent_O", {}) or {}
     oek_list = effektuering.get("OEkonomiskEffektueringListe", []) or []
 
     for oek in oek_list:
-        # New structure: list is directly under each item
         ydelse_list = oek.get("OEkonomiskYdelseseffektueringListe", []) or []
 
         for ydelse in ydelse_list:
-            navn = (ydelse.get("BevilgetYdelse", {}) or {}).get("YdelseNavn", "")
-            if isinstance(navn, str):
-                navn = navn.strip()
-                if navn:
-                    ydelser.add(navn)
+            found_any_ydelse = True
 
-    return ydelser
+            navn = ydelse.get("BevilgetYdelse", {}).get("YdelseNavn", "")
+            if not isinstance(navn, str):
+                continue
+
+            navn = navn.strip()
+            if not navn:
+                continue
+
+            if navn in get_excluded_ydelse_names():
+                continue
+
+            ydelser.add(navn)
+
+    return ydelser, found_any_ydelse
 
 
 def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes:
@@ -143,4 +113,22 @@ def df_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Modregning") -> bytes
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name=sheet_name)
+
+        ws = writer.sheets[sheet_name]
+
+        padding = 2
+        max_width = 60
+
+        for col_idx, col_name in enumerate(df.columns, start=1):
+            series = df[col_name].fillna("").astype(str)
+
+            if series.empty:
+                max_len = 0
+            else:
+                max_len_raw = series.map(len).max()
+                max_len = int(max_len_raw) if pd.notna(max_len_raw) else 0
+
+            max_len = max(max_len, len(str(col_name)))
+            ws.column_dimensions[get_column_letter(col_idx)].width = min(max_len + padding, max_width)
+
     return output.getvalue()

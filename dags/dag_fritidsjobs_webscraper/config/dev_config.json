@@ -1,0 +1,313 @@
+{
+ 	"sender_email": "no-reply@example.com",
+ 	"recipient_emails": ["recipient@example.com"],
+ 	"smtp_server": "smtp.example.com",
+    "sites": [
+        {
+            "site_name": "Jem & Fix",
+            "site_url": "https://www.jemogfix.dk/job-karriere/ledige-stillinger/",
+            "allowed_domains": [
+                "api.teamtailor.com",
+                "scripts.teamtailor-cdn.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers N",
+                    "list_route": [
+                        {
+                            "wait_for": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select"
+                        },
+                        {
+                            "select": {
+                                "selector": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select",
+                                "label": "Randers N"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div.teamtailor-jobs__job-wrapper > div.teamtailor-jobs__job",
+                        "title": "a.teamtailor-jobs__job-title",
+                        "link": "a.teamtailor-jobs__job-title"
+                    }
+                },
+                {
+                    "list_name": "Randers S",
+                    "list_route": [
+                        {
+                            "wait_for": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select"
+                        },
+                        {
+                            "select": {
+                                "selector": "div.teamtailor-jobs__filters > div:nth-child(3) > select.teamtailor-jobs__select",
+                                "label": "Randers S"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div.teamtailor-jobs__job-wrapper",
+                        "title": "a.teamtailor-jobs__job-title",
+                        "link": "a.teamtailor-jobs__job-title"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Elgiganten",
+            "site_url": "https://web103.reachmee.com/ext/I022/2126/main?site=15&validator=3cc71ec923ccaf7527e8b30ecbdf32c0&lang=DK",
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "select": {
+                                "selector": "select#filter_select_1",
+                                "label": "Randers"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "table#jobsTable tr",
+                        "title": "td:first-child > a[href]",
+                        "link": "td:first-child > a[href]"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Normal",
+            "site_url": "https://jobs.butik.normal.dk/jobs?split_view=true&geobound_coordinates%5Btop_left_lat%5D=56.46097894202437&geobound_coordinates%5Btop_left_lon%5D=10.035458207130432&geobound_coordinates%5Bbottom_right_lat%5D=56.457822292965254&geobound_coordinates%5Bbottom_right_lon%5D=10.0422602891922&query=",
+            "allowed_domains": [
+                "teamtailor-cdn.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Dytmærsken",
+                    "list_route": [
+                        {
+                            "wait_for": "ul#jobs_list_container"
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "ul#jobs_list_container li",
+                        "title": "a span.text-block-base-link",
+                        "link": "a"
+                    }
+                }
+            ]
+    
+        },
+        {
+            "site_name": "Rema 1000",
+            "site_url": "https://job.rema1000.dk/ledige-stillinger",
+            "allowed_domains": [
+                "hr-manager.net"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "iframe#iFrameResizer0"
+                        },
+                        {
+                            "wait_for": "select#location_ddfilter"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#location_ddfilter",
+                                "label": "Region Midtjylland"
+                            }
+                        },
+                        {
+                            "wait_for": "select#location_ddfiltercascade1"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#location_ddfiltercascade1",
+                                "label": "Randers"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div[role='listitem']",
+                        "title": "div.project-title",
+                        "link": "div.project-title"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "McDonald's",
+            "site_url": "https://www.mcdonalds.com/dk/da-dk/job-og-fremtid/job.html",
+            "allowed_domains": [
+                "jobylon.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "div.cmp-embed > iframe"
+                        },
+                        {
+                            "wait_for": "div.select.location-select"
+                        },
+                        {
+                            "select": {
+                                "selector": "div.select.location-select select",
+                                "label": "Randers"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "a[id^='job-']",
+                        "title": "p.title",
+                        "link": "a[id^='job-']"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Burger King",
+            "site_url": "https://app.elvium.com/da/organizations/burger-king-jylland-fyn/job_postings/export?referer_host=www.burgerking.dk",
+            "allowed_domains": [
+                "nr-data.net",
+                "newrelic.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_elements": {
+                        "row": "tbody > tr",
+                        "title": "td:first-child a",
+                        "link": "td:first-child a",
+                        "regex": {
+                            "selector": "td:nth-child(2)",
+                            "pattern": ".*Randers.*"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Subway",
+            "site_url": "https://www.jomp.dk/73/subway",
+            "allowed_domains": [
+                "hr-manager.net"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_route": [
+                        {
+                            "frame": "iframe#iFrameResizer0"
+                        },
+                        {
+                            "wait_for": "select#location_ddfilter"
+                        },
+                        {
+                            "select": {
+                                "selector": "select#location_ddfilter",
+                                "label": "Midtjylland"
+                            }
+                        }
+                    ],
+                    "list_elements": {
+                        "row": "div[role='listitem']",
+                        "title": "div.project-title",
+                        "link": "div[role='listitem']",
+                        "regex": {
+                            "selector": "div.project-title",
+                            "pattern": ".*Randers.*"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "XL-Byg",
+            "site_url": "https://www.xl-byg.dk/karriere",
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_elements": {
+                        "row": "table.w-full > tbody > tr",
+                        "title": "td:first-child p",
+                        "link": "td:last-child a",
+                        "regex": {
+                            "selector": "td:nth-child(2) p",
+                            "pattern": ".*Randers.*"
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Lidl",
+            "site_url": "https://karriere.lidl.dk/soeg?page=1&baseSearch={%22location%22:{%22midPointName%22:%22Aalborg%22,%22latitude%22:57.0488195,%22longitude%22:9.921747}}",
+            "allowed_domains": [
+                "googleapis.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "list_elements": {
+                        "row": "div.lica-search-results__item",
+                        "title": "div.lica-search-results__header > h3"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Coop",
+            "site_url": "https://jobs.coop.dk/search/?searchResultView=LIST&markerViewed=&carouselIndex=&facetFilters=%7B%22filter3%22%3A%5B%22Region+Midtjylland%22%5D%7D&pageNumber=0&q=randers&sortBy=date",
+            "allowed_domains": [
+                "performancemanager5.successfactors.eu",
+                "rmkcdn.successfactors.com"
+            ],
+            "lists": [
+                {
+                    "list_name": "Randers",
+                    "extract_visible_rows_only": false,
+                    "list_elements": {
+                        "row": "ul[class^='JobsList_jobCardResultList'] > li",
+                        "title": "a[class*='JobsList_jobCardTitle']",
+                        "link": "a[class*='JobsList_jobCardTitle']"
+                    }
+                }
+            ]
+        },
+        {
+            "site_name": "Plantorama",
+            "site_url": "https://plantorama.easycruit.com/",
+            "lists":[
+                {
+                    "list_name": "Randers / Hele landet",
+                    "list_elements": {
+                        "row": "table.list > tbody > tr",
+                        "title": "td[class^='list-item'] > a",
+                        "link": "td[class^='list-item'] > a",
+                        "regex": {
+                            "selector": "td[class^='list-item']:nth-child(2)",
+                            "pattern": ".*Randers|Hele landet.*"
+                        }
+                    }
+                }
+            ],
+            "block_external_requests": false
+        },
+        {
+            "site_name": "Randers Storcenter",
+            "site_url": "https://randersstorcenter.dk/information/job",
+            "lists": [
+                {
+                    "list_name": "Randers Storcenter",
+                    "list_elements": {
+                        "row": "div.dsc-row.dsc-faq-question-row",
+                        "title": "h3"
+                    }
+                }
+            ]
+        }
+    ]
+}

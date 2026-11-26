@@ -15,7 +15,7 @@ from dag_nexus_user_sync.delta import DeltaClient
 from dag_nexus_user_sync.nexus import NexusClient
 
 dag_args = DEFAULT_DAG_ARGS.copy()
-dag_args['email'] = ["digitalisering@randers.dk", "Jane.Scharling.Andersen@randers.dk"]
+dag_args['email'].append("Jane.Scharling.Andersen@randers.dk")
 dag_args["retries"] = 2
 dag_args["retry_delay"] = timedelta(minutes=2)
 
@@ -77,7 +77,8 @@ def get_config_start_main_flow(**context):
 
 with DAG(
     dag_id="nexus_user_permission_sync",
-    start_date=datetime(year=2026, month=3, day=20, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=11, day=5, tz=timezone("Europe/Copenhagen")),
+    end_date=datetime(year=2026, month=11, day=8, hour=23, minute=59),
     schedule="*/10 * * * *",
     default_args=dag_args,
     catchup=False,
@@ -98,5 +99,6 @@ with DAG(
 ) as dag:
     task = PythonOperator(
         task_id="check_and_update_users_task",
-        python_callable=get_config_start_main_flow
+        python_callable=get_config_start_main_flow,
+        do_xcom_push=False
     )

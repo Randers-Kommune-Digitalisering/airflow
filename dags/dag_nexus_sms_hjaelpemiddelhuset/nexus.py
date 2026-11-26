@@ -14,20 +14,21 @@ MSG_PREFIX = "\n***Besked fra SMS service "
 MSG_SUFFIX = "***\n"
 
 message_template = """Hej {navn}
-Dine hjælpemidler er klar til afhentning på Hjælpemiddelhuset Kronjylland, Randers kommune.
+Din ordre er klar til afhentning på Hjælpemiddelhuset Kronjylland, Randers kommune.
 Agerskellet 22, 8920 Randers NV
 
-Når du henter dine hjælpemidler, skal du anvende følgende ordre-id. Dit ordre ID: {ordreid}
+
+Du skal bruge følgende ordre-id: {ordreid}
 
 Hvis du henter udenfor åbningstiden, skal du anvende nedenstående kode.
-Du bedes afhente dine hjælpemidler indenfor 3 dage.
+Du bedes afhente indenfor 3 dage.
 
 Din kode til hoveddøren er: {doerkode}
 
 Hvis du vil vide mere:
 https://www.randers.dk/borger/socialt/hjaelpemidler-og-hjaelp/hjaelpemiddelhuset/
 
-Du er altid velkommen til at kontakte os på telefon 89158600
+Du er altid velkommen til at kontakte os på telefon 89158600.
 
 Tak for din hjælp og god dag.
 

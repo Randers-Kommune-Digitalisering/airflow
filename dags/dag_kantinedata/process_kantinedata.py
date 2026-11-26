@@ -1,11 +1,11 @@
-import email
 import logging
 import xml.etree.ElementTree as ET
-from email.message import Message
 from io import BytesIO
 
-from airflow.providers.imap.hooks.imap import ImapHook
+from airflow.exceptions import AirflowFailException
+from airflow.hooks.base import BaseHook
 from airflow.providers.sftp.hooks.sftp import SFTPHook
+from rkdigi.email_handling import EmailReader
 
 logger = logging.getLogger(__name__)
 
@@ -25,56 +25,90 @@ def _allocate_filename(sftp_client) -> str:
     )
 
 
-def process_kantinedata(imap_hook: ImapHook, sftp_hook: SFTPHook) -> None:
-    """Main function to process Kantinedata: fetch unseen emails, extract XML attachments, validate and upload to SFTP."""
-    imap_hook.get_conn()
-    with imap_hook.mail_client as conn, sftp_hook.get_conn() as sftp_client:
-        conn.select("INBOX")
-        status, data = conn.search(None, "UNSEEN")
+def _mark_email_seen(email_reader: EmailReader, uid: bytes, mailbox: str = "INBOX") -> None:
+    """Mark a single email as seen via UID."""
+    uid_text = uid.decode(errors="ignore")
+    if not uid_text:
+        logger.warning("Skipping mark-as-seen because email UID is missing.")
+        return
 
-        if status != "OK":
-            logger.warning(f"IMAP search failed with status: {status}")
-            return
+    marked, _ = email_reader.get_emails(
+        mailbox=mailbox,
+        criteria=f"UID {uid_text}",
+        set_flags="\\Seen",
+        max=1,
+    )
+    if not marked:
+        logger.warning(f"Failed to mark email UID {uid!r} as seen.")
 
-        msg_ids = data[0].split()
-        logger.info(f"{len(msg_ids)} email(s) found")
-        found_emails_without_xml_attachment = False
 
-        for msg_id in msg_ids:
-            status, msg_data = conn.fetch(msg_id, "(BODY.PEEK[])")  # Get the email without marking it as read
-            if status != "OK":
-                logger.warning(f"Failed to fetch email with ID {msg_id}: {status}")
-                continue
-            message: Message = email.message_from_bytes(msg_data[0][1])
+def process_kantinedata(sftp_hook: SFTPHook) -> None:
+    """Fetch unseen emails, extract XML attachments, validate, and upload to SFTP."""
+    imap_conn = BaseHook.get_connection("kantinedata_imap")
+    imap_host = imap_conn.host
+    imap_port = imap_conn.port
 
-            all_uploaded = True
-            xml_found = False
-            for part in message.walk():
-                if part.get_content_disposition() != "attachment":
-                    continue
-                if part.get_content_type() not in ("application/xml", "text/xml"):
-                    continue
+    if not imap_host:
+        raise AirflowFailException("Connection 'kantinedata_imap' is missing host. Cannot initialize EmailReader.")
 
-                xml_found = True
-                payload = part.get_payload(decode=True)
-                try:
-                    # Verify that the payload is valid XML before uploading
-                    ET.parse(BytesIO(payload))
-                except ET.ParseError as e:
-                    logger.warning(f"Skipping invalid XML in msg {msg_id}: {e}")
-                    all_uploaded = False
-                    continue
+    if not imap_port:
+        raise AirflowFailException("Connection 'kantinedata_imap' is missing port. Cannot initialize EmailReader.")
 
-                filename = _allocate_filename(sftp_client)
-                sftp_client.putfo(BytesIO(payload), filename)
-                logger.info(f"Uploaded {filename} to SFTP")
+    email_reader = EmailReader(
+        email=imap_conn.login,
+        password=imap_conn.password,
+        imap_server=imap_host,
+        imap_port=int(imap_port),
+    )
 
-            if xml_found and all_uploaded:
-                # Only mark the email as seen if we found at least one XML attachment and all were uploaded successfully.
-                conn.store(msg_id, "+FLAGS", "\\Seen")
-            elif not xml_found:
-                found_emails_without_xml_attachment = True
+    emails, failed = email_reader.get_emails(
+        mailbox="INBOX",
+        criteria="UNSEEN",
+        set_flags=None,
+    )
 
-        if found_emails_without_xml_attachment:
-            # If we encountered any emails that were missing valid XML attachments, raise an error at the end.
-            raise RuntimeError("Found one or more emails without valid XML attachments. Please check the email contents.")
+    logger.info(f"{len(emails)} email(s) found")
+    if failed:
+        logger.warning(f"Failed to fetch {len(failed)} email(s): {failed}")
+
+    found_emails_without_xml_attachment = False
+
+    if len(emails) > 0:
+        with sftp_hook.get_conn() as sftp_client:
+            for message in emails:
+                uid = getattr(message, "uid", b"")
+                all_uploaded = True
+                xml_found = False
+
+                for part in message.iter_attachments():
+                    content_type = part.get_content_type()
+                    if content_type not in ("application/xml", "text/xml"):
+                        continue
+
+                    xml_found = True
+                    payload = part.get_payload(decode=True)
+                    if not payload:
+                        logger.warning(f"Skipping empty XML attachment in msg UID {uid!r}")
+                        all_uploaded = False
+                        continue
+
+                    try:
+                        # Verify that the payload is valid XML before uploading.
+                        ET.parse(BytesIO(payload))
+                    except ET.ParseError as e:
+                        logger.warning(f"Skipping invalid XML in msg UID {uid!r}: {e}")
+                        all_uploaded = False
+                        continue
+
+                    filename = _allocate_filename(sftp_client)
+                    sftp_client.putfo(BytesIO(payload), filename)
+                    logger.info(f"Uploaded {filename} to SFTP")
+
+                if xml_found and all_uploaded:
+                    # Only mark as seen when at least one XML attachment was uploaded successfully.
+                    _mark_email_seen(email_reader=email_reader, uid=uid, mailbox="INBOX")
+                elif not xml_found:
+                    found_emails_without_xml_attachment = True
+
+    if found_emails_without_xml_attachment:
+        raise RuntimeError("Found one or more emails without valid XML attachments. Please check the email contents.")

@@ -69,7 +69,7 @@ def get_config_start_main_flow(**context):
         param_name = var_id.replace("nexus_", "")
         nexus_client_params[param_name] = var
 
-    nexus_hook = BaseHook.get_hook("nexus_review")
+    nexus_hook = BaseHook.get_hook("nexus_prod")
     nexus_client = NexusClient(hook=nexus_hook, **nexus_client_params)
     try:
         nexus_client.import_to_nexus_and_set_permissions(employees_changed_list=employment_changes, report_list=report_list)
@@ -93,7 +93,8 @@ def report_list_to_html(**context):
 
 with DAG(
     dag_id="nexus_report_user_permission_sync",
-    start_date=datetime(year=2026, month=4, day=22, tz=timezone("Europe/Copenhagen")),
+    start_date=datetime(year=2026, month=11, day=5, tz=timezone("Europe/Copenhagen")),
+    end_date=datetime(year=2026, month=11, day=8, hour=23, minute=59),
     schedule="0 6 * * *",
     default_args=dag_args,
     catchup=True,
@@ -125,7 +126,7 @@ with DAG(
 
     send_email = EmailOperator(
         task_id="send_email",
-        to=["digitalisering@randers.dk", "Jane.Scharling.Andersen@randers.dk"],
+        to=["Jane.Scharling.Andersen@randers.dk", "Natashia.Maise.Nygaard@randers.dk"],
         subject="Nexus Delta Synkronisering Report - {{ ti.xcom_pull(task_ids='make_report_html')[1] }}",
         html_content="{{ ti.xcom_pull(task_ids='make_report_html')[0] }}",
     )

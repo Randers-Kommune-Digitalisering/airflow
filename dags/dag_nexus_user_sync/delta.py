@@ -95,7 +95,7 @@ class DeltaClient:
             requested_set = set(requested_uuids)
             missing = requested_set - returned_uuids
             extra = returned_uuids - requested_set
-            raise ValueError(
+            logger.error(
                 'Number of returned engagements from graph query does not match number of requested engagements.\n'
                 f'Number requested: {len(requested_uuids)}, number returned: {len(instances)}.\n' + (f'Missing UUIDs: {missing}\n' if missing else '') + (f'Extra UUIDs: {extra}\n' if extra else '')
             )

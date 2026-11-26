@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class District(Base):
     __tablename__ = 'sundhedsplejedistrikter_rk_all'
-    __table_args__ = {'schema': 'nye_tabeller'}
+    __table_args__ = {'schema': 's22_sundhed_kultur'}
     distriktnavn = Column(String, primary_key=True)
     wkb_geometry = Column(Geometry(geometry_type='MULTIPOLYGON', srid=25832))
 
@@ -27,7 +27,7 @@ class DistrictItem:
 
 class DistrictMapDBClient:
     def __init__(self):
-        with Session(PostgresHook(postgres_conn_id="gis_db").get_sqlalchemy_engine()) as session:
+        with Session(PostgresHook(postgres_conn_id="gis_db_districts").get_sqlalchemy_engine()) as session:
             districts = session.query(District).all()
             self._districts: list[DistrictItem] = [DistrictItem(d.distriktnavn, wkb.loads(bytes(d.wkb_geometry.data))) for d in districts]
 
