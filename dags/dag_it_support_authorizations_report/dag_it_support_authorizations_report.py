@@ -10,6 +10,7 @@ import pendulum
 from pendulum import timezone
 from airflow import DAG
 from airflow.hooks.base import BaseHook
+from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.utils.email import send_email
 
@@ -17,11 +18,21 @@ from dag_it_support_authorizations_report.delta_client import DeltaClient
 from dag_it_support_authorizations_report.signflow import LogivaSignflowClient
 from utils.config import DEFAULT_DAG_ARGS
 
+
+def _get_report_emails() -> list[str]:
+    recipients = Variable.get("it_support_authorizations_report_emails", deserialize_json=True)
+    if not isinstance(recipients, list) or not recipients or not all(
+        isinstance(email, str) and email.strip() for email in recipients
+    ):
+        raise ValueError("Variable 'it_support_authorizations_report_emails' must be a non-empty list of email addresses")
+    return recipients
+
+
 dag_args = DEFAULT_DAG_ARGS.copy()
 dag_args["email_on_failure"] = True
 dag_args["retries"] = 2
 dag_args["retry_delay"] = timedelta(minutes=5)
-dag_args["email"].append("D-It-Supporten@randers.dk")
+dag_args["email"] = [*dag_args["email"], *_get_report_emails()]
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +183,7 @@ def extract_transform() -> dict[str, str]:
 
     timestamp = pendulum.now("Europe/Copenhagen").strftime("%Y-%m-%d %H:%M:%S")
     send_email(
-        to=["D-It-Supporten@randers.dk", "rune.aagaard.keena@randers.dk"],
+        to=_get_report_emails(),
         subject=f"Signflow Autorisationer - {timestamp}",
         html_content="Liste af autorisationer er vedh\u00e6ftet.",
         files=[output_file_path],
