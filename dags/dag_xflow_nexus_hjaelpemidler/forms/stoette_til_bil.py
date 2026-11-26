@@ -29,7 +29,7 @@ def generate_stoette_til_bil_fields(model_object: Any) -> list[Field]:
         Field(label="Opgavefrist", field_type=FieldType.DROPDOWN, value="Lang")
     ]
 
-    if model_object.type is not None:
+    if model_object.type_text is not None:
         fields.append(Field(label="Type", field_type=FieldType.DROPDOWN, value=model_object.type))
 
     if optional_contact_info:
