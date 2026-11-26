@@ -1,6 +1,8 @@
 import csv
 import io
 import logging
+import re
+from decimal import Decimal
 from typing import Any, Iterator
 
 import pandas as pd
@@ -167,9 +169,6 @@ def extract_eindkomst_rows(
                 if not isinstance(period, dict):
                     continue
 
-                disposition_date = period.get("IndkomstPersonGruppeDispositionDato")
-                disposition_date = str(disposition_date).split("T")[0] if disposition_date else None
-
                 period_items = _as_list(
                     value=((period.get("AngivelsePeriodeStruktur") or {}).get("AngivelsePeriode") or {}).get("Items")
                 )
@@ -185,7 +184,6 @@ def extract_eindkomst_rows(
                     "CPR": cpr,
                     "SE-Nummer": company.get("VirksomhedSENummerIdentifikator"),
                     "Tjenestenummer": period.get("AnsaettelseforholdMedarbejderIdentifikator"),
-                    "IndkomstPersonGruppeDispositionDato": disposition_date,
                     "AngivelsePeriode": angivelse_periode,
                 }
                 field_ids = set(report_fields.values())
@@ -216,6 +214,30 @@ def extract_eindkomst_rows(
     return rows
 
 
+_AMOUNT_PATTERN = re.compile(
+    r"[+-]?(?:\d+(?:[.,]\d+)?|\d{1,3}(?:\.\d{3})+,\d+|\d{1,3}(?:,\d{3})+\.\d+)"
+)
+
+
+def _numeric_amount(value: str) -> float | None:
+    """
+    Convert a numeric amount with a comma or period decimal separator.
+
+    :param value: Amount as text, optionally with a thousands separator.
+    :return: Numeric amount, or None if the text is not a recognized amount.
+    """
+    if not _AMOUNT_PATTERN.fullmatch(value):
+        return None
+    if "." in value and "," in value:
+        decimal_separator = "." if value.rfind(".") > value.rfind(",") else ","
+        value = value.replace("," if decimal_separator == "." else ".", "")
+        if decimal_separator == ",":
+            value = value.replace(",", ".")
+    else:
+        value = value.replace(",", ".")
+    return float(Decimal(value))
+
+
 def write_eindkomst_report_excel_bytes(
     rows: list[dict[str, Any]],
     columns: list[str],
@@ -224,8 +246,9 @@ def write_eindkomst_report_excel_bytes(
     """
     Write an eIndkomst report to Excel bytes with one income worksheet.
 
-    Rows are grouped by CPR with blank rows between groups, and identifiers
-    are formatted as text.
+    Rows are grouped by CPR without blank rows between groups, and
+    identifiers are formatted as text. Numeric income fields are written as
+    numbers, using Excel's regional settings for decimal display.
 
     :param rows: Income rows to write to the report.
     :param columns: Ordered report column names.
@@ -236,13 +259,8 @@ def write_eindkomst_report_excel_bytes(
     for row in rows:
         rows_by_cpr.setdefault(row["CPR"], []).append(row)
 
-    spaced_rows: list[dict[str, Any]] = []
-    for group in rows_by_cpr.values():
-        if spaced_rows:
-            spaced_rows.append({})
-        spaced_rows.extend(group)
-
-    frame = pd.DataFrame(spaced_rows, columns=columns)
+    grouped_rows = [row for group in rows_by_cpr.values() for row in group]
+    frame = pd.DataFrame(grouped_rows, columns=columns)
     output = io.BytesIO()
 
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -272,6 +290,14 @@ def write_eindkomst_report_excel_bytes(
         for row in sheet.iter_rows(min_row=2):
             for cell in row[:3]:
                 cell.number_format = "@"
+            for cell in row[3:]:
+                if isinstance(cell.value, str):
+                    amount = _numeric_amount(cell.value)
+                    if amount is not None:
+                        cell.value = amount
+                        cell.number_format = "#,##0.00"
+                elif isinstance(cell.value, (int, float)):
+                    cell.number_format = "#,##0.00"
             for cell in row:
                 if cell.data_type == "f":
                     cell.data_type = "s"
